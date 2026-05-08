@@ -53,7 +53,8 @@ jobs:
       - name: Copy docs (md + images only)
         run: |
           TARGET_DIR="target/wiki/【体系化进阶】Robotics Tutorial"
-          mkdir -p "$TARGET_DIR"
+          DEST="$TARGET_DIR/05_运动控制/足式"
+          mkdir -p "$DEST"
 
           rsync -av --delete \
             --include='*/' \
@@ -65,7 +66,7 @@ jobs:
             --include='*.gif' \
             --include='*.webp' \
             --exclude='*' \
-            source/05_运动控制/足式/ "$TARGET_DIR/05_运动控制/足式/"
+            "source/05_运动控制/足式/" "$DEST/"
 
           find "$TARGET_DIR" -type d -empty -delete
 
