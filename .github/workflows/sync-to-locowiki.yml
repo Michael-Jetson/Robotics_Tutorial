@@ -11,6 +11,8 @@ on:
       - '04_移动机器人规控/**'
       - '05_运动控制/**'
       - '06_具身智能/**'
+      - 'SUMMARY.md'
+      - 'README.md'
 
 jobs:
   sync:
@@ -53,9 +55,14 @@ jobs:
       - name: Copy docs (md + images only)
         run: |
           TARGET_DIR="target/wiki/【体系化进阶】Robotics Tutorial"
+
+          # Copy README and SUMMARY to target root
+          cp source/README.md "$TARGET_DIR/" 2>/dev/null || true
+          cp source/SUMMARY.md "$TARGET_DIR/" 2>/dev/null || true
+
+          # Sync completed directions
           DEST="$TARGET_DIR/05_运动控制/足式"
           mkdir -p "$DEST"
-
           rsync -av --delete \
             --include='*/' \
             --include='*.md' \
@@ -67,6 +74,10 @@ jobs:
             --include='*.webp' \
             --exclude='*' \
             "source/05_运动控制/足式/" "$DEST/"
+
+          # Add more directions here as they complete:
+          # mkdir -p "$TARGET_DIR/05_运动控制/机械臂"
+          # rsync -av --delete ... "source/05_运动控制/机械臂/" "$TARGET_DIR/05_运动控制/机械臂/"
 
           find "$TARGET_DIR" -type d -empty -delete
 
