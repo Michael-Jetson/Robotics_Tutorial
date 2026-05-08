@@ -4,7 +4,7 @@
 
 面向机器人学研究者与工程师的系统化教学文档，覆盖从数学基础到具身智能的完整知识体系。
 
-**Author:** Pengfei Guo（郭鹏飞）  
+**Author:** Pengfei Guo  
 **Affiliation:** 达妙科技 (DAMIAO Technology)  
 **License:** [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) — 自由使用与商用，需注明出处  
 **AI Collaboration:** 部分内容由 Claude (Anthropic) 辅助编写
@@ -86,7 +86,7 @@ Documents are standalone Markdown files. Recommended reading order follows chapt
 If you use this material in your work, please cite:
 
 ```
-Robotics Tutorial by Pengfei Guo (DAMIAO Technology)
+Robotics Tutorial by Pengfei Guo, DAMIAO Technology
 https://github.com/Michael-Jetson/Robotics_Tutorial
 Licensed under CC BY 4.0
 ```
