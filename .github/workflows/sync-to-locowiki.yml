@@ -108,10 +108,10 @@ jobs:
         run: |
           cd target
           EXISTING_PR=$(gh pr list --repo LocoWiki/LocoWiki \
-            --head "Michael-Jetson:contrib/robotics-tutorial" \
+            --head "contrib/robotics-tutorial" \
             --state open --json number --jq '.[0].number' 2>/dev/null || echo "")
 
-          if [ -z "$EXISTING_PR" ]; then
+          if [ -z "$EXISTING_PR" ] || [ "$EXISTING_PR" = "null" ]; then
             gh pr create --repo LocoWiki/LocoWiki \
               --head "Michael-Jetson:contrib/robotics-tutorial" \
               --base main \
