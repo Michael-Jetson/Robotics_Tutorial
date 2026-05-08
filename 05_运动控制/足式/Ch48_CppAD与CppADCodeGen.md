@@ -1,3 +1,5 @@
+> 本文档属于 [Robotics Tutorial](https://github.com/Michael-Jetson/Robotics_Tutorial) 项目，作者：Pengfei Guo（郭鹏飞），达妙科技。采用 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) 协议，转载请注明出处。
+
 # 第 48 章：CppAD 与 CppADCodeGen 预编译流水线
 
 > **本章定位**：从 Ch17 的 Ceres Jet 前向 AD 出发，进入工业级 tape-based 自动微分。CppAD 记录计算图，CppADCodeGen 将其编译为高性能 `.so` 动态库。这条流水线是 OCS2/Crocoddyl MPC 热路径的性能关键——从 20 $\mu$s 数值差分降至 1.5 $\mu$s 预编译解析导数，加速 13 倍。

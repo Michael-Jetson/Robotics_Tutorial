@@ -1,3 +1,5 @@
+> 本文档属于 [Robotics Tutorial](https://github.com/Michael-Jetson/Robotics_Tutorial) 项目，作者：Pengfei Guo（郭鹏飞），达妙科技。采用 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) 协议，转载请注明出处。
+
 ## 第 55 章:OCS2 完整栈 + 双线程 MPC 实时架构
 
 > **难度**: ⭐⭐⭐ | **预计学时**: 40-50 小时(2 周) | **前置**: Ch47-50, Ch52-54

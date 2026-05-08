@@ -1,3 +1,5 @@
+> 本文档属于 [Robotics Tutorial](https://github.com/Michael-Jetson/Robotics_Tutorial) 项目，作者：Pengfei Guo（郭鹏飞），达妙科技。采用 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) 协议，转载请注明出处。
+
 # 第47章：Pinocchio 深度精读——CRTP + Model-Data + 模板 Scalar
 
 > **难度**：⭐⭐⭐ | **建议用时**：1.5 周 | **前置要求**：Ch22 Eigen 深入（表达式模板/对齐/SIMD）、Ch23 李群与 manif 库、Ch29 CRTP/设计模式与高级惯用法

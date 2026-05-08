@@ -1,3 +1,5 @@
+> 本文档属于 [Robotics Tutorial](https://github.com/Michael-Jetson/Robotics_Tutorial) 项目，作者：Pengfei Guo（郭鹏飞），达妙科技。采用 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) 协议，转载请注明出处。
+
 # 第 65 章 RL + MPC 混合范式——MPC-Net / Cafe-MPC VWBC / Residual RL / Differentiable MPC
 
 > **难度**：⭐⭐⭐~⭐⭐⭐⭐ | **建议时间**：1.5 周（25-30 小时） | **前置**：Ch53（WBC/TSID）、Ch54（DDP/Crocoddyl）、Ch55（OCS2）、Ch63-64（RL 训练+部署）

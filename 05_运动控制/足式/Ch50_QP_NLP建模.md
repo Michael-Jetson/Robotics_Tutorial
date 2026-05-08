@@ -1,3 +1,5 @@
+> 本文档属于 [Robotics Tutorial](https://github.com/Michael-Jetson/Robotics_Tutorial) 项目，作者：Pengfei Guo（郭鹏飞），达妙科技。采用 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) 协议，转载请注明出处。
+
 # 第50章 QP/NLP建模——从SLAM无约束优化到规控有约束优化
 
 > **学习周期**：1周（20-25小时）  

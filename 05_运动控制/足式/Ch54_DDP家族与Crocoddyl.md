@@ -1,3 +1,5 @@
+> 本文档属于 [Robotics Tutorial](https://github.com/Michael-Jetson/Robotics_Tutorial) 项目，作者：Pengfei Guo（郭鹏飞），达妙科技。采用 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) 协议，转载请注明出处。
+
 # 第 54 章 DDP 家族——Crocoddyl 精读 + Aligator/ProxDDP 进阶
 
 > **难度**: ⭐⭐⭐ | **建议时间**: 1.5 周(25-30 小时) | **前置**: Ch47-48 Pinocchio/CppAD, Ch50 NLP, Ch52 接触力学

@@ -1,3 +1,5 @@
+> 本文档属于 [Robotics Tutorial](https://github.com/Michael-Jetson/Robotics_Tutorial) 项目，作者：Pengfei Guo（郭鹏飞），达妙科技。采用 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) 协议，转载请注明出处。
+
 # 第 63 章 腿足 RL 训练栈——IsaacGym/Lab + rsl_rl + 奖励设计 + Domain Randomization + Teacher-Student
 
 > **难度**: ⭐⭐ ~ ⭐⭐⭐⭐ | **预计学时**: 30-40 小时(1.5 周) | **text:code = 7:3**（理论+实践混合章节）
