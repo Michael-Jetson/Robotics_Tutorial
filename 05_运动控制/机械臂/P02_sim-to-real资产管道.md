@@ -976,7 +976,7 @@ class LBFGSBSystemID:
     
     def _apply_params(self, params):
         """将参数应用到 MuJoCo 模型（内存中修改，不改文件）"""
-        model = self.base_model.__copy__()
+        model = copy.copy(self.base_model)  # mujoco >= 3.0; 旧版需 MjModel.from_xml_string()
         n_bodies = model.nbody
         
         # 质量缩放
@@ -986,8 +986,8 @@ class LBFGSBSystemID:
         # 摩擦系数
         for i in range(model.ngeom):
             model.geom_friction[i, 0] = params[n_bodies]      # slide
-            model.geom_friction[i, 1] = params[n_bodies + 1]  # spin
-            model.geom_friction[i, 2] = params[n_bodies + 2]  # roll
+            model.geom_friction[i, 1] = params[n_bodies + 1]  # torsional
+            model.geom_friction[i, 2] = params[n_bodies + 2]  # rolling
         
         return model
 ```

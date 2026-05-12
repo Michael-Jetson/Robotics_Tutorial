@@ -129,7 +129,7 @@ WBC 不知道的信息:
 | 2022 | qiayuanl, legged_control | OCS2+WBC 教学友好实现 |
 | 2023 | Sleiman et al., Science Robotics | ANYmal 推门/开阀，接触模式枚举 |
 | 2024 | Zhang (skywoodsz), qm_control, IROS | 四足+臂末端阻抗+摩擦锥一体 QP |
-| 2025 | Zhang et al. (CMU), FALCON, L4DC | 双智能体 RL 力自适应人形 |
+| 2025 | Zhang et al. (CMU), FALCON, L4DC 2026 Oral | 双智能体 RL 力自适应人形 |
 
 ### ⚠️ 常见陷阱
 

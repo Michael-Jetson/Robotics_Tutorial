@@ -867,7 +867,7 @@ my_robot_description/
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="arm_7dof">
 
   <!-- ======================== 全局参数 ======================== -->
-  <xacro:property name="pi" value="3.14159265359"/>
+  <!-- xacro 已内置 pi 常量（${pi}），无需重定义 -->
   <xacro:property name="default_damping" value="0.1"/>
   <xacro:property name="default_friction" value="0.05"/>
 

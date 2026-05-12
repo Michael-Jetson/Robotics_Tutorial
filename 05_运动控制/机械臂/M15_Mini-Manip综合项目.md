@@ -1252,7 +1252,7 @@ controller_manager:
     joint_state_broadcaster:
       type: joint_state_broadcaster/JointStateBroadcaster
     gripper_controller:
-      type: position_controllers/GripperActionController
+      type: gripper_controllers/GripperActionController
 
 joint_trajectory_controller:
   ros__parameters:

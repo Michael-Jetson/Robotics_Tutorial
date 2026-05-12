@@ -2068,7 +2068,7 @@ mini_manip_ws/
 
 | 症状 | 可能原因 | 排查步骤 | 相关小节 |
 |------|---------|---------|---------|
-| CM 启动报 "plugin not found" | pluginlib 路径错误 | 1. 检查 plugin.xml 路径 2. `pluginlib_list` 列出已注册插件 | M12.3 |
+| CM 启动报 "plugin not found" | pluginlib 路径错误 | 1. 检查 plugin.xml 路径 2. `ros2 plugin list` 列出已注册插件 | M12.3 |
 | 激活报 "interface already claimed" | 两个控制器争夺同一 command interface | 1. `ros2 control list_controllers` 2. 先 deactivate 旧控制器 | M12.4 |
 | JTC 执行 abort | 跟踪误差超容差 | 1. 检查 constraints 参数 2. rqt_plot 观察偏差 3. 检查 PID | M12.4 |
 | 控制器切换时跳变 | 新控制器初始命令不匹配 | 1. on_activate() 中同步位置 2. mock hw 先验证 | M12.3 |

@@ -751,10 +751,9 @@ public:
   {}
 
   void compute() {
-    pool_.release();  // Reset allocator to beginning of buffer (O(1))
-    contact_wrenches_.clear();  // Size=0, but capacity preserved
-
-    // Now push_back uses the monotonic buffer, not malloc
+    // 每个控制周期只清空逻辑内容，不释放容量、不重置 pool。
+    // reserve() 已在构造函数中完成，因此 push_back 不会触发分配。
+    contact_wrenches_.clear();
     for (int i = 0; i < n_contacts_; ++i) {
       contact_wrenches_.push_back(computeContactWrench(i));  // No malloc!
     }
@@ -767,6 +766,8 @@ private:
   int n_contacts_ = 4;
 };
 ```
+
+> ⚠️ **C++ 陷阱**：`pmr::monotonic_buffer_resource::release()` 会使所有已分配的内存失效。如果 `pmr::vector` 仍持有来自该 pool 的 storage，就不能在实时循环中调用 `release()`；`shrink_to_fit()` 也不是实时安全接口。需要每周期临时分配时，应把 `pmr` 容器放在局部作用域内，让容器先析构，再在非实时或受控位置 `release()`。
 
 **为什么用 `null_memory_resource` 作为 upstream?** 如果 monotonic buffer 耗尽且 upstream 是默认的 `new_delete_resource`,它会 fallback 到 `malloc`——这违反了实时约束。`null_memory_resource` 会直接抛异常(或在 `-fno-exceptions` 下 abort),让 bug 在测试时暴露而非在运行时静默分配。
 

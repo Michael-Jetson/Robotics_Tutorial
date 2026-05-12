@@ -1283,7 +1283,7 @@ posture_task.setReference(q_ref.computeNext())
 formulation.addMotionTask(posture_task, w=1.0, level=1, transition_duration=0.0)
 
 # ===== 5. 力矩限约束 =====
-tau_max = 87.0 * np.ones(robot.nv)
+tau_max = np.array([87, 87, 87, 87, 12, 12, 12], dtype=float)  # Panda: J1-4=87Nm, J5-7=12Nm
 tau_min = -tau_max
 actuator_bounds = tsid.TaskActuationBounds("tau_bounds", robot)
 actuator_bounds.setBounds(tau_min, tau_max)
@@ -1484,6 +1484,7 @@ public:
         
         writeBaseVel(base_vel_cmd);
         writeArmTorque(arm_tau);
+        return controller_interface::return_type::OK;
     }
 };
 ```

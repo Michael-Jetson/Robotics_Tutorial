@@ -1753,7 +1753,7 @@ D09 新增:
 | ros2_control 官方文档 "Multi-interface Robot" | ⭐⭐ | 多接口/多控制器配置 |
 | Coleman et al. (2014) "Reducing the Barrier to Entry of Complex Robotic Software: a MoveIt! Case Study" | ⭐⭐⭐ | MoveIt 的设计哲学 |
 | MoveIt Task Constructor GitHub Wiki | ⭐⭐⭐ | MTC 的 stage 类型和用法 |
-| Aertbelien et al. (2025) "Simplifying ROS2 Controllers" arXiv 2601.08514 | ⭐⭐⭐⭐ | 模块化参考生成器 |
+| Aertbelien et al. (2026) "Simplifying ROS2 Controllers" arXiv 2601.08514 | ⭐⭐⭐⭐ | 模块化参考生成器 |
 | PickNik MoveIt Pro 文档 | ⭐⭐⭐ | 双臂 MTC 工业化参考 |
 
 ## 🔧 故障排查手册

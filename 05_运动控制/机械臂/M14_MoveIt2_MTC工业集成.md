@@ -147,7 +147,7 @@ planner_instance.reset(
    现象：MoveIt2 启动时报 "Failed to load plugin"
    根本原因：pluginlib 通过 plugin.xml 中的 path 属性找 .so 文件
    正确做法：确保 plugin.xml 的 path 与 CMakeLists.txt 的 target 名一致
-   自检方法：pluginlib_list --package moveit_core 列出已注册插件
+   自检方法：ros2 plugin list 列出已注册插件
 ```
 
 ### 练习
@@ -365,24 +365,6 @@ if plan_result:
 | 调试 | Python debugger 更方便 | gdb/lldb |
 
 ### ⚠️ 常见陷阱
-
-```
-⚠️ 编程陷阱：MoveGroupInterface 规划前未设置 start state
-   错误做法：直接 setPoseTarget + plan，不设置起始状态
-   现象：规划从错误位置开始或失败
-   根本原因：默认 start state 可能是过时的
-   正确做法：
-     move_group.setStartStateToCurrentState();
-     move_group.setPoseTarget(target_pose);
-     move_group.plan(my_plan);
-```
-
-```
-💡 概念误区：认为 MoveItCpp 一定比 MoveGroupInterface 快
-   新手想法："进程内调用一定更快"
-   实际上：规划本身耗时（OMPL 搜索 100ms-2s）远大于通信开销（1-10ms）。
-          MoveItCpp 的优势只有在高频重规划时才显著。
-```
 
 ```
 ⚠️ 编程陷阱：Python API 中忘记处理 plan() 返回 None
@@ -1127,14 +1109,6 @@ OMPL 输出的路径只有路径点的关节位置，没有时间信息。时间
 Ruckig 相比 TOTG 的关键优势是**jerk 限制**——这意味着加速度的变化是连续的，不会出现突变，对真实硬件更友好（减少机械冲击和振动）。
 
 ### ⚠️ 常见陷阱
-
-```
-🧠 思维陷阱：认为"最新/最快的规划器一定最好"
-   新手想法："cuMotion 比 OMPL 快 60x，应该总是用 cuMotion"
-   实际上：cuMotion 需要 GPU，且对碰撞场景有特定要求。
-          对于大多数桌面 pick-and-place，OMPL RRT-Connect 100ms
-          内就能给出可行路径。选择规划器应基于场景需求。
-```
 
 ```
 ⚠️ 编程陷阱：时间参数化失败导致轨迹无法执行

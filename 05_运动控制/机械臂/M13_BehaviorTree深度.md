@@ -109,9 +109,9 @@ BT 用**树状结构 + 异步 tick** 替代 FSM 的**图状结构 + 状态转移
 
 ### 历史背景
 
-行为树最初由游戏 AI 领域发展而来——2004 年 Halo 2 的 AI 系统使用了早期形式的 BT。2005 年 Damian Isla 在 GDC（游戏开发者大会）上正式提出了 BT 的概念框架。此后 BT 被 Unreal Engine（2012）等主流游戏引擎采纳为标准 AI 架构。
+行为树最初由游戏 AI 领域发展而来——2004 年 Halo 2 的 AI 系统使用了与 BT 结构相似的层次化决策架构。2005 年 Damian Isla 在 GDC（游戏开发者大会）上介绍了该系统的设计思路，推动了 BT 概念的普及。此后 BT 被 Unreal Engine（2012）等主流游戏引擎采纳为标准 AI 架构。
 
-机器人领域的采用较晚。2014 年 Michele Colledanchise 和 Petter Ogren 将 BT 引入机器人控制，发表了理论分析论文并出版了专著 "Behavior Trees in Robotics and AI"（2018）。2019 年 Davide Faconti 开发了 BT.CPP 库（C++ 实现），随后被 ROS2 的 Nav2 导航栈采用为顶层任务编排框架，从此在 ROS 生态中广泛普及。
+机器人领域的采用较晚。2014 年 Michele Colledanchise 和 Petter Ögren 将 BT 引入机器人控制，发表了理论分析论文并出版了专著 "Behavior Trees in Robotics and AI"（2018）。2018 年 Davide Faconti 在 Eurecat 启动了 BT.CPP 库的开发（与 IIT 的 Colledanchise 合作），2019 年后逐步成熟并被 ROS2 的 Nav2 导航栈采用为顶层任务编排框架，从此在 ROS 生态中广泛普及。
 
 ### 选型决策流程
 

@@ -512,9 +512,9 @@ FDDP (Mastalli et al., Autonomous Robots 2022) 的关键创新:**允许轨迹中
 
 **Gap 的定义**:
 
-$$\bar{\mathbf{f}}_k = \bar{\mathbf{x}}_{k+1} - f_k(\bar{\mathbf{x}}_k, \bar{\mathbf{u}}_k)$$
+$$\bar{\mathbf{f}}_k = f_k(\bar{\mathbf{x}}_k, \bar{\mathbf{u}}_k) - \bar{\mathbf{x}}_{k+1}$$
 
-如果 $\bar{\mathbf{f}}_k = 0$,则第 $k$ 步满足动力学(可行)。如果 $\bar{\mathbf{f}}_k \neq 0$,则存在 gap。（此定义与 Mastalli et al., 2022 一致：gap = 名义下一状态 $-$ 动力学预测。）
+如果 $\bar{\mathbf{f}}_k = 0$,则第 $k$ 步满足动力学(可行)。如果 $\bar{\mathbf{f}}_k \neq 0$,则存在 gap。（此定义与 Mastalli et al., 2022 一致：gap = 动力学预测 − 名义下一状态。$\bar{\mathbf{f}}_k = 0$ 表示满足动力学（可行）。）
 
 ```
 Single-shooting (经典 DDP):           Multiple-shooting (FDDP 允许):
@@ -1265,13 +1265,18 @@ N = N_phase * len(trot_phases)  # total steps
 running_models = []
 
 for phase in trot_phases:
+    # 从零位形计算各脚的标称位置
+    pin.forwardKinematics(rmodel, rdata, q0)
+    pin.updateFramePlacements(rmodel, rdata)
+    nominal_foot_pos = {idx: rdata.oMf[foot_ids[idx]].translation.copy() for idx in range(4)}
+
     for step in range(N_phase):
         # Create contact model
         contacts = crocoddyl.ContactModelMultiple(state, actuation.nu)
         for idx in phase["stance"]:
             contact = crocoddyl.ContactModel3D(
                 state, foot_ids[idx],
-                np.array([0., 0., 0.]),  # contact position reference
+                nominal_foot_pos[idx],  # 各脚的标称接触位置（由正运动学计算）
                 pinocchio.LOCAL_WORLD_ALIGNED,
                 actuation.nu,
                 np.array([0., 50.])  # Baumgarte gains

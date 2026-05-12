@@ -1971,7 +1971,7 @@ for q_step in q_trajectory:
 | **M02 动力学库对比** | 1.4 四大库对比 | 在同一 URDF 上横向测试 |
 | **M03 IK 求解器深度** | 7 雅可比 + 速度级 IK | 从速度级 IK 扩展到位置级 |
 | **M06 自动微分** | 4 标量参数化 + 11 解析导数 | CppAD/CasADi 深度集成 |
-| **M14 MoveIt2 集成** | 5 URDF 加载 + 12 碰撞检测 | MoveIt2 底层调用 Pinocchio |
+| **M14 MoveIt2 集成** | 5 URDF 加载 + 12 碰撞检测 | MoveIt2 可通过 pick-ik 等插件调用 Pinocchio |
 
 ---
 

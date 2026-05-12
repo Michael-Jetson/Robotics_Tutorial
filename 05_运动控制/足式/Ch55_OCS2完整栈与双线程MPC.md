@@ -311,6 +311,10 @@ WBC (Ch53) 或 PD 控制器: 跟踪 MPC 输出
 
 > **💡 洞察**: 注意数据流中**没有一步涉及"手动调 PID"**——MPC 直接输出最优前馈力和反馈增益。WBC 负责把 Centroidal 层面的力分配到关节。这就是"规划即控制"的思想。
 
+> 💡 **为什么 WBC 不够——MPC 的动机**
+>
+> WBC 基于浮动基逆动力学，考虑了完整的机器人动力学模型，但它只求解**当前瞬时**的最优关节力矩。这意味着 WBC 无法为未来做准备：在支撑相的后半段，WBC 不会提前为即将到来的飞行相调整力分配；在飞行相后半程，WBC 也不会为着地冲击做预准备。MPC 通过在时间轴上前瞻，弥补了这一"短视"缺陷。
+
 #### 55.2.3 各层关键文件与类
 
 | 层级 | 关键文件 | 核心类 | 用户需要关心? |
@@ -412,6 +416,8 @@ struct OptimalControlProblem {
   ModeScheduleManagerPtr modeScheduleManagerPtr;
 };
 ```
+
+> **版本提示**：以上结构基于 OCS2 早期 API。字段名可能随版本变化，请以 `ocs2_oc/include/ocs2_oc/oc_problem/OptimalControlProblem.h` 为准。
 
 **容器 + 命名查找** 模式:
 
@@ -1815,15 +1821,14 @@ SQP 算法
 #### 阶段 1: OCS2 环境搭建 (4-6 小时)
 
 ```bash
-# 1. 安装依赖
-sudo apt install ros-humble-pinocchio ros-humble-hpp-fcl
-
-# 2. 克隆 OCS2
+# === ROS1 路线（OCS2 main 分支，推荐 Ubuntu 20.04 + Noetic） ===
 cd ~/catkin_ws/src
 git clone https://github.com/leggedrobotics/ocs2.git
 cd ocs2 && git checkout main
+# Pinocchio/hpp-fcl 通过 robotpkg apt 源安装（非 ros-* 包）
+# 参考: https://stack-of-tasks.github.io/pinocchio/download.html
 
-# 3. 安装 HPIPM 和 BLASFEO (如果未通过 apt 安装)
+# 安装 HPIPM 和 BLASFEO (如果未通过 apt 安装)
 git clone https://github.com/giaf/blasfeo.git
 cd blasfeo && mkdir build && cd build
 cmake .. -DCMAKE_INSTALL_PREFIX=/usr/local \
@@ -1833,23 +1838,31 @@ git clone https://github.com/giaf/hpipm.git
 cd hpipm && mkdir build && cd build
 cmake .. -DCMAKE_INSTALL_PREFIX=/usr/local && make -j$(nproc) && sudo make install
 
-# 4. 编译 OCS2
+# 编译 OCS2 (ROS1 使用 catkin)
 cd ~/catkin_ws
-colcon build --packages-up-to ocs2_legged_robot_ros
+catkin build ocs2_legged_robot_ros
+
+# === ROS2 路线（ocs2 ros2 分支，目标 Ubuntu 24.04 + Jazzy） ===
+# mkdir -p ~/colcon_ws/src && cd ~/colcon_ws/src
+# git clone -b ros2 https://github.com/leggedrobotics/ocs2.git
+# sudo apt install ros-jazzy-pinocchio ros-jazzy-hpp-fcl
+# cd ~/colcon_ws && colcon build
 ```
 
 #### 阶段 2: 运行官方示例 (2-3 小时)
 
 ```bash
-# 启动 MPC + Dummy 仿真
-ros2 launch ocs2_legged_robot_ros legged_robot_sqp.launch.py
+# ROS1 main 分支：启动 MPC + Dummy 仿真
+roslaunch ocs2_legged_robot_ros legged_robot_sqp.launch
 
 # 在另一个终端发送速度命令
-ros2 topic pub /cmd_vel geometry_msgs/msg/Twist \
+rostopic pub /cmd_vel geometry_msgs/Twist \
   "{linear: {x: 0.5, y: 0.0, z: 0.0}}"
 
 # 验收: RViz 中能看到四足行走的预测轨迹和接触力箭头
 ```
+
+如果你使用的是 `ros2` 分支，启动命令和消息类型需要切换到 ROS2 形式，例如 `ros2 launch ... .launch.py` 和 `geometry_msgs/msg/Twist`。不要把上面的 ROS1 main 分支安装步骤和 ROS2 运行命令混用。
 
 #### 阶段 3: 适配你的机器人 (8-12 小时)
 

@@ -358,11 +358,16 @@ class MpcnetInterface {
 
   // 单次推理（替代 MPC 求解）
   vector_t computeAction(const vector_t& observation) {
+    // Eigen VectorXd 是 double，需显式转为 float
+    Eigen::VectorXf obs_float = observation.cast<float>();
     torch::Tensor obs_tensor = torch::from_blob(
-        observation.data(), {1, observation.size()}, torch::kFloat32);
+        obs_float.data(), {1, obs_float.size()}, torch::kFloat32);
     torch::Tensor action = module_.forward({obs_tensor}).toTensor();
     // 推理时间：~100 微秒（MPC 求解：~20 ms）
-    return Eigen::Map<vector_t>(action.data_ptr<float>(), action.size(1));
+    float* out_ptr = action.data_ptr<float>();
+    vector_t result(action.size(1));
+    for (int i = 0; i < result.size(); ++i) result[i] = static_cast<double>(out_ptr[i]);
+    return result;
   }
 
  private:
@@ -507,7 +512,7 @@ Day 17: 考虑用 RL 学权重...
 
 He Li 和 Patrick M. Wensing 于 2024 年投稿 IEEE Transactions on Robotics（T-RO），2025 年正式见刊："Cafe-MPC: A Cascaded-Fidelity Model Predictive Control Framework with Tuning-Free Whole-Body Control"（Vol. 41, pp. 837-856, 2025）。
 
-**重要更正**：骨架文档中将作者写为 "Chignoli et al."，这是**错误的**。正确作者是 **He Li 和 Patrick M. Wensing**（University of Notre Dame）。本章已根据互联网调研修正此错误——这正是 Rule 11.1（外部调研）要防止的张冠李戴问题。
+**文献勘误**：Cafe-MPC 的作者是 **He Li 和 Patrick M. Wensing**（University of Notre Dame），不是某些二手资料中误写的 "Chignoli et al."。引用该工作时应以 T-RO 论文和作者主页为准。
 
 ### VWBC 的数学形式化
 

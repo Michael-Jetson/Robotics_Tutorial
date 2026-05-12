@@ -35,7 +35,7 @@
 1. **解释** PREEMPT_RT 已于 2024 年 11 月进入 Linux 6.12 主线的里程碑意义，理解这对机器人实时编程的影响
 2. **背诵** RT 安全 C++ 编程的完整禁区清单——哪些操作在 RT 线程中绝对禁止，哪些是安全的
 3. **配置** `SCHED_FIFO` + `mlockall` + `EIGEN_RUNTIME_NO_MALLOC` 的标准三件套
-4. **使用** realtime_tools 包的三大核心组件：RealtimeBuffer、RealtimePublisher、LockFreeQueue
+4. **使用** realtime_tools 包的三大核心组件：RealtimeBuffer、RealtimePublisher、LockFreeSPSCQueue（及 LockFreeMPMCQueue）
 5. **理解** 优先级反转问题和优先级继承 mutex 的解法
 6. **精读** libfranka 的 1 kHz 实时控制接口，理解 callback 风格的 RT 安全设计
 7. **对比** 机械臂与足式机器人在实时工程上的异同
@@ -431,7 +431,7 @@ RT 内核:     max latency = 20-50 us   ← 1 kHz 循环安全
 >
 > **根本原因**：**优先级反转**——高优先级 RT 线程等待低优先级非 RT 线程释放 mutex
 >
-> **正确做法**：使用 `realtime_tools::RealtimeBuffer`（无锁双缓冲）或 `std::atomic`
+> **正确做法**：使用 `realtime_tools::RealtimeBuffer`（RT 端非阻塞读取，内部实现以当前版本为准）或 `std::atomic`
 
 ### 练习
 
@@ -729,7 +729,7 @@ taskset -c 2 ./my_rt_controller
 用无锁? → RT 线程永不阻塞!  ✅
 ```
 
-### 5.2 RealtimeBuffer<T>——无锁双缓冲
+### 5.2 RealtimeBuffer<T>——RT 端非阻塞读取
 
 ```cpp
 #include <realtime_tools/realtime_buffer.h>
@@ -765,7 +765,7 @@ void update() {
 }
 ```
 
-**内部原理**：双缓冲 + atomic pointer swap。非 RT 端写"后台"缓冲区，通过 `std::atomic` 交换指针使其成为"前台"。RT 端始终读"前台"——无 mutex，无等待。
+**实现提醒**：`RealtimeBuffer` 的价值在于给 RT 线程提供非阻塞读取接口，而不是承诺某一种固定的内部锁实现。不同 `realtime_tools` 版本可能在内部使用 mutex、try-lock 或其它同步细节；工程上只依赖它的公开 API 语义，不依赖内部实现。
 
 **RT 细节**：不要在这里用 `RealtimeBuffer<Eigen::VectorXd>` 再在 `update()` 中 `auto cmd = *readFromRT()`。`VectorXd` 持有堆内存，动态大小对象的复制/临时变量可能触发分配或不可控复制成本。DOF 固定时用 `Eigen::Matrix<double, 7, 1>`；DOF 可变时用 `std::array<double, MAX_DOF>` 加有效长度，或在配置阶段完成所有缓冲区预分配。
 
@@ -983,7 +983,7 @@ private:
 ### 练习
 
 1. ⭐ 用 `RealtimeBuffer<std::array<double, 7>>` 实现 subscriber→RT 循环的数据传递。
-2. ⭐⭐ 精读 `realtime_buffer.h`（约 100 行）。画时序图解释 atomic pointer swap。
+2. ⭐⭐ 精读当前版本的 `realtime_buffer.h`。画出 `writeFromNonRT()` 与 `readFromRT()` 的公开 API 时序图，并标注 RT 端为什么不能等待非 RT 线程。
 3. ⭐⭐ 用 `RealtimePublisher` 在 1 kHz 循环中发布 `/joint_states`。用 `ros2 topic hz` 观察实际频率。
 
 ---

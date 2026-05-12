@@ -493,7 +493,7 @@ cuRobo 本体许可证: 以仓库 LICENSE 为准（公开仓库通常为 Apache-
   - 商用集成: Isaac ROS cuMotion、Isaac Sim、NVIDIA 平台 SDK 和产品分发方式需另审
 
 开源替代方案:
-  - VAMP (BSD-3): CPU SIMD 加速, 完全开源, 可自由商用
+  - VAMP (Apache-2.0): CPU SIMD 加速, 完全开源, 可自由商用
   - OMPL 风格工作流 + VAMP: 需要显式桥接状态表示、FK/碰撞模型
     和 StateValidityChecker，不能假设安装 OMPL 后自动启用 SIMD
 ```
@@ -1058,7 +1058,7 @@ OMPL 2.x 本身也在演进新的状态空间和约束规划能力；这些能�
 | **吞吐** | 中 (单次快, 但不能大规模并行) | 高 (批量规划、多目标搜索) |
 | **完整度** | 仅采样规划 (需另加 M08 优化) | **全栈** (IK+碰撞+优化+参数化) |
 | **部署** | 嵌入式友好 (ARM Cortex-A, Jetson CPU) | 需 GPU (Jetson GPU / 桌面 GPU) |
-| **许可证** | **BSD-3** (完全开源, 可商用) | cuRobo 本体开源（通常 Apache-2.0）；依赖、示例资产和商用集成另审 |
+| **许可证** | **Apache-2.0** (完全开源, 可商用) | cuRobo 本体开源（通常 Apache-2.0）；依赖、示例资产和商用集成另审 |
 | **最佳场景** | 单臂快速重规划、嵌入式、无GPU | 多臂并行、复杂碰撞、GPU 可用 |
 
 ### 决策流程
@@ -1419,7 +1419,7 @@ while robot_running:
 | 多臂协同 | 静态/半动态 | 100ms | CPU | **VAMP-MR** |
 | MoveIt2 标准集成 | 任意 | 200ms | 任意 | OMPL/MoveIt 默认；按模型显式桥接 VAMP |
 | Isaac Sim 仿真 | 虚拟 | 实时 | GPU | cuRobo + Isaac Sim |
-| 商业产品化 | 任意 | 任意 | 任意 | VAMP (BSD) 或 Isaac ROS |
+| 商业产品化 | 任意 | 任意 | 任意 | VAMP (Apache-2.0) 或 Isaac ROS |
 
 ### ⚠️ 常见陷阱
 
@@ -1484,7 +1484,7 @@ while robot_running:
 | NVIDIA CUDA Programming Guide Ch3-5 | ⭐⭐ | CUDA 编程基础 |
 | Intel Intrinsics Guide (software.intel.com) | ⭐⭐ | AVX2 指令参考 |
 | cuRobo GitHub NVlabs/curobo | ⭐⭐ | 源码和文档 |
-| VAMP GitHub KavrakiLab/vamp | ⭐⭐ | 源码 (BSD-3, C++20) |
+| VAMP GitHub KavrakiLab/vamp | ⭐⭐ | 源码 (Apache-2.0, C++20) |
 | Isaac ROS cuMotion 文档 | ⭐⭐ | MoveIt2 集成指南 |
 | Pan et al., "FCL", ICRA 2012 | ⭐⭐ | 传统碰撞检测参考 (M04 复习) |
 
