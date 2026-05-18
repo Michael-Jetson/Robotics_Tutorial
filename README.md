@@ -101,3 +101,13 @@ You are free to:
 
 Under the following terms:
 - **Attribution** — You must give appropriate credit, provide a link to the license, and indicate if changes were made.
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=Michael-Jetson%2FRobotics_Tutorial&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=Michael-Jetson/Robotics_Tutorial&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=Michael-Jetson/Robotics_Tutorial&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=Michael-Jetson/Robotics_Tutorial&type=date&legend=top-left" />
+ </picture>
+</a>
