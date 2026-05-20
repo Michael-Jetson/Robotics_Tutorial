@@ -1669,6 +1669,93 @@ Level 5: 策略训练 + 部署
 
 > **本质洞察**：Mini-DualArm 项目的核心价值不是最终的成功率数字——而是你在集成过程中获得的**系统思维**：理解模块间如何交互、时序如何协调、错误如何传播。这种思维方式比任何单一算法的知识都更有长期价值。
 
+> **跨领域类比——集成调试与医学诊断**：Mini-DualArm 的分层调试过程（Level 0 → Level 5）与临床医学的诊断流程惊人地相似。当患者（系统）表现出症状（ACT 成功率低），新手医生（工程师）倾向于直接考虑复杂疾病（"策略需要更多数据"），而有经验的医生会先检查生命体征（底层健康）：体温/血压/心率（关节通信/控制频率/延迟）。90% 的"疑难杂症"最终被追溯到基础问题（感染→抗生素 vs 环境参数错误→修正参数）。**先排除常见病因再考虑罕见病因**——这在系统调试和医学诊断中是同一条黄金法则。
+
+---
+
+## D10.11 Docker 部署与 ROS2 版本兼容性 ⭐⭐
+
+### ROS2 Iron/Jazzy/Rolling 兼容性 ⭐⭐
+
+Mini-DualArm 项目默认基于 ROS2 Humble（LTS，2027 年 EOL）。但随着 ROS2 版本演进，以下兼容性问题需要关注：
+
+| 组件 | Humble | Iron | Jazzy | 注意事项 |
+|------|--------|------|-------|---------|
+| MoveIt2 | 2.5.x | 2.7.x | 2.9.x | Jazzy 引入 Parallel Planning API |
+| ros2_control | 2.x | 3.x | 4.x | 3.x 重构了 HardwareInterface 生命周期 |
+| MuJoCo plugin | mujoco_ros2_control 0.3 | 0.4 | 0.5 | 0.4+ 支持多实例 |
+| Gazebo | Fortress | Harmonic | Harmonic | Iron 开始切换到 Gazebo Harmonic |
+| nav2 (移动底盘) | 1.1.x | 1.2.x | 1.3.x | 仅 Mobile ALOHA 需要 |
+
+**关键迁移注意事项**：
+
+1. **ros2_control 3.x 的 Breaking Change**：`HardwareInterface` 的 `read()` 和 `write()` 方法签名从无参变为接受 `rclcpp::Time` 和 `rclcpp::Duration` 参数。所有自定义硬件接口需要修改
+2. **MoveIt2 Jazzy 的新 API**：`MoveGroupInterface` 的 `plan()` 返回类型从 `MoveItErrorCode` 改为 `std::pair<MoveItErrorCode, RobotTrajectory>`
+3. **TF2 API 调整**：Jazzy 中部分 TF2 API 头文件和接口有调整，详见 ROS 2 迁移指南
+
+### Docker 部署最佳实践 ⭐⭐
+
+Docker 容器化是确保 Mini-DualArm 环境可复现的最可靠方式——避免"在我的机器上能跑"问题。
+
+**推荐的 Dockerfile 结构**：
+
+```dockerfile
+# 基础镜像：ROS2 Humble + CUDA (ACT 推理需要 GPU)
+FROM ros:humble-perception-jammy AS base
+
+# 系统依赖
+RUN apt-get update && apt-get install -y \
+    ros-humble-moveit \
+    ros-humble-ros2-control \
+    ros-humble-ros2-controllers \
+    python3-pip \
+    && rm -rf /var/lib/apt/lists/*
+
+# MuJoCo
+RUN pip3 install mujoco==3.1.0 mujoco-python-viewer
+
+# ACT 依赖
+RUN pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+
+# 工作空间
+WORKDIR /ros2_ws
+COPY src/ src/
+RUN . /opt/ros/humble/setup.bash && \
+    colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
+
+# GPU 支持入口
+ENV NVIDIA_VISIBLE_DEVICES all
+ENV NVIDIA_DRIVER_CAPABILITIES compute,utility,graphics
+```
+
+**Docker Compose 双服务架构**（推荐将仿真和控制分离）：
+
+```yaml
+# docker-compose.yml
+services:
+  sim:
+    build: .
+    command: ros2 launch mini_dualarm sim.launch.py
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix  # GUI 支持
+    environment:
+      - DISPLAY=${DISPLAY}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]
+  
+  control:
+    build: .
+    command: ros2 launch mini_dualarm control.launch.py
+    depends_on:
+      - sim
+    network_mode: "host"  # 低延迟 ROS2 通信
+```
+
+**工程建议**：(1) 将 `colcon build` 的结果缓存为 Docker layer（build 层和 runtime 层分离）；(2) 使用 `--network=host` 避免 DDS 在容器间发现节点的问题；(3) GPU 渲染（MuJoCo/Gazebo）需要 `nvidia-container-toolkit`。
+
 ---
 
 ## 本章小结
@@ -1682,6 +1769,7 @@ Level 5: 策略训练 + 部署
 | 遥操作采集 | GELLO 式镜像 + LeRobot 录制 | ⭐⭐ | D08 |
 | ACT 部署 | 训练 → 推理节点 → 部署 | ⭐⭐⭐ | D04, D08 |
 | 性能对比 | 三方法定量评估框架 | ⭐⭐ | — |
+| Docker/版本兼容 | Humble→Jazzy 迁移、Docker Compose 部署 | ⭐⭐ | — |
 
 ## 累积项目：本章是终点
 

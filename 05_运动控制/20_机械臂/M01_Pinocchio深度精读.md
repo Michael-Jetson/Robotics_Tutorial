@@ -6,7 +6,7 @@
 >
 > **适用范围**：本章以 **固定基座机械臂** 为主线（vs 足式/30_Pinocchio深度精读 浮动基座腿足），但所有 API 和算法对腿足同样适用——浮动基座只是多了一个 `JointModelFreeFlyer` 根关节。
 >
-> **前置依赖**：P01（URDF/Xacro 建模）、Ch14/Ch29（CRTP 与设计模式）、Ch11（Eigen 对齐与内存布局）
+> **前置依赖**：P01（URDF/Xacro 建模）、02_基础/C++ 高级（CRTP 与设计模式）、02_基础/Eigen 线性代数（对齐与内存布局）
 >
 > **下游章节**：M02（动力学库对比）、M03（IK 求解器深度）、M06（自动微分与代码生成）、M14（MoveIt2 / MTC 集成）
 >
@@ -23,7 +23,7 @@
 | 1 | **刚体动力学方程**：写出拉格朗日形式 $M(q)\ddot{q} + C(q,\dot{q})\dot{q} + g(q) = \tau$，解释每一项的物理含义（惯量、科里奥利/离心力、重力）。$M(q)$ 的对称正定性从何而来？ | 经典力学 / 机器人学导论 |
 | 2 | **SE(3) 齐次变换**：给定 $R \in SO(3)$、$t \in \mathbb{R}^3$，写出 $T \in SE(3)$ 及其逆 $T^{-1} = \begin{bmatrix} R^\top & -R^\top t \\ 0 & 1 \end{bmatrix}$。为什么不是简单的矩阵转置？ | 李群基础 / Sophus 章节 |
 | 3 | **URDF 关节类型**：`revolute` / `continuous` / `prismatic` / `fixed` / `floating` / `planar` 各自的自由度是多少？`revolute` 和 `continuous` 的区别是什么？ | P01 URDF/Xacro 建模 |
-| 4 | **CRTP 模式**：写出 `template<class Derived> class Base { ... }` 的 CRTP 骨架，解释它如何在编译期实现"静态多态"并消除虚函数开销。 | Ch14 CRTP 与设计模式 |
+| 4 | **CRTP 模式**：写出 `template<class Derived> class Base { ... }` 的 CRTP 骨架，解释它如何在编译期实现"静态多态"并消除虚函数开销。 | 02_基础/C++ 高级（CRTP 与设计模式） |
 | 5 | **线程安全**：什么是 data race？为什么 `const` 引用 + 不可变对象能避免 data race？在 MPC 求解器中，为什么需要"一个 Model 多个 Data"？ | C++ 并发基础 |
 
 ---
@@ -132,6 +132,12 @@ $$M(q) = \begin{bmatrix} I_1 + m_1 l_{c1}^2 + I_2 + m_2(l_1^2 + l_{c2}^2 + 2l_1 
 ```
 
 Pinocchio 不是仿真器（不像 MuJoCo / Isaac），而是一个 **纯计算库**：给定关节状态，输出运动学/动力学量。这种"无状态计算"设计使它天然适合嵌入到任何控制/规划框架中。
+
+> **跨领域类比**：Pinocchio 之于 MPC/控制框架，就像 BLAS/LAPACK 之于科学计算——它提供高度优化的基础计算原语（FK、RNEA、ABA），上层框架（Crocoddyl、OCS2、TSID）在其上构建算法。你不会用 BLAS 直接写应用程序，同样你也不会只用 Pinocchio 完成一个控制系统——但离开它，上层框架就失去了计算基础。
+
+> **反事实推理**：如果不使用专门的动力学引擎而是手写动力学代码会怎样？对于 2-DOF 平面臂，手写 $M(q)$ 可以接受（约 30 分钟）。但对于 7-DOF Franka Panda，惯量矩阵的每个元素包含数十项三角函数嵌套，手写至少一周，且极易出错——一个符号错误就导致控制器不稳定。更关键的是，MPC 需要 $\partial \tau / \partial q$ 等解析梯度——手写梯度的工作量比动力学本身还大。Pinocchio 的解析导数功能在几微秒内完成这一切。
+
+> **本质洞察**：Pinocchio 的 Model/Data 分离模式不仅仅是"好的软件工程"——它体现了**物理规律的数学性质**：运动方程的结构（拓扑连接、关节类型）是常量（Model），而具体的数值状态（位型、速度）是变量（Data）。分离常量和变量使得多线程并行成为自然的推论：多个控制器/MPC 求解器共享同一物理结构，各自维护独立的状态。
 
 ### 练习
 
@@ -1976,3 +1982,66 @@ for q_step in q_trajectory:
 ---
 
 > **本章核心收获**：Pinocchio 不仅是一个动力学库，它的 Model/Data 分离 + CRTP + 标量参数化三大设计决策值得每个 C++ 机器人工程师学习。理解这些设计模式，比记住 API 调用更重要——因为你会在 Crocoddyl、OCS2、TSID 等下游框架中反复遇到相同的设计哲学。
+
+---
+
+## 累积项目：本章新增模块
+
+本章是累积项目 **mini-manip** 的第二个模块（承接 P01 的 URDF 建模）。
+
+### 本章新增
+
+```
+mini-manip/
+├── urdf/                          ← P01 已完成
+├── src/
+│   └── load_panda.cpp             ← M01 新增：加载 URDF + FK/ID/CRBA 完整 pipeline
+├── include/
+│   └── pinocchio_utils.hpp        ← M01 新增：Pinocchio 常用操作封装
+├── python/
+│   └── panda_pipeline.py          ← M01 新增：Python 版完整 pipeline + meshcat
+└── CMakeLists.txt                 ← M01 更新：添加 Pinocchio + Coal 依赖
+```
+
+### 本章具体任务
+
+1. 用 C++ 加载 P01 章创建的 URDF，打印模型信息（nq, nv, 关节名称、帧列表）
+2. 实现 FK → 雅可比 → RNEA → ABA → CRBA 的完整调用链
+3. 实现速度级 IK（阻尼伪逆），在 meshcat 中可视化
+4. 测量各算法耗时，输出 benchmark 数据
+
+### 与后续章节的连接
+
+| 后续章节 | 新增模块 |
+|---------|---------|
+| M02 动力学库对比 | 添加 RBDL 实现，构建多库对比实验台 |
+| M03 IK 求解器 | 扩展速度级 IK 为位置级，集成多种求解器 |
+| M04 碰撞检测 | 添加 Coal 碰撞管线，实现碰撞检查接口 |
+
+---
+
+## 延伸阅读
+
+| 资源 | 难度 | 说明 |
+|------|:---:|------|
+| Carpentier et al. (2019) "The Pinocchio C++ Library" | ⭐⭐ | Pinocchio 架构论文，INRIA 官方 |
+| Featherstone (2008) "Rigid Body Dynamics Algorithms" | ⭐⭐⭐ | RNEA/ABA/CRBA 的算法理论基础 |
+| Pinocchio 3.x 官方文档 + API reference | ⭐⭐ | `gepettoweb.laas.fr/doc/stack-of-tasks/pinocchio/` |
+| Pinocchio GitHub 仓库 `examples/` 目录 | ⭐ | 官方示例代码，覆盖 FK/IK/ID/碰撞 |
+| Carpentier & Mansard (2018) "Analytical Derivatives of Rigid Body Dynamics Algorithms" | ⭐⭐⭐ | RNEA/ABA 解析导数的数学推导 |
+| Coal (hpp-fcl) 碰撞检测文档 | ⭐⭐ | Pinocchio 配套碰撞库 |
+| eigenpy 文档 | ⭐ | Python-C++ 零拷贝绑定机制 |
+| Pinocchio 3.x 迁移指南 | ⭐⭐ | 2.x → 3.x API 变更清单 |
+
+---
+
+## 🔧 故障排查手册
+
+| 症状 | 可能原因 | 排查步骤 | 相关章节 |
+|------|---------|---------|---------|
+| `buildModel` 报错 "invalid joint type" | URDF 中使用了 Pinocchio 不支持的关节类型 | 1. 检查 URDF 中是否有 `planar`/`floating` 关节 2. Pinocchio 需要显式指定 `JointModelFreeFlyer` 3. 将 `floating` 关节替换为 `buildModel` 的根关节参数 | §5 URDF 加载 |
+| CRBA 返回的 $M(q)$ 只有上三角有值 | Pinocchio CRBA 设计上只填充上三角 | 1. 用 `data.M.triangularView<StrictlyLower>() = data.M.transpose()...` 补全下三角 2. 或直接用 `selfadjointView<Upper>()` 做乘法 | §10 CRBA |
+| 多线程下 RNEA 结果不一致或出现 NaN | 多个线程共享同一个 `Data` 对象 | 1. 确认每个线程有独立的 `Data` 2. `Model` 可共享（const） 3. 用 ThreadSanitizer 检测 data race | §2.3 线程安全 |
+| FK 结果中末端位姿与预期不符 | 忘记调用 `updateFramePlacements` 或使用了错误的帧 ID | 1. 确认调用了 `forwardKinematics` + `updateFramePlacements` 2. 区分 `data.oMi`（关节帧）和 `data.oMf`（操作帧） 3. 用 `model.getFrameId("frame_name")` 获取正确 ID | §6 FK 深入 |
+| CppAD 版本 Pinocchio 比 double 版慢 100 倍 | AD tape 录制在循环中重复执行 | 1. 将 `CppAD::Independent()` 移到循环外 2. 录制一次 tape，多次 Forward/Reverse 3. 考虑用 CppADCodeGen 生成原生代码 | §4 标量参数化 |
+| Pinocchio 3.x 编译失败 "Coal not found" | 缺少 Coal（原 hpp-fcl）碰撞检测依赖 | 1. `conda install coal` 或从源码编译 2. 设置 `CMAKE_PREFIX_PATH` 指向安装路径 3. 确认 CMake 中 `find_package(coal)` 通过 | §12 碰撞检测 |

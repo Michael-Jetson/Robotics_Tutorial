@@ -3,7 +3,7 @@
 # M03 IK求解器——从解析解到优化式逆运动学
 
 > **性质**: ❌ 纯机械臂 | **时长**: 1.5 周 (15-20 学时)
-> **前置**: M01(Pinocchio 深度精读), M02(动力学库对比); v8 Ch19-20(并发)
+> **前置**: M01(Pinocchio 深度精读), M02(动力学库对比); 02_基础/C++ 并发编程
 > **下游**: M04(碰撞检测) → M07(OMPL采样规划) → M14(MoveIt2 MTC 集成)
 
 ---
@@ -22,11 +22,30 @@
 
 ---
 
+## 本章目标
+
+学完本章后，你应该能够：
+
+1. **形式化** 逆运动学问题——理解解的存在性、唯一性、冗余分解，能判断给定机械臂结构是否有闭式解
+2. **选型** 七大 IK 求解器（opw / IKFast / ik_geo / KDL / TRAC-IK / pick-ik / BioIK），根据精度、速度、成功率和约束需求做出合理选择
+3. **实现** 基于 Pinocchio 的阻尼 Jacobian IK 和零空间投影 IK，理解 DLS 阻尼因子对奇异性处理的作用
+4. **精读** TRAC-IK 的双线程竞速源码，理解 `std::thread` + `std::atomic` 在实时 IK 中的工程应用
+5. **配置** MoveIt2 的 IK 插件机制（pluginlib），能在 KDL / TRAC-IK / pick-ik / IKFast 之间零代码切换
+6. **理解** Differentiable IK 和 Learning-based IK 的前沿方向及其与传统方法的关系
+
+---
+
 ## M03.1 逆运动学问题形式化 ⭐
 
 ### 动机：为什么 IK 是机械臂的核心问题？
 
 用户告诉机器人："把杯子放到桌上 (x, y, z) 位置"——这是一个**任务空间**描述。但电机只认**关节角**。从任务空间到关节空间的映射，就是逆运动学（Inverse Kinematics, IK）。
+
+> **跨领域类比**：IK 问题类似于导航中的"路径逆问题"。GPS 给你目标坐标（任务空间），但你的车只接受方向盘角度和油门（关节空间）。正运动学 FK 就是"给定一系列方向盘操作，车到了哪里"——这很容易计算。IK 是反过来——"要到某个位置，应该怎么打方向盘"——这困难得多，因为可能有多条路径（多解），也可能根本到不了（无解）。
+
+> **反事实推理**：如果我们不做 IK 而直接在关节空间规划会怎样？这意味着用户必须自己指定 7 个关节角度——即使是经验丰富的机器人工程师也很难直觉地知道"把杯子放到桌上某点"对应什么关节角。更关键的是，任务空间的约束（末端沿直线移动、保持水平姿态）在关节空间中是高度非线性的耦合约束，直接在关节空间处理这些约束几乎不可行。IK 是连接"人类直觉"和"机器控制"的桥梁。
+
+> **本质洞察**：IK 的数学本质是一个**非线性方程组的逆映射问题**。正运动学 $FK: \mathbb{R}^n \to SE(3)$ 是一个光滑映射，但它通常不是双射——逆映射可能不存在（超出工作空间）、不唯一（多解）、或在奇异点处不连续。IK 的所有困难都根源于此。
 
 ### 形式化定义
 
@@ -1955,6 +1974,109 @@ M03 (IK 求解器)
 6. **Pieper, D.L.** (1968). *The Kinematics of Manipulators Under Computer Control*. PhD Thesis, Stanford University.
 7. **Siciliano, B.** (1991). *Kinematic Control of Redundant Robot Manipulators: A Tutorial*. Journal of Intelligent and Robotic Systems, 3, 201-212.
 8. **Starke, S. et al.** (2017). *Memetic Evolution for Generic Full-Body Inverse Kinematics in Robotics and Animation*. IEEE T-EC.
+
+---
+
+## M03.11 前沿方向：Differentiable IK 与 Learning-based IK ⭐⭐⭐⭐
+
+前十节覆盖了从解析解到优化式 IK 的完整经典方法谱系。近年来，可微分优化和深度学习为 IK 问题带来了新的求解范式——它们不是替代传统方法，而是在特定场景下提供互补的能力。
+
+### Differentiable IK——用自动微分求解 IK
+
+传统数值 IK 依赖 Jacobian 伪逆或 L-BFGS，但这些方法对目标函数的选择和调参敏感。Differentiable IK 的核心思想是：将 IK 问题嵌入一个可微优化框架，通过自动微分（AD）直接计算精确梯度，避免 Jacobian 伪逆的数值问题。
+
+**核心公式**：将 IK 视为隐式层（implicit layer）
+
+$$q^* = \arg\min_q \|FK(q) - T_{\text{target}}\|^2 + \lambda R(q)$$
+
+通过隐函数定理，可以求解 $\frac{\partial q^*}{\partial T_{\text{target}}}$——即目标位姿变化时最优关节角如何变化。这使得 IK 可以作为可微模块嵌入端到端的学习/优化管线中。
+
+**与传统方法的关系**：
+
+| 维度 | 传统 Jacobian IK | Differentiable IK |
+|------|----------------|-------------------|
+| 梯度来源 | 手工推导的 Jacobian $J(q)$ | AD 自动计算（CppAD/JAX/PyTorch） |
+| 目标函数 | 固定为 $\|J\dot{q} - v\|^2$ | 任意可微目标（含碰撞代价、操作性指标等） |
+| 求解器 | Newton-Raphson / DLS | 梯度下降 / L-BFGS / 任意一阶优化器 |
+| 可嵌入学习管线 | 不可微 | 可微——反向传播穿过 IK 层 |
+| 工具 | Pinocchio `computeFrameJacobian` | Pinocchio CppAD/CasADi, JAX, Theseus |
+
+**Theseus**（Meta AI, 2022）是目前最成熟的可微优化库之一，直接支持将 IK 作为可微层使用。
+
+### Learning-based IK——数据驱动的 IK
+
+传统 IK 求解器基于精确的运动学模型 $FK(q)$。Learning-based IK 的动机是：
+
+1. **模型不精确**：磨损、弹性变形、电缆拖拽导致实际 FK 与名义 FK 有偏差
+2. **约束复杂**：考虑碰撞、操作性、关节极限等约束的 IK 求解耗时
+3. **分布预测**：给定目标位姿，预测 IK 解的**分布**而非单一解
+
+典型方法包括：
+
+- **IKFlow**（Ames et al., 2022）：用 Normalizing Flows 学习 IK 解的条件分布 $p(q | T_{\text{target}})$，一次前向传播生成多样化的 IK 解
+- **Neural IK**：训练神经网络直接回归 $q = f_\theta(T_{\text{target}})$，推理速度极快（~10 $\mu$s），但精度依赖训练数据覆盖率
+
+> **本质洞察**：Learning-based IK **不是** 要替代传统 IK——它适合"需要快速生成多个候选解"的场景（如操作规划中的目标采样），而传统方法适合"需要高精度单一解"的场景（如实时伺服控制）。两者的关系是互补而非替代。
+
+### 练习
+
+1. ⭐⭐⭐ 用 Pinocchio CppAD 实现一个简单的 Differentiable IK：用 AD 自动计算 FK 误差对 $q$ 的梯度，然后用梯度下降求解。与手工 Jacobian 伪逆的结果对比。
+2. ⭐⭐⭐⭐ 调研 Theseus 或 JAX-based Differentiable IK 的实现，分析其在 GPU 上的批量 IK 求解性能。
+
+---
+
+## 累积项目：IK 求解器模块
+
+### 本章新增
+
+```
+mini-manip/
+├── src/
+│   ├── load_panda.cpp              ← M01
+│   ├── dynamics_benchmark.cpp      ← M02
+│   └── ik_solver.cpp               ← M03 新增：多种 IK 求解器统一接口
+├── include/
+│   ├── dynamics_interface.hpp      ← M02
+│   └── ik_interface.hpp            ← M03 新增：IK 求解器抽象接口
+├── config/
+│   └── ik_plugins.yaml             ← M03 新增：MoveIt2 IK 插件配置
+└── CMakeLists.txt                  ← M03 更新：添加 TRAC-IK / pick-ik 依赖
+```
+
+### 具体任务
+
+1. 实现 `IKInterface` 抽象类，封装 `solve(T_target) -> q` 接口
+2. 实现三个后端：Pinocchio DLS IK、TRAC-IK wrapper、pick-ik wrapper
+3. 编写 benchmark：随机采样 1000 个可达目标，对比三个后端的成功率和平均耗时
+4. （跨章综合题）结合 M01 的 FK 和 M02 的性能测量方法，验证 IK 解的 FK 还原精度
+
+---
+
+## 延伸阅读
+
+| 资源 | 难度 | 说明 |
+|------|:---:|------|
+| Beeson & Ames (2015) "TRAC-IK" | ⭐⭐ | 双线程竞速 IK 原论文，IEEE-RAS Humanoids |
+| Diankov (2010) "IKFast" PhD Thesis Ch4 | ⭐⭐⭐ | 符号消元代码生成的完整推导 |
+| Elias & Wen (2022/2025) "ik_geo" | ⭐⭐⭐ | 几何子问题分解——通用闭式 IK 的现代方法 |
+| Brandstotter et al. (2014) "OPW" | ⭐⭐ | 工业臂参数化闭式解 |
+| Siciliano (1991) "Kinematic Control of Redundant Manipulators" | ⭐⭐⭐ | 零空间投影和优先级控制的经典教程 |
+| Starke et al. (2017) "BioIK" | ⭐⭐⭐ | 进化算法 IK——无梯度全局搜索 |
+| Pieper (1968) PhD Thesis | ⭐⭐⭐⭐ | 闭式 IK 存在性的奠基工作 |
+| pick-ik GitHub + MoveIt2 文档 | ⭐⭐ | L-BFGS + Pinocchio 的现代 IK 实现 |
+| Lynch & Park (2017) "Modern Robotics" Ch6 | ⭐⭐ | IK 的教科书级讲解 |
+
+---
+
+## 🔧 故障排查手册
+
+| 症状 | 可能原因 | 排查步骤 | 相关章节 |
+|------|---------|---------|---------|
+| KDL IK 成功率极低（<50%） | Newton-Raphson 无随机重启，初始猜测陷入局部极值 | 1. 切换到 TRAC-IK（双线程竞速+随机重启） 2. 检查目标是否在工作空间内 3. 增大迭代次数不是根本解决方案 | M03.3-M03.4 |
+| TRAC-IK 在某些目标附近极慢（>10 ms） | SQP 线程在奇异构型附近收敛慢 | 1. 打印 SQP 迭代次数 2. 检查目标是否靠近工作空间边界 3. 适当放宽容差 $\epsilon$ | M03.4 |
+| IKFast 生成代码编译失败 | OpenRAVE 版本不兼容或机器人结构不满足代码生成条件 | 1. 确认机器人是 6-DOF 且满足 Pieper 条件 2. 使用 Docker 运行 OpenRAVE 3. 考虑改用 ik_geo（不依赖 OpenRAVE） | M03.5-M03.6 |
+| pick-ik 返回的解违反关节限位 | 优化问题中关节限位约束权重太低 | 1. 检查 `kinematics.yaml` 中的 `joint_limit_weight` 2. 增大约束权重 3. 检查 URDF 中的关节限位值是否正确 | M03.7 |
+| 零空间 IK 子任务与主任务冲突 | 零空间投影矩阵计算错误或优先级设置不当 | 1. 验证 $N = I - J^+ J$ 的幂等性（$N^2 = N$） 2. 打印主任务误差确认不被子任务干扰 3. 检查 Jacobian 坐标系是否一致 | M03.8 |
 
 ---
 

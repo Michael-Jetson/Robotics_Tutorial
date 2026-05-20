@@ -10,17 +10,17 @@
 |------|----|
 | **难度** | ⭐ |
 | **周数** | 1.0 周 |
-| **前置依赖** | v8 Ch31（ROS2 Launch + TF2） |
+| **前置依赖** | 02_基础/ROS2 Launch + TF2 基础 |
 | **共享标记** | ✅ 全方向共享 |
 
 ---
 
 ## 前置自测
 
-> 答不出 >= 2 题 → 先回 v8 Ch31 复习
+> 答不出 >= 2 题 → 先回 ROS2 基础章节复习
 
-1. **TF2 是什么**：ROS2 中 TF2 的作用是什么？`/tf` 和 `/tf_static` 话题的区别是什么？（答不出 → 回顾 v8 Ch31 TF2 部分）
-2. **Launch 文件**：ROS2 launch 文件的核心作用是什么？如何通过 launch 参数在运行时切换配置？（答不出 → 回顾 v8 Ch31 Launch 部分）
+1. **TF2 是什么**：ROS2 中 TF2 的作用是什么？`/tf` 和 `/tf_static` 话题的区别是什么？（答不出 → 回顾 ROS2 TF2 基础）
+2. **Launch 文件**：ROS2 launch 文件的核心作用是什么？如何通过 launch 参数在运行时切换配置？（答不出 → 回顾 ROS2 Launch 基础）
 3. **XML 基础**：XML 的标签(tag)、属性(attribute)、嵌套(nesting)各是什么？给出一个包含这三者的最小例子。（答不出 → 任意 XML 教程 10 分钟即可）
 4. **关节概念**：机械臂的"旋转关节"和"平移关节"在物理上有什么区别？一个 7-DOF 臂有几个独立运动自由度？（答不出 → 机器人学导论第 2 章）
 
@@ -38,7 +38,7 @@
 
 ---
 
-## P01.1 URDF XML Schema——机器人的统一描述语言
+## P01.1 URDF XML Schema——机器人的统一描述语言 ⭐
 
 ### 1.1 动机：为什么不能把机器人尺寸硬编码在代码里
 
@@ -61,6 +61,12 @@ const double link1_mass = 2.5;
 **问题 3：无法描述拓扑结构**。硬编码只能描述数值参数，无法表达"link2 通过一个旋转关节连接在 link1 上"这种结构信息。
 
 URDF（Unified Robot Description Format）正是为解决这些问题而生。它由 Willow Garage 为 PR2 机器人创建，至今是 ROS1/2 生态的标准机器人描述格式。一份 URDF 文件就是一个 single source of truth——ROS2、MoveIt2、Gazebo、MuJoCo（通过转换）、Drake、Isaac Sim 都能读取同一份文件。坐标约定遵循 **REP-103**：右手系，X 前、Y 左、Z 上，SI 单位（米/千克/弧度/秒）。
+
+> **跨领域类比**：URDF 之于机器人工具链，就像 HTML 之于 Web 浏览器。HTML 是一种声明式标记语言，描述"页面长什么样"，不同浏览器（Chrome / Firefox / Safari）各自渲染。URDF 描述"机器人长什么样"，不同工具链（RViz / Gazebo / MuJoCo）各自解析。相似之处在于：两者都不描述行为（HTML 不写业务逻辑，URDF 不写控制算法），都有限的表达能力需要扩展机制（HTML 有 CSS/JS，URDF 有 Xacro/Gazebo 插件）。不同之处在于：URDF 描述的对象有物理含义（惯量、关节限位），一个惯性参数错误就导致仿真爆炸，而 HTML 的 CSS 错误最多导致显示不好看。
+
+> **反事实推理**：如果 ROS 生态没有 URDF 这样的统一格式会怎样？每个工具都定义自己的格式——MoveIt 用 JSON、Gazebo 用 SDF、MuJoCo 用 MJCF——你的机器人描述会有 N 份，改一处必须同步 N-1 处。这不是假设——这正是 2009 年 URDF 诞生前的状况，也是至今非 ROS 生态（如纯 MuJoCo 项目）仍面临的痛点。
+
+> **本质洞察**：URDF 的核心价值不在于它的 XML 语法有多优雅（实际上很啰嗦），而在于它建立了一个**跨工具链的契约**——所有工具约定好"机器人描述长这样"，于是每个工具只需实现一个解析器，而不是 N 个格式互转器。
 
 ### 1.2 `<link>` 元素：视觉、碰撞、惯性三子树
 
@@ -234,13 +240,17 @@ urdf_to_graphviz two_link_arm.urdf   # 生成运动链 PDF 图
 
 ---
 
-## P01.2 Xacro 宏系统——让 URDF 可维护
+## P01.2 Xacro 宏系统——让 URDF 可维护 ⭐⭐
 
 ### 2.1 问题：原始 URDF 的重复灾难
 
 一个 7-DOF 机械臂的纯 URDF 文件通常超过 500 行，其中 70% 以上是结构几乎相同的 link/joint 定义——只有名字、尺寸、质量不同。每次修改一个 link 模板（比如碰撞几何的包络策略），你要手动改 7 处。这不是"不方便"的问题，而是"一定会出错"的问题。
 
 Xacro（XML macro）是 ROS 的 URDF 预处理器，提供四大机制消除重复。
+
+> **跨领域类比**：Xacro 之于 URDF，就像 C 预处理器（`#define`/`#include`/`#ifdef`）之于 C 源码。`xacro:property` 对应 `#define`（常量替换），`xacro:macro` 对应函数宏（参数化代码生成），`xacro:include` 对应 `#include`（文件包含），`xacro:if` 对应 `#ifdef`（条件编译）。不同的是，Xacro 内嵌 Python 表达式求值，比 C 预处理器的纯文本替换更强大——你可以在 `${}` 内写 `sin(pi/4)` 这样的数学运算。
+
+> **反事实推理**：如果不使用 Xacro 而直接手写纯 URDF 会怎样？一个 7-DOF 臂的纯 URDF 通常超过 500 行。假设你需要把所有 link 的碰撞几何从 mesh 改为简化凸包——你需要手动修改 7 个 link 的 `<collision>` 块。改到第 5 个时漏了一个属性，仿真中该 link 碰撞检测异常但日志里没有报错，你调试三天才发现。用 Xacro 的 macro，改一处模板即可全局生效。
 
 ### 2.2 `xacro:property`——变量与数学表达式
 
@@ -358,7 +368,7 @@ xacro robot.urdf.xacro robot_model:=ur5e > /tmp/robot.urdf
 
 ---
 
-## P01.3 惯性参数与 Mesh 管理
+## P01.3 惯性参数与 Mesh 管理 ⭐⭐
 
 ### 3.1 惯性参数的三条获取路径
 
@@ -440,7 +450,7 @@ my_robot_description/
 
 ---
 
-## P01.4 多格式转换——URDF 不是终点
+## P01.4 多格式转换——URDF 不是终点 ⭐⭐
 
 ### 4.1 为什么需要多格式
 
@@ -526,7 +536,7 @@ def generate_launch_description():
 
 ---
 
-## P01.5 `<transmission>` 与 ros2_control
+## P01.5 `<transmission>` 与 ros2_control ⭐⭐
 
 ### 5.1 `<ros2_control>` 标签：连接描述与硬件
 
@@ -641,7 +651,80 @@ URDF 描述的是机器人的几何和物理属性。控制器还需要知道：
 
 ---
 
-## P01.1补充：URDF的来龙去脉与设计哲学
+## 累积项目：本章新增模块
+
+从本章开始构建一个贯穿机械臂方向的累积项目 **mini-manip**。每学完一章，给项目加一个模块。
+
+### 项目概述
+
+```
+mini-manip/
+├── urdf/
+│   ├── panda.urdf.xacro         ← P01 本章核心产出
+│   ├── macros/
+│   │   ├── inertial_macros.xacro  ← 惯性参数计算宏
+│   │   └── link_macros.xacro      ← link 模板宏
+│   └── config/
+│       ├── sim.yaml               ← 仿真模式 ros2_control 配置
+│       └── real.yaml              ← 真机模式配置
+├── meshes/
+│   ├── visual/                    ← DAE 高精度渲染网格
+│   └── collision/                 ← STL 简化碰撞网格
+├── launch/
+│   └── display.launch.py          ← robot_state_publisher + RViz
+├── scripts/
+│   ├── validate_urdf.sh           ← check_urdf + 三角不等式验证
+│   └── convert_formats.py         ← URDF → SDF/MJCF 自动转换
+└── CMakeLists.txt
+```
+
+### 本章新增任务
+
+1. 用 Xacro 编写完整的 7-DOF 机械臂描述文件（参数化）
+2. 实现 `validate_urdf.sh`：自动检查 URDF 语法 + 惯性参数三角不等式
+3. 实现 `convert_formats.py`：一键从 URDF 生成 SDF 和 MJCF
+4. 在 RViz 中用 `joint_state_publisher_gui` 验证所有关节运动正常
+
+### 与后续章节的连接
+
+| 后续章节 | 累积项目新增 |
+|---------|------------|
+| P02 sim-to-real | 添加域随机化配置、CI/CD 格式转换管线 |
+| M01 Pinocchio | 用 Pinocchio 加载同一 URDF，验证 FK/ID |
+| M04 碰撞检测 | 为 URDF 添加碰撞对优化、生成 SRDF |
+
+---
+
+## 延伸阅读
+
+| 资源 | 难度 | 说明 |
+|------|:---:|------|
+| [ROS 官方 URDF 规范](http://wiki.ros.org/urdf/XML) | ⭐ | 权威参考，所有标签和属性的完整定义 |
+| [Xacro 官方文档](http://wiki.ros.org/xacro) | ⭐ | Xacro 语法和 Python 表达式支持 |
+| [REP-103 标准坐标系约定](https://www.ros.org/reps/rep-0103.html) | ⭐ | ROS 坐标系约定（右手系、SI 单位） |
+| [MuJoCo MJCF 文档](https://mujoco.readthedocs.io/en/latest/XMLreference.html) | ⭐⭐ | MJCF 格式完整参考，对比 URDF 差异 |
+| [SDF 格式规范](http://sdformat.org/spec) | ⭐⭐ | Gazebo 原生格式，比 URDF 更强的表达能力 |
+| [robot_descriptions.py](https://github.com/robot-descriptions/robot_descriptions.py) | ⭐ | 175+ 种机器人 URDF 即取即用，学习优秀建模范例 |
+| Lynch & Park (2017) "Modern Robotics" Ch4 | ⭐⭐ | 运动链的数学基础（DH 参数 vs Product of Exponentials） |
+| Coumans & Bai (2021) "MuJoCo Physics Engine" | ⭐⭐⭐ | MuJoCo 物理引擎设计，理解 MJCF 的设计动机 |
+| [onshape-to-robot](https://github.com/Rhoban/onshape-to-robot) | ⭐⭐ | 从 Onshape CAD 自动导出 URDF 的工具 |
+
+---
+
+## 🔧 故障排查手册
+
+| 症状 | 可能原因 | 排查步骤 | 相关章节 |
+|------|---------|---------|---------|
+| 机器人在 Gazebo 中完全不动 | `<limit effort="0">` 阻止了所有力矩输出 | 1. 检查 URDF 中所有 revolute/prismatic 关节的 effort 值 2. 确保 effort > 0 3. 同时检查 velocity 限制是否合理 | P01.1 `<joint>` |
+| 仿真中机器人"爆炸"（link 飞散） | 惯性参数错误（违反三角不等式或数量级错误） | 1. 用脚本检查所有 link 的三角不等式 $I_{xx}+I_{yy} \geq I_{zz}$ 等 2. 检查质量数量级（kg 不是 g） 3. 检查惯量单位（$\text{kg}\cdot\text{m}^2$） | P01.3 惯性参数 |
+| RViz 中 mesh 不显示（白色或缺失） | mesh 路径错误或使用了绝对路径 | 1. 确认使用 `package://` 协议 2. 运行 `ros2 pkg prefix` 确认包路径 3. 检查 mesh 文件格式（visual 用 DAE，collision 用 STL） | P01.1 `<link>` |
+| 模型尺寸异常（巨大或微小） | STL 文件单位是 mm 但 URDF 期望 m | 1. 在 MeshLab 检查 mesh bounding box 2. 添加 `scale="0.001 0.001 0.001"` 3. 或在 CAD 软件中以 m 为单位导出 | P01.3 Mesh 管理 |
+| `check_urdf` 报告 link 数量不对 | Xacro 条件分支逻辑错误或宏参数未传递 | 1. 先 `xacro model.urdf.xacro > /tmp/expanded.urdf` 展开 2. 检查展开后的 URDF 3. 用 `urdf_to_graphviz` 可视化拓扑树 | P01.2 Xacro |
+| URDF 转 MJCF 后关节方向反了 | URDF 和 MJCF 的关节轴约定不同 | 1. 对比转换前后零位 FK 结果 2. 检查 axis 方向是否被翻转 3. 在 MJCF 中手动修正 axis 或添加 post-processing 脚本 | P01.4 多格式转换 |
+
+---
+
+## P01.6 URDF 的来龙去脉与设计哲学 ⭐
 
 ### 历史溯源
 
@@ -695,7 +778,7 @@ URDF做了三个关键的设计决策，理解它们有助于理解后续遇到�
 
 ---
 
-## P01.2补充：Xacro高级技巧与设计模式
+## P01.7 Xacro 高级技巧与设计模式 ⭐⭐
 
 ### 条件分支实战
 
@@ -1015,7 +1098,7 @@ my_robot_description/
 
 ---
 
-## P01.3补充：惯性参数详解与系统辨识
+## P01.8 惯性参数详解与系统辨识 ⭐⭐⭐
 
 ### 惯性张量的物理含义
 
@@ -1184,7 +1267,7 @@ def inertia_from_mesh(mesh_path, density=1000.0):
 
 ---
 
-## P01.5补充：ros2_control标签详解
+## P01.9 ros2_control 标签详解 ⭐⭐
 
 ### `<ros2_control>`标签完整解剖
 
@@ -1404,7 +1487,7 @@ P01和M12的关系可以类比为：P01是"接口定义"（header file），M12�
 
 ---
 
-## 补充练习
+## P01.10 补充练习
 
 ### 练习4：手动计算圆柱体惯性张量并验证三角不等式
 

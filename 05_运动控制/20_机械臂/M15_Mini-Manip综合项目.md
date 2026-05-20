@@ -26,9 +26,32 @@
 
 ---
 
+## M01-M14 知识桥接回顾
+
+在进入综合项目之前，我们先回顾本项目所依赖的所有前置模块及其核心贡献。这不是简单的"见 M01-M14"，而是从系统集成的视角重新审视每个模块在完整 pick-and-place 栈中扮演的角色。
+
+| 模块 | 核心能力 | 在 Mini-Manip 中的角色 | 关键接口 |
+|------|---------|----------------------|---------|
+| **M01 Pinocchio** | FK/IK/Jacobian 计算 | MoveIt2 IK 插件的底层引擎 | `pinocchio::forwardKinematics()` |
+| **M02 动力学库** | 动力学模型对比 | 理解 Pinocchio 为何被 MoveIt2 选中 | RNEA、CRBA |
+| **M03 IK 求解器** | 多种 IK 解法及性能光谱 | MTC 的 ComputeIK Stage 背后的 IK 插件选型 | KDL/TRAC-IK/pick-ik |
+| **M04 碰撞检测** | FCL/Bullet 碰撞引擎 | PlanningScene 中障碍物检测的底层实现 | `FCL::collide()` |
+| **M05 QP/NLP** | 优化问题建模 | 理解 CHOMP/STOMP 等优化规划器的数学基础 | ProxQP/OSQP |
+| **M07 OMPL** | 采样规划算法 | MoveIt2 默认规划器后端 | RRT-Connect/BIT* |
+| **M08 轨迹优化** | 轨迹平滑与优化 | 链式规划管线中的后处理 | STOMP/TrajOpt |
+| **M10 时间参数化** | 路径→轨迹转换 | MoveIt2 规划管线的最后一步 | TOTG/Ruckig |
+| **M11 实时 C++** | RT 安全编程 | ros2_control 控制循环的安全保证 | SCHED_FIFO + mlockall |
+| **M12 ros2_control** | 控制器-硬件解耦 | JTC 执行 MoveIt2 规划的轨迹 | JTC/Forward/Admittance |
+| **M13 BehaviorTree** | 任务编排与错误恢复 | 顶层 pick-and-place 流程控制 | BT.CPP + Groot2 |
+| **M14 MoveIt2/MTC** | 规划框架与多阶段任务 | 核心规划能力 | MoveGroupInterface/MTC Task |
+
+> **本质洞察**：Mini-Manip 项目的真正价值不是"用 MoveIt2 做 pick-and-place"——这一点几行 Python 就能演示。它的价值在于让你**亲手体验 14 个模块如何通过清晰的接口边界组装成一个完整系统**。每个模块的设计决策（如 M12 的 command interface 独占机制、M14 的 pluginlib 插件化、M13 的 Blackboard 数据隔离）在单独学习时可能显得"过度设计"，但在系统集成时你会发现：正是这些抽象层让"换一个 IK 求解器"变成了改一行 YAML，而不是改一千行代码。
+
+---
+
 ## M15.1 系统架构设计 ⭐⭐
 
-### 动机
+### 动机 ⭐⭐
 
 从 M01 到 M14，我们分别学习了运动学、动力学、碰撞检测、规划、控制、ros2_control、行为树、MoveIt2/MTC 等模块。但在真实系统中，这些模块不是孤立的——它们需要**端到端集成**，数据流必须在各层之间无缝传递。
 
@@ -36,7 +59,7 @@
 
 > **跨领域类比**：这就像从学习单个乐器（运动学、规划、控制...）到组建乐队演奏完整曲目——每个乐手（模块）都需要听其他乐手（通过接口通信），指挥（BT 编排）协调所有人的节奏。乐队的水平不取决于最好的乐手，而取决于最差的配合。
 
-### 四层架构
+### 四层架构 ⭐⭐
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -84,7 +107,7 @@
 └─────────────────────────────────────────────────────────┘
 ```
 
-### 数据流详解
+### 数据流详解 ⭐⭐
 
 ```
 感知模块 ──物体位姿──► BT 条件节点
@@ -147,7 +170,7 @@
 
 ## M15.2 分阶段开发计划 ⭐⭐
 
-### 第一阶段：环境搭建（2 天）
+### 第一阶段：环境搭建（2 天） ⭐⭐
 
 **目标**：Gazebo 中启动 Franka Panda，验证 ros2_control + RViz 基本功能。
 
@@ -206,7 +229,7 @@ ros2 control list_controllers   # JTC + Broadcaster active
 # RViz 中可交互式规划并执行
 ```
 
-### 第二阶段：MTC Pick-and-Place（3 天）
+### 第二阶段：MTC Pick-and-Place（3 天） ⭐⭐
 
 **目标**：用 MTC 实现完整的抓取-放置流程。
 
@@ -236,7 +259,7 @@ CurrentState → OpenGripper → Connect(to pre-grasp)
 | 抓取滑落 | Gazebo 中物体掉落 | 增大摩擦系数或用 attach plugin |
 | 放置偏差 | 物体位置不准 | 检查 attach 时的相对位姿 |
 
-### 第三阶段：BT.CPP 编排（2 天）
+### 第三阶段：BT.CPP 编排（2 天） ⭐⭐
 
 **目标**：用 BT.CPP 包装 MTC 调用，加入错误恢复。
 
@@ -341,7 +364,7 @@ while (tree.tickOnce() == BT::NodeStatus::RUNNING) {
 }
 ```
 
-### 第四阶段：优化与对比（2 天）
+### 第四阶段：优化与对比（2 天） ⭐⭐⭐
 
 **目标**：量化比较不同组件配置的影响。
 
@@ -372,7 +395,7 @@ while (tree.tickOnce() == BT::NodeStatus::RUNNING) {
 | 成功率 | 100 次中成功次数 | >95% |
 | 错误恢复率 | 注入故障后恢复率 | >80% |
 
-### 第五阶段：sim-to-real 验证（1 天）
+### 第五阶段：sim-to-real 验证（1 天） ⭐⭐⭐
 
 **目标**：验证同一份代码在不同硬件后端运行。
 
@@ -392,22 +415,20 @@ ros2 launch mini_manip_bringup bringup.launch.py \
 
 **Sim-to-Real 部署清单**：
 
-```markdown
-## 必须修改
-- [ ] launch 参数: hardware_plugin:=franka
+**必须修改**：
+- [ ] launch 参数: `hardware_plugin:=franka`
 - [ ] robot_ip: 改为真机 IP
 - [ ] 夹爪力参数: 仿真和真机力单位可能不同
 
-## 可能需要调整
+**可能需要调整**：
 - [ ] 轨迹速度缩放: 真机初次运行建议设 0.1
 - [ ] PlanningScene 障碍物: 真实桌面尺寸和位置
 - [ ] 碰撞安全间距: 真机需要更大间距
 
-## 不需要修改
-- [ ] BT XML (任务逻辑不变)
-- [ ] MTC Task 代码 (规划逻辑不变)
-- [ ] 控制器 YAML (JTC 配置不变)
-```
+**不需要修改**：
+- [ ] BT XML（任务逻辑不变）
+- [ ] MTC Task 代码（规划逻辑不变）
+- [ ] 控制器 YAML（JTC 配置不变）
 
 ### ⚠️ 常见陷阱
 
@@ -440,11 +461,11 @@ ros2 launch mini_manip_bringup bringup.launch.py \
 
 ## M15.3 感知集成 ⭐⭐
 
-### 动机
+### 动机 ⭐⭐
 
 完整的感知系统（相机标定、物体检测、6D 位姿估计）是独立的大课题。本项目使用简化版感知。
 
-### 三种感知模式
+### 三种感知模式 ⭐⭐
 
 | 模式 | 复杂度 | 实现方式 |
 |------|--------|---------|
@@ -686,11 +707,11 @@ def validate_calibration(T_gripper_camera,
 
 ## M15.4 抓取规划基础 ⭐⭐⭐
 
-### 动机
+### 动机 ⭐⭐⭐
 
 知道物体在哪里（感知），接下来要决定**从哪个方向、以什么姿态抓取**。
 
-### 简单立方体的抓取策略
+### 简单立方体的抓取策略 ⭐⭐
 
 对于 5cm 立方体，从顶部向下抓取：
 
@@ -703,7 +724,7 @@ lift: 沿 Z 轴向上 10-20cm
 
 MTC 的 `GenerateGraspPose` 自动在物体周围采样多个抓取角度（通过 `setAngleDelta`），`ComputeIK` 为每个角度计算 IK 解，选择最优方案。
 
-### 力闭合与形封闭
+### 力闭合与形封闭 ⭐⭐⭐
 
 抓取规划的理论基础：
 
@@ -716,7 +737,7 @@ MTC 的 `GenerateGraspPose` 自动在物体周围采样多个抓取角度（通�
 
 ### GraspNet / AnyGrasp 集成详解 ⭐⭐⭐
 
-对于复杂形状物体（非规则几何体），手工设计抓取策略不可行。GraspNet（Fang et al., CVPR 2020）和 AnyGrasp（Fang et al., ICRA 2023）等方法从点云直接预测 6-DOF 抓取位姿和质量分数。
+对于复杂形状物体（非规则几何体），手工设计抓取策略不可行。GraspNet（Fang et al., CVPR 2020）和 AnyGrasp（Fang et al., T-RO 2023）等方法从点云直接预测 6-DOF 抓取位姿和质量分数。
 
 **GraspNet 推理 Pipeline**：
 
@@ -1779,6 +1800,22 @@ sim-to-real swap 是本项目的核心设计理念——同一份代码在仿真
 | M15.7 交付物 | 评估标准、仓库要求 | ⭐ |
 | M15.8 sim-to-real 部署 | 三阶段部署、安全规程、参数调整 | ⭐⭐⭐ |
 
+## 跨章综合练习 ⭐⭐⭐
+
+**题目**：综合 M03（IK 求解器）+ M07（OMPL）+ M12（ros2_control）+ M13（BT.CPP）+ M14（MTC），完成以下全栈挑战：
+
+1. **IK+规划器量化对比**（M03+M07+M14）：在 Mini-Manip 系统中，分别使用 KDL/TRAC-IK/pick-ik 三种 IK 求解器和 RRT-Connect/BIT* 两种规划器的所有组合（3x2=6 种），对 100 个随机 pick-and-place 目标运行 MTC Task。记录每种组合的规划时间、成功率和路径长度。分析哪种组合在什么指标上最优，并解释原因。
+
+2. **错误注入测试**（M13+M14）：在 BT 编排的 pick-and-place 流程中，用 Gazebo 插件在以下三个时刻注入故障：(a) 规划阶段移动障碍物导致碰撞检测失败；(b) 执行阶段改变物体位置导致抓取落空；(c) 搬运阶段旋转物体导致 place 失败。验证 BT 的 Fallback/Retry 恢复机制能否在每种故障下自动恢复。统计恢复成功率。
+
+3. **RT 性能审计**（M11+M12）：用 ftrace 跟踪 mini_manip 系统运行时 ros2_control 的 RT 循环。测量 read()/update()/write() 各阶段耗时。确认没有隐藏的堆分配（用 `EIGEN_RUNTIME_NO_MALLOC` 或 LD_PRELOAD malloc 拦截）。
+
+4. **一页纸选型报告**：基于上述实验数据，为一个假设的工业 bin-picking 场景（吞吐量要求: 12 cycles/min，成功率要求: >98%）撰写 IK+规划器+时间参数化的选型推荐报告。
+
+**评分标准**：实验数据完整（6 种组合 x 100 目标）、故障注入覆盖三种场景、RT 审计确认零堆分配、选型报告有数据支撑。
+
+---
+
 ## 累积项目：最终交付
 
 本章是 Mini-Manip 累积项目的最终阶段。
@@ -1812,9 +1849,54 @@ M15:     端到端集成 + 交付      ← 你在这里
 | MoveIt2 pick-and-place 教程 | ⭐ | 官方入门 |
 | franka_ros2 示例仓库 | ⭐⭐ | Franka 完整示例 |
 | Fang et al. (2020) "GraspNet-1Billion" CVPR | ⭐⭐⭐ | 学习型抓取 |
+| Fang et al. (2023) "AnyGrasp" T-RO | ⭐⭐⭐ | 通用抓取 |
 | Tsai & Lenz (1989) Hand-Eye Calibration | ⭐⭐⭐ | 手眼标定经典 |
 | Tedrake (2023) "Robotic Manipulation" MIT | ⭐⭐⭐ | 操作全景 |
 | BenchBot (2021) "Benchmarking Robot Manipulation" | ⭐⭐⭐ | 性能评估 |
+
+---
+
+## M15.9 前沿展望：AnyGrasp 2.0、Foundation Grasp Model 与未来方向 ⭐⭐⭐⭐
+
+完成 Mini-Manip 综合项目后，你已经具备了从感知到执行的完整抓取管线搭建能力。以下简要介绍抓取感知领域正在发生的重要进展，帮助你定位下一步的研究或工程方向。
+
+### AnyGrasp 最新进展
+
+AnyGrasp（Fang et al., T-RO 2023）是 GraspNet 系列的最新工作，相比原始 GraspNet-1Billion 有显著改进：
+
+| 维度 | GraspNet (2020) | AnyGrasp (2023) | 改进原因 |
+|------|-----------------|-----------------|---------|
+| 推理速度 | ~200ms | ~50ms | 更轻量的骨干网络 + TensorRT 优化 |
+| 抓取成功率 | ~80% (已知物体) | ~90%+ (未知物体) | 更大规模训练数据 + 改进的点云编码 |
+| 泛化能力 | 依赖 GraspNet-1Billion 数据集 | 跨域泛化（训练域外物体） | 对比学习 + 几何先验 |
+| 部署方式 | Python + PyTorch | SDK 封装 + ROS2 集成 | 工业化部署 |
+
+**工程意义**：对于 Mini-Manip 项目，AnyGrasp 可以替代 MTC 的 `GenerateGraspPose` Stage——不再需要手动设计抓取策略（顶部/侧面/角度采样），而是让模型从点云直接输出多个候选抓取位姿和质量评分。这把"抓取规划"从"工程师经验驱动"变成了"数据驱动"。
+
+### Foundation Grasp Model 概念
+
+2025 年的一个学术前沿方向是"Foundation Grasp Model"——训练一个大规模、跨域泛化的抓取基础模型，类似于 NLP 领域的 GPT 或视觉领域的 SAM。
+
+**核心思路**：
+
+1. **大规模预训练**：在数百万个仿真场景中生成海量抓取数据（利用物理引擎验证抓取成功/失败），预训练一个通用的"点云→抓取位姿"模型
+2. **少样本适配**：在真实场景中只需要少量标注数据即可适配特定物体类别或夹爪类型
+3. **多模态输入**：除了点云，还融合语义信息（"抓住杯子的把手"）和物理属性（物体重量、摩擦系数）
+
+**代表工作**：
+
+| 工作 | 年份 | 特点 |
+|------|------|------|
+| UniGrasp (Shao et al.) | 2020 | 跨夹爪泛化 |
+| FoundationGrasp | 2024 | 大规模预训练 + 零样本泛化 |
+| GraspGPT (Tang et al.) | 2023 | 语言引导的语义抓取 |
+| SparseDFF (Wang et al.) | 2024 | 稀疏扩散特征场用于 6-DOF 抓取 |
+
+> **反事实推理**：如果 Foundation Grasp Model 成熟了会怎样？当前 Mini-Manip 项目中，更换物体类别（从立方体到水瓶）需要调整 GenerateGraspPose 的参数（angle_delta、approach 方向）。有了 Foundation Grasp Model，模型直接从点云推断抓取策略，换物体只需要换点云输入——工程师不再需要理解"力闭合"或手动设计抓取策略。但这也意味着：当模型失败时（如极端形状的物体），工程师可能缺乏手动干预的能力——这正是我们在 M15.4 中教授力闭合理论的原因。
+
+> **本质洞察**：Foundation Grasp Model 的演进路径与自动驾驶中的感知模型类似——从规则驱动（手工设计特征）到学习驱动（端到端神经网络），再到基础模型驱动（预训练+微调）。每一步都降低了工程师的手动工作量，但也增加了对训练数据质量和分布覆盖的依赖。机器人工程师的角色从"设计抓取策略"转变为"评估和验证模型输出的安全性"。
+
+---
 
 ## 🔧 故障排查手册
 

@@ -7,7 +7,7 @@
 **Author:** Pengfei Guo  
 **Affiliation:** 达妙科技 (DAMIAO Technology)  
 **License:** [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) — 自由使用与商用，需注明出处  
-**AI Collaboration:** 部分内容由 Claude (Anthropic) 辅助编写
+**AI Collaboration:** 部分内容由 Claude 与 Codex 辅助编写与审核
 
 ---
 
@@ -19,11 +19,12 @@ Robotics_Tutorial/
 ├── 02_基础/                 # 编程基础（C++ 进阶、核心库剖析）
 ├── 03_SLAM/                 # 同时定位与建图
 ├── 04_移动机器人规控/        # 移动机器人规划与控制
-├── 05_运动控制/              # 运动控制（足式/机械臂/复合/仿真）
-│   ├── 足式/                #   足式机器人 — 24 章 + 2 序章 + 大纲
-│   ├── 机械臂/              #   机械臂 — 37 章 + 大纲
-│   ├── 复合/                #   复合方向（移动操作）
-│   └── 仿真/                #   仿真环境与工具
+├── 05_运动控制/              # 运动控制（公共基础/足式/机械臂/复合/仿真）
+│   ├── 00_公共基础/          #   运动控制公共能力层
+│   ├── 10_足式/              #   足式机器人
+│   ├── 20_机械臂/            #   机械臂
+│   ├── 30_复合/              #   复合方向（移动操作）
+│   └── 40_仿真/              #   仿真环境与工具
 └── 06_具身智能/              # 具身智能与大模型
 ```
 
@@ -35,18 +36,20 @@ Robotics_Tutorial/
 | 02 编程基础 | 52 | 14,209 | In Progress |
 | 03 SLAM | 25 | 35,291 | In Progress |
 | 04 移动机器人规控 | 76 | 15,558 | In Progress |
-| 05 运动控制 | 138 | 123,951 | **足式/机械臂 Complete** |
+| 05 运动控制 | 134 | 190,726 | **Complete** |
 | 06 具身智能 | 5 | 2,444 | Early Stage |
-| **Total** | **389** | **246,827** | |
+| **Total** | **385** | **313,602** | |
 
 ### 05 运动控制 Breakdown
 
 | Sub-direction | Files | Lines | Status |
 |---------------|------:|------:|--------|
-| 足式 (Legged) | 27 | 41,914 | **Complete** |
-| 机械臂 (Manipulator) | 47 | 63,053 | **Complete** |
-| 复合 (Loco-manipulation) | 54 | 10,686 | In Progress |
-| 仿真 (Simulation) | 9 | 6,305 | In Progress |
+| 公共基础 (Common Foundation) | 1 | 406 | **Complete** |
+| 足式 (Legged) | 27 | 44,985 | **Complete** |
+| 机械臂 (Manipulator) | 47 | 67,085 | **Complete** |
+| 复合 (Loco-manipulation) | 48 | 56,073 | **Complete** |
+| 仿真 (Simulation) | 10 | 20,005 | **Complete** |
+| 总大纲 (Overview) | 1 | 2,172 | **Complete** |
 
 ## Legged Robot Chapters (足式)
 

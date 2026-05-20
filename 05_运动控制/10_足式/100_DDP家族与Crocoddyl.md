@@ -10,7 +10,7 @@
 足式/60_QP_NLP建模 NLP基础 ──→ [足式/100_DDP家族与Crocoddyl DDP家族] ──→ 足式/110_OCS2完整栈与双线程MPC OCS2/SQP
 足式/30_Pinocchio深度精读 Pinocchio ──→ [Crocoddyl架构] ──→ 足式/110_OCS2完整栈与双线程MPC 工业级MPC
 足式/80_接触力学与约束优化 接触力学 ──→ [接触动力学OC] ──→ 足式/120_步态管理与接触序列 步态管理
-Ch14 CRTP    ──→ [虚函数反例]   ──→ 设计决策案例
+02_基础/10_Eigen CRTP    ──→ [虚函数反例]   ──→ 设计决策案例
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
@@ -30,7 +30,7 @@ Ch14 CRTP    ──→ [虚函数反例]   ──→ 设计决策案例
 
 1. **写出 DDP 的 backward/forward pass 完整伪代码**——理解每一步数学推导
 2. **区分 DDP / iLQR / FDDP 三者的数学差异**——知道何时选哪种
-3. **解释 Crocoddyl 为什么选虚函数而不是 CRTP**——Ch14 的精彩反例
+3. **解释 Crocoddyl 为什么选虚函数而不是 CRTP**——02_基础/10_Eigen 的精彩反例
 4. **用 Crocoddyl 搭建四足 trot 轨迹优化**——从 ActionModel 到 Solver 全流程
 5. **理解 ProxDDP 的增广拉格朗日框架**——约束 DDP 的前沿方法
 6. **复述 ParallelRiccati 的 parallel scan 思想**——打破"backward pass 不可并行"的教条
@@ -40,10 +40,10 @@ Ch14 CRTP    ──→ [虚函数反例]   ──→ 设计决策案例
 ```
 必修前置(v8 主线)              本课程前置
 ┌─────────────────────┐    ┌──────────────────────┐
-│ Ch6+14 多态+CRTP     │    │ 足式/30_Pinocchio深度精读-48 Pinocchio    │
-│ Ch11 Eigen           │    │ 足式/60_QP_NLP建模 NLP/QP 基础     │
-│ Ch17-20 并发(OpenMP)  │    │ 足式/70_腿足简化模型理论-52 简化模型+接触 │
-│ Ch16 Concepts(C++20) │    │ 足式/90_WBC分层优化与TSID WBC/TSID        │
+│ 02_基础/10_Eigen 多态+CRTP│    │ 足式/30_Pinocchio深度精读 Pinocchio    │
+│ 02_基础/10_Eigen         │    │ 足式/60_QP_NLP建模 NLP/QP 基础     │
+│ 02_基础/30_并发与实时     │    │ 足式/70_腿足简化模型理论 简化模型+接触 │
+│ 02_基础/10_Eigen Concepts│    │ 足式/90_WBC分层优化与TSID WBC/TSID  │
 └─────────────────────┘    └──────────────────────┘
 ```
 
@@ -51,7 +51,7 @@ Ch14 CRTP    ──→ [虚函数反例]   ──→ 设计决策案例
 
 ## 54.1 从通用 NLP 到 DDP——利用时间结构的特殊解法 ⭐⭐
 
-### 54.1.1 动机:为什么不直接用 Ipopt?
+### 54.1.1 动机:为什么不直接用 Ipopt? ⭐⭐
 
 假设你有一只四足机器人,需要规划未来 0.5 秒的全身运动。最直觉的做法是:把它写成一个大的 NLP(Non-Linear Program),然后扔给通用求解器 Ipopt。
 
@@ -83,9 +83,9 @@ NLP 求解器眼中的问题:
 └───────────────────────────────────────────────────────┘
 ```
 
-> ⚠️ **Pitfall**: 初学者常问"为什么不直接用 Ipopt?"答案是:Ipopt 不利用问题的时间结构。它把所有时间步的变量混在一起求解,KKT 矩阵虽然是稀疏的,但分解代价仍然是 $O(N^3 \cdot n^3)$ 量级(带状结构只能降到 $O(N \cdot n^6)$)。
+> ⚠️ **陷阱**: 初学者常问"为什么不直接用 Ipopt?"答案是:Ipopt 不利用问题的时间结构。它把所有时间步的变量混在一起求解,KKT 矩阵虽然是稀疏的,但分解代价仍然是 $O(N^3 \cdot n^3)$ 量级(带状结构只能降到 $O(N \cdot n^6)$)。
 
-### 54.1.2 DDP 的 Markov 洞察
+### 54.1.2 DDP 的 Markov 洞察 ⭐⭐
 
 DDP 看到了一个 Ipopt 没看到的结构:**Markov 性**。
 
@@ -111,7 +111,7 @@ $$V_k(\mathbf{x}) = \min_{\mathbf{u}} \left[ l_k(\mathbf{x}, \mathbf{u}) + V_{k+
 
 这把一个 2487 维的优化分解成了 50 个**局部子问题**,每个只涉及 $(n_x + n_u) = 49$ 维。
 
-### 54.1.3 复杂度对比
+### 54.1.3 复杂度对比 ⭐⭐
 
 | 方法 | 单次迭代复杂度 | N=50, $n_x$=37 时间估计 |
 |------|-------------|----------------------|
@@ -119,9 +119,9 @@ $$V_k(\mathbf{x}) = \min_{\mathbf{u}} \left[ l_k(\mathbf{x}, \mathbf{u}) + V_{k+
 | Ipopt (利用带状稀疏) | $O(N \cdot n_x^6)$ | ~10 ms |
 | **DDP** | $O(N \cdot (n_x^3 + n_u^3))$ | **~2 ms** |
 
-> 💡 **Insight**: DDP 的复杂度对 N 是**线性**的。这意味着延长规划时域(增大 N)的代价是可控的。而 Ipopt 的代价随 N 超线性增长。
+> 💡 **洞察**: DDP 的复杂度对 N 是**线性**的。这意味着延长规划时域(增大 N)的代价是可控的。而 Ipopt 的代价随 N 超线性增长。
 
-### 54.1.4 历史脉络
+### 54.1.4 历史脉络 ⭐
 
 ```
 时间线:
@@ -138,7 +138,7 @@ $$V_k(\mathbf{x}) = \min_{\mathbf{u}} \left[ l_k(\mathbf{x}, \mathbf{u}) + V_{k+
 2025 ─ Jallet et al. ─ ProxDDP + Aligator(T-RO 2025)
 ```
 
-> 🧠 **Deep Dive**: Jacobson 1970 年的 DDP 论文是一本书,不是一篇文章!那时候的"论文"可以是 200 页。现代 DDP 的实用化是 2000 年代 Todorov 的工作推动的——他在 MuJoCo 里把 iLQR 变成了实用工具。
+> 🧠 **深入理解**: Jacobson 1970 年的 DDP 论文是一本书,不是一篇文章!那时候的"论文"可以是 200 页。现代 DDP 的实用化是 2000 年代 Todorov 的工作推动的——他在 MuJoCo 里把 iLQR 变成了实用工具。
 
 **练习 54.1a** (⭐): 给定 $n_x = 12, n_u = 6, N = 30$,分别计算 DDP 和稠密 Ipopt 的单次迭代 FLOP 估计(用大 O 量级比较即可)。
 
@@ -148,7 +148,7 @@ $$V_k(\mathbf{x}) = \min_{\mathbf{u}} \left[ l_k(\mathbf{x}, \mathbf{u}) + V_{k+
 
 ## 54.2 DDP 的数学结构——Bellman 方程的二次近似 ⭐⭐⭐
 
-### 54.2.1 问题设定
+### 54.2.1 问题设定 ⭐⭐
 
 **无约束离散时间最优控制**:
 
@@ -160,7 +160,7 @@ $$\text{s.t.} \quad \mathbf{x}_{k+1} = f_k(\mathbf{x}_k, \mathbf{u}_k)$$
 
 DDP 通过迭代求解:从一条初始轨迹 $(\bar{\mathbf{x}}_0, \bar{\mathbf{u}}_0, \bar{\mathbf{x}}_1, \dots, \bar{\mathbf{x}}_N)$ 出发,反复改进。
 
-### 54.2.2 Q 函数与二次近似
+### 54.2.2 Q 函数与二次近似 ⭐⭐⭐
 
 在当前轨迹 $(\bar{\mathbf{x}}_k, \bar{\mathbf{u}}_k)$ 附近,定义扰动 $\delta \mathbf{x} = \mathbf{x} - \bar{\mathbf{x}}_k$, $\delta \mathbf{u} = \mathbf{u} - \bar{\mathbf{u}}_k$。
 
@@ -172,7 +172,7 @@ $$Q_k(\delta \mathbf{x}, \delta \mathbf{u}) = l_k(\bar{\mathbf{x}}_k + \delta \m
 
 $$Q_k(\delta \mathbf{x}, \delta \mathbf{u}) \approx Q_0 + \begin{bmatrix} Q_\mathbf{x} \\ Q_\mathbf{u} \end{bmatrix}^T \begin{bmatrix} \delta \mathbf{x} \\ \delta \mathbf{u} \end{bmatrix} + \frac{1}{2} \begin{bmatrix} \delta \mathbf{x} \\ \delta \mathbf{u} \end{bmatrix}^T \begin{bmatrix} Q_{\mathbf{xx}} & Q_{\mathbf{xu}} \\ Q_{\mathbf{ux}} & Q_{\mathbf{uu}} \end{bmatrix} \begin{bmatrix} \delta \mathbf{x} \\ \delta \mathbf{u} \end{bmatrix}$$
 
-### 54.2.3 Q 函数展开系数的完整推导
+### 54.2.3 Q 函数展开系数的完整推导 ⭐⭐⭐
 
 这是本章最核心的推导,**一步不跳**。
 
@@ -198,7 +198,7 @@ $$Q_{\mathbf{uu}} = l_{\mathbf{uu}} + \mathbf{f}_\mathbf{u}^T V_{\mathbf{xx},k+1
 
 $$Q_{\mathbf{ux}} = l_{\mathbf{ux}} + \mathbf{f}_\mathbf{u}^T V_{\mathbf{xx},k+1} \mathbf{f}_\mathbf{x} + V_{\mathbf{x},k+1} \cdot \mathbf{f}_{\mathbf{ux}}$$
 
-> ⚠️ **Pitfall**: $V_{\mathbf{x},k+1} \cdot \mathbf{f}_{\mathbf{xx}}$ 是一个向量与三阶张量的缩并,结果是一个矩阵。这一项在 iLQR 中被**丢弃**——这正是 DDP 和 iLQR 的核心区别!
+> ⚠️ **陷阱**: $V_{\mathbf{x},k+1} \cdot \mathbf{f}_{\mathbf{xx}}$ 是一个向量与三阶张量的缩并,结果是一个矩阵。这一项在 iLQR 中被**丢弃**——这正是 DDP 和 iLQR 的核心区别!
 
 ```
 Q 函数系数结构图:
@@ -214,7 +214,7 @@ Q_ux = l_ux + f_u^T·V_xx·f_x + V_x·f_ux  ← 二阶 = GN项 + 动力学Hessia
     代价Hessian  Gauss-Newton项  DDP独有项(iLQR丢弃)
 ```
 
-### 54.2.4 最优控制律
+### 54.2.4 最优控制律 ⭐⭐
 
 对 $\delta \mathbf{u}$ 求极值:$\frac{\partial Q}{\partial \delta \mathbf{u}} = 0$
 
@@ -222,9 +222,9 @@ $$Q_\mathbf{u} + Q_{\mathbf{uu}} \delta \mathbf{u} + Q_{\mathbf{ux}} \delta \mat
 
 $$\boxed{\delta \mathbf{u}^* = \underbrace{-Q_{\mathbf{uu}}^{-1} Q_\mathbf{u}}_{\mathbf{k}_k \text{ (前馈项)}} + \underbrace{(-Q_{\mathbf{uu}}^{-1} Q_{\mathbf{ux}})}_{\mathbf{K}_k \text{ (反馈增益)}} \delta \mathbf{x}}$$
 
-> 💡 **Insight**: DDP 的 backward pass 不仅给出了最优轨迹修正,还给出了**反馈增益** $\mathbf{K}_k$。这是 DDP 相对于 SQP 的天然优势——SQP 只给出开环轨迹,而 DDP 给出闭环控制策略。
+> 💡 **洞察**: DDP 的 backward pass 不仅给出了最优轨迹修正,还给出了**反馈增益** $\mathbf{K}_k$。这是 DDP 相对于 SQP 的天然优势——SQP 只给出开环轨迹,而 DDP 给出闭环控制策略。
 
-### 54.2.5 价值函数递推(Riccati-like)
+### 54.2.5 价值函数递推(Riccati-like) ⭐⭐⭐
 
 把最优 $\delta \mathbf{u}^*$ 代回 Q 函数,得到 $V_k$ 的二次近似系数:
 
@@ -236,9 +236,9 @@ $$\boxed{V_{\mathbf{x},k} = Q_\mathbf{x} - Q_{\mathbf{ux}}^T Q_{\mathbf{uu}}^{-1
 
 $$\boxed{V_{\mathbf{xx},k} = Q_{\mathbf{xx}} - Q_{\mathbf{ux}}^T Q_{\mathbf{uu}}^{-1} Q_{\mathbf{ux}}}$$
 
-> 🧠 **Deep Dive**: 这与离散时间 Riccati 方程**形式相同**!当代价是二次的、动力学是线性的时,DDP 退化为精确的 LQR。这就是为什么 DDP 也叫"迭代 LQR"的原因。
+> 🧠 **深入理解**: 这与离散时间 Riccati 方程**形式相同**!当代价是二次的、动力学是线性的时,DDP 退化为精确的 LQR。这就是为什么 DDP 也叫"迭代 LQR"的原因。
 
-### 54.2.6 Backward Pass 完整伪代码
+### 54.2.6 Backward Pass 完整伪代码 ⭐⭐
 
 ```
 算法: DDP Backward Pass
@@ -277,7 +277,7 @@ $$\boxed{V_{\mathbf{xx},k} = Q_{\mathbf{xx}} - Q_{\mathbf{ux}}^T Q_{\mathbf{uu}}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
-### 54.2.7 Forward Pass 与 Line Search
+### 54.2.7 Forward Pass 与 Line Search ⭐⭐
 
 Backward pass 给出了修正方向,forward pass 执行修正:
 
@@ -318,7 +318,7 @@ end
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
-### 54.2.8 Levenberg-Marquardt 正则化
+### 54.2.8 Levenberg-Marquardt 正则化 ⭐⭐⭐
 
 当 $Q_{\mathbf{uu}}$ 不正定时(可能在远离最优解时发生),需要正则化:
 
@@ -328,11 +328,11 @@ $\mu$ 的调节策略:
 - 如果 forward pass 成功(代价下降):$\mu \leftarrow \mu / \nu$,其中 $\nu > 1$
 - 如果 forward pass 失败:$\mu \leftarrow \mu \cdot \nu$
 
-> ⚠️ **Pitfall**: 正则化参数 $\mu$ 如果太大,DDP 退化为梯度下降(每步只走一小步);如果太小,可能 $Q_{\mathbf{uu}}$ 不正定导致数值崩溃。Crocoddyl 的默认策略是 $\nu = 10$,初始 $\mu = 10^{-9}$。
+> ⚠️ **陷阱**: 正则化参数 $\mu$ 如果太大,DDP 退化为梯度下降(每步只走一小步);如果太小,可能 $Q_{\mathbf{uu}}$ 不正定导致数值崩溃。Crocoddyl 的默认策略是 $\nu = 10$,初始 $\mu = 10^{-9}$。
 
 如果不做正则化会怎样?当 $Q_{uu}$ 有负特征值时,Riccati 回退的控制增益 $\mathbf{k} = -Q_{uu}^{-1} Q_u$ 会指向代价**增大**的方向——forward pass 不仅不降低代价,反而让轨迹发散。更糟糕的是,$Q_{uu}$ 的 Cholesky 分解会直接失败(负对角元素),整个算法崩溃。正则化 $\mu I$ 的作用就是在 $Q_{uu}$ 的特征值上加一个正偏移,把所有特征值推到正数区域,代价是步长变保守——但至少保证了算法不崩溃。
 
-### 54.2.9 数值例子:2D 小车 (手算可追踪)
+### 54.2.9 数值例子:2D 小车 (手算可追踪) ⭐⭐
 
 **系统**:$\mathbf{x} = [p, v]^T$,$u$ 是加速度。
 
@@ -404,7 +404,7 @@ int main() {
 }
 ```
 
-> 💡 **Insight**: 对于这个线性-二次问题,DDP 一次迭代就能找到全局最优解——因为它退化为精确的 LQR。非线性问题则需要多次迭代。
+> 💡 **洞察**: 对于这个线性-二次问题,DDP 一次迭代就能找到全局最优解——因为它退化为精确的 LQR。非线性问题则需要多次迭代。
 
 **练习 54.2a** (⭐⭐): 扩展上面的代码,加入 forward pass 和 line search,实现完整的 DDP 迭代。让小车从 $[0,0]$ 到达 $[1,0]$,绘制状态轨迹和控制序列。
 
@@ -414,7 +414,7 @@ int main() {
 
 ## 54.3 DDP vs iLQR——微妙但重要的区别 ⭐⭐
 
-### 54.3.1 精确的数学差异
+### 54.3.1 精确的数学差异 ⭐⭐⭐
 
 **iLQR (iterative LQR)**,也叫 iLQG (iterative Linear-Quadratic-Gaussian),是 Li & Todorov (2004) 提出的 DDP 简化版。
 
@@ -443,7 +443,7 @@ Eigen::MatrixXd Qxx = Lxx + fx.transpose() * Vxx_next * fx;
 // No f_xx term!
 ```
 
-### 54.3.2 收敛速率分析
+### 54.3.2 收敛速率分析 ⭐⭐⭐
 
 | 属性 | DDP | iLQR |
 |------|-----|------|
@@ -452,11 +452,11 @@ Eigen::MatrixXd Qxx = Lxx + fx.transpose() * Vxx_next * fx;
 | 单步计算代价 | 需要动力学 Hessian | 不需要 |
 | 数值稳定性 | 动力学 Hessian 可能导致 $Q_{uu}$ 不正定 | 更稳定(GN 近似天然半正定）|
 
-> 🧠 **Deep Dive**: 理论上 iLQR 只有超线性收敛(Roulet et al., ICML 2019 证明了 iLQR/iDDP 的局部线性收敛保证),但实践中观察到的收敛速度接近 DDP,因为对大多数机器人问题,动力学 Hessian 项的贡献相对较小。
+> 🧠 **深入理解**: 理论上 iLQR 只有超线性收敛(Roulet et al., ICML 2019 证明了 iLQR/iDDP 的局部线性收敛保证),但实践中观察到的收敛速度接近 DDP,因为对大多数机器人问题,动力学 Hessian 项的贡献相对较小。
 
 > **本质洞察**:DDP 和 iLQR 的差异本质上是**Newton 法 vs Gauss-Newton 法**在最优控制中的投影。Gauss-Newton 用 $J^TJ$ 近似 Hessian,天然半正定且无需二阶导数;Newton 法用精确 Hessian,收敛更快但可能不正定。这与 足式/60_QP_NLP建模 中非线性最小二乘的讨论完全对应——只是这里的"残差"是沿时间轴展开的代价函数。
 
-### 54.3.3 什么时候差异重要?
+### 54.3.3 什么时候差异重要? ⭐⭐
 
 ```
 差异影响评估:
@@ -476,7 +476,7 @@ Eigen::MatrixXd Qxx = Lxx + fx.transpose() * Vxx_next * fx;
 └─────────────────────────────────────────────────────┘
 ```
 
-> ⚠️ **Pitfall**: 很多教程和博客混用"DDP"和"iLQR"这两个术语。严格来说它们是不同的算法。当有人说"我们用 DDP 做 MPC",你需要确认他们是否真的计算了动力学 Hessian。
+> ⚠️ **陷阱**: 很多教程和博客混用"DDP"和"iLQR"这两个术语。严格来说它们是不同的算法。当有人说"我们用 DDP 做 MPC",你需要确认他们是否真的计算了动力学 Hessian。
 
 **练习 54.3** (⭐⭐): 在 54.2 的 2D 小车例子上,把动力学改为 $\dot{v} = u - 0.5\sin(p)$(单摆模型)。分别用 DDP 和 iLQR 求解,记录每次迭代的代价下降。需要多少次迭代收敛?差异是否显著?
 
@@ -484,7 +484,7 @@ Eigen::MatrixXd Qxx = Lxx + fx.transpose() * Vxx_next * fx;
 
 ## 54.4 FDDP——Feasibility-Driven DDP ⭐⭐⭐
 
-### 54.4.1 经典 DDP 的 Achilles' Heel
+### 54.4.1 经典 DDP 的 Achilles' Heel ⭐⭐
 
 经典 DDP 是 **single shooting** 方法:forward pass 必须从 $\mathbf{x}_0$ 开始完整地"rollout"动力学。
 
@@ -506,7 +506,7 @@ MPC warm-start 的问题:
                             → 轨迹末端不可行
 ```
 
-### 54.4.2 FDDP 的核心思想:接受"Gaps"
+### 54.4.2 FDDP 的核心思想:接受"Gaps" ⭐⭐⭐
 
 FDDP (Mastalli et al., Autonomous Robots 2022) 的关键创新:**允许轨迹中存在"动力学间隙"(gaps)**。如果说经典 DDP 的 forward pass 相当于一列火车——每节车厢(时间步)必须严格连接,那么 FDDP 相当于允许车厢之间有弹性连接:初始时车厢可以有间隙,随着优化迭代,间隙逐步收紧至零。这种"先宽松后收紧"的策略大幅提升了对初始猜测的容忍度。
 
@@ -524,7 +524,7 @@ x₀ ──f──→ x₁ ──f──→ x₂ ──f──→ x₃   x₀ �
                                           逐步收敛到零
 ```
 
-### 54.4.3 FDDP 的修改:Backward Pass with Gaps
+### 54.4.3 FDDP 的修改:Backward Pass with Gaps ⭐⭐⭐
 
 在存在 gaps 的情况下,backward pass 的 Q 函数系数需要修改:
 
@@ -532,9 +532,9 @@ $$Q_\mathbf{x} = l_\mathbf{x} + \mathbf{f}_\mathbf{x}^T (V_{\mathbf{x},k+1} + V_
 
 $$Q_\mathbf{u} = l_\mathbf{u} + \mathbf{f}_\mathbf{u}^T (V_{\mathbf{x},k+1} + V_{\mathbf{xx},k+1} \bar{\mathbf{f}}_k)$$
 
-> 💡 **Insight**: Gap $\bar{\mathbf{f}}_k$ 出现在 $V_\mathbf{x}$ 的修正中——相当于把"消除 gap"也作为代价的一部分,让优化器自动去消除它。
+> 💡 **洞察**: Gap $\bar{\mathbf{f}}_k$ 出现在 $V_\mathbf{x}$ 的修正中——相当于把"消除 gap"也作为代价的一部分,让优化器自动去消除它。
 
-### 54.4.4 FDDP Forward Pass:带 Gap 的 Rollout
+### 54.4.4 FDDP Forward Pass:带 Gap 的 Rollout ⭐⭐⭐
 
 $$\hat{\mathbf{x}}_{k+1} = f_k(\hat{\mathbf{x}}_k, \hat{\mathbf{u}}_k) + (1 - \alpha) \bar{\mathbf{f}}_k$$
 
@@ -543,7 +543,7 @@ $$\hat{\mathbf{x}}_{k+1} = f_k(\hat{\mathbf{x}}_k, \hat{\mathbf{u}}_k) + (1 - \a
 
 **在迭代过程中,FDDP 从保持 gaps ($\alpha$ 小) 逐步过渡到消除 gaps ($\alpha \to 1$)**。
 
-### 54.4.5 FDDP 完整算法
+### 54.4.5 FDDP 完整算法 ⭐⭐⭐
 
 ```
 算法: FDDP (Feasibility-Driven DDP)
@@ -583,7 +583,7 @@ $$\hat{\mathbf{x}}_{k+1} = f_k(\hat{\mathbf{x}}_k, \hat{\mathbf{u}}_k) + (1 - \a
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
-### 54.4.6 FDDP 为什么是 MPC 的标准选择
+### 54.4.6 FDDP 为什么是 MPC 的标准选择 ⭐⭐
 
 | 特性 | 经典 DDP | FDDP |
 |------|---------|------|
@@ -592,7 +592,7 @@ $$\hat{\mathbf{x}}_{k+1} = f_k(\hat{\mathbf{x}}_k, \hat{\mathbf{u}}_k) + (1 - \a
 | 收敛行为 | gap 始终为零 | **gap 单调减小** |
 | 实际收敛速度 | 快(如果初始可行) | 更鲁棒,略慢 |
 
-> ⚠️ **Pitfall**: FDDP 的"gaps 单调减小"不是自动保证的——需要 Armijo line search 配合。如果 line search 参数设置不当,gaps 可能振荡。Crocoddyl 的默认参数经过仔细调优。
+> ⚠️ **陷阱**: FDDP 的"gaps 单调减小"不是自动保证的——需要 Armijo line search 配合。如果 line search 参数设置不当,gaps 可能振荡。Crocoddyl 的默认参数经过仔细调优。
 
 **练习 54.4a** (⭐⭐): 在 54.2 的 2D 小车例子上,给一个"不可行"的初始轨迹(比如所有状态都设为零,但控制设为随机值)。经典 DDP 是否能收敛?FDDP 呢?
 
@@ -602,7 +602,7 @@ $$\hat{\mathbf{x}}_{k+1} = f_k(\hat{\mathbf{x}}_k, \hat{\mathbf{u}}_k) + (1 - \a
 
 ## 54.5 Crocoddyl 的 ActionModel/ActionData 架构 ⭐⭐
 
-### 54.5.1 设计动机:为什么分 Model 和 Data?
+### 54.5.1 设计动机:为什么分 Model 和 Data? ⭐⭐
 
 回忆 足式/30_Pinocchio深度精读 的 Pinocchio:
 
@@ -641,7 +641,7 @@ Crocoddyl 的 ActionModel-ActionData 分离:
 └─────────────────────────────────────────────────┘
 ```
 
-### 54.5.2 ActionModelAbstract 接口
+### 54.5.2 ActionModelAbstract 接口 ⭐⭐
 
 ```cpp
 // Crocoddyl core interface (simplified from action-base.hpp)
@@ -672,7 +672,7 @@ class ActionModelAbstractTpl {
 };
 ```
 
-### 54.5.3 ActionDataAbstract 的内存布局
+### 54.5.3 ActionDataAbstract 的内存布局 ⭐⭐
 
 ```cpp
 // ActionData: pre-allocated buffers for one time step
@@ -700,9 +700,9 @@ struct ActionDataAbstractTpl {
 };
 ```
 
-> 💡 **Insight**: 所有矩阵在 `createData()` 时**一次性分配**,之后 `calc()` / `calcDiff()` 只是**填充已有内存**,不做任何堆分配。这对实时性至关重要——Ch35 深入讨论了 pmr(Polymorphic Memory Resource)分配器的原理:通过在启动时预分配一块连续内存池,运行时的所有"分配"都变成指针偏移操作(O(1),无系统调用),从而消除 `malloc` 在实时线程中引发的不确定延迟。Crocoddyl 的 `createData()` 预分配策略与 pmr 的思路一致,只是实现层面更简单——直接在构造函数中 resize 所有 Eigen 矩阵。
+> 💡 **洞察**: 所有矩阵在 `createData()` 时**一次性分配**,之后 `calc()` / `calcDiff()` 只是**填充已有内存**,不做任何堆分配。这对实时性至关重要——02_基础/40_内存管理 中深入讨论了 pmr(Polymorphic Memory Resource)分配器的原理:通过在启动时预分配一块连续内存池,运行时的所有"分配"都变成指针偏移操作(O(1),无系统调用),从而消除 `malloc` 在实时线程中引发的不确定延迟。Crocoddyl 的 `createData()` 预分配策略与 pmr 的思路一致,只是实现层面更简单——直接在构造函数中 resize 所有 Eigen 矩阵。
 
-### 54.5.4 线程安全性分析
+### 54.5.4 线程安全性分析 ⭐⭐⭐
 
 **Model 是只读的**: 多个线程可以共享同一个 Model 对象(例如 trot 步态中多个时间步使用相同的接触配置)。
 
@@ -723,9 +723,9 @@ OpenMP 并行安全模型:
 └──────────────────────────────────────────┘
 ```
 
-> ⚠️ **Pitfall**: 如果两个时间步共享同一个 ActionModel **和同一个 ActionData**(例如误用指针),OpenMP 并行化会产生 data race。Crocoddyl 通过为每个时间步创建独立的 Data 来避免这个问题。
+> ⚠️ **陷阱**: 如果两个时间步共享同一个 ActionModel **和同一个 ActionData**(例如误用指针),OpenMP 并行化会产生 data race。Crocoddyl 通过为每个时间步创建独立的 Data 来避免这个问题。
 
-### 54.5.5 如何实现自定义 ActionModel(分步教程)
+### 54.5.5 如何实现自定义 ActionModel(分步教程) ⭐⭐
 
 假设你想实现一个简单的"弹簧-质量-阻尼"系统:
 
@@ -779,7 +779,7 @@ class ActionModelSpringMass
 
 ## 54.6 常见 ActionModel 详解 ⭐⭐
 
-### 54.6.1 Differential vs Integrated:两层架构
+### 54.6.1 Differential vs Integrated:两层架构 ⭐⭐
 
 Crocoddyl 把一个时间步的计算分为两层:
 
@@ -805,7 +805,7 @@ Crocoddyl 把一个时间步的计算分为两层:
 
 **好处**:同一个 DifferentialActionModel 可以被不同的积分器包裹——Euler、RK4、隐式 Euler 等。
 
-### 54.6.2 DifferentialActionModelFreeFwdDynamics
+### 54.6.2 DifferentialActionModelFreeFwdDynamics ⭐⭐
 
 用于**无接触**的机械臂:
 
@@ -821,7 +821,7 @@ $$\ddot{\mathbf{q}} = \text{ABA}(\mathbf{q}, \dot{\mathbf{q}}, \boldsymbol{\tau}
 
 $$\frac{\partial \ddot{\mathbf{q}}}{\partial \mathbf{q}}, \quad \frac{\partial \ddot{\mathbf{q}}}{\partial \dot{\mathbf{q}}}, \quad \frac{\partial \ddot{\mathbf{q}}}{\partial \boldsymbol{\tau}}$$
 
-### 54.6.3 DifferentialActionModelContactFwdDynamics(腿足核心)
+### 54.6.3 DifferentialActionModelContactFwdDynamics(腿足核心) ⭐⭐⭐
 
 **这是四足机器人最常用的 ActionModel**。它求解含接触约束的 KKT 系统:
 
@@ -840,9 +840,9 @@ $$\begin{bmatrix} \mathbf{M} & -\mathbf{J}_c^T \\ \mathbf{J}_c & \mathbf{0} \end
 2. $\boldsymbol{\lambda} = (\mathbf{J}_c \mathbf{M}^{-1} \mathbf{J}_c^T)^{-1} (\mathbf{J}_c \mathbf{M}^{-1}(\mathbf{S}^T\boldsymbol{\tau} - \mathbf{h}) + \dot{\mathbf{J}}_c \dot{\mathbf{q}})$
 3. $\ddot{\mathbf{q}} = \mathbf{M}^{-1} (\mathbf{S}^T\boldsymbol{\tau} - \mathbf{h} + \mathbf{J}_c^T \boldsymbol{\lambda})$
 
-> 🧠 **Deep Dive**: KKT 系统的 Jacobian(即 `calcDiff()` 的输出)比无接触情况复杂得多——需要对 $\mathbf{M}, \mathbf{J}_c, \mathbf{h}$ 同时求导。Pinocchio 的 `computeConstraintDynamicsDerivatives()` 用高效的解析方法完成这个计算,复杂度 $O(n_{\text{dof}}^2 \cdot n_c)$。回顾 足式/80_接触力学与约束优化:接触 Jacobian $J_c$ 把关节速度映射到接触点速度,其转置 $J_c^T$ 把接触力映射回关节空间广义力,两者构成虚功原理要求的对偶映射。这里的 KKT 系统正是将这一对偶关系与动力学方程 $M\ddot{q} + h = S^T\tau + J_c^T\lambda$ 联立求解,使得接触约束 $J_c\ddot{q} = -\dot{J}_c\dot{q}$ 被隐式满足。
+> 🧠 **深入理解**: KKT 系统的 Jacobian(即 `calcDiff()` 的输出)比无接触情况复杂得多——需要对 $\mathbf{M}, \mathbf{J}_c, \mathbf{h}$ 同时求导。Pinocchio 的 `computeConstraintDynamicsDerivatives()` 用高效的解析方法完成这个计算,复杂度 $O(n_{\text{dof}}^2 \cdot n_c)$。回顾 足式/80_接触力学与约束优化:接触 Jacobian $J_c$ 把关节速度映射到接触点速度,其转置 $J_c^T$ 把接触力映射回关节空间广义力,两者构成虚功原理要求的对偶映射。这里的 KKT 系统正是将这一对偶关系与动力学方程 $M\ddot{q} + h = S^T\tau + J_c^T\lambda$ 联立求解,使得接触约束 $J_c\ddot{q} = -\dot{J}_c\dot{q}$ 被隐式满足。
 
-### 54.6.4 CostModelResidual:残差式代价
+### 54.6.4 CostModelResidual:残差式代价 ⭐⭐
 
 Crocoddyl 2.0 引入了 **ResidualModel** 抽象:
 
@@ -862,9 +862,9 @@ CostModelResidual(state, activation, residual)
                 ResidualModelContactForce → r = λ - λ_ref
 ```
 
-> 💡 **Insight**: 这种"激活函数 + 残差"的分离让代价函数的构建非常灵活。例如,Huber 损失可以通过 `ActivationModelSmooth1Norm` + 任何残差来实现,无需修改残差代码。
+> 💡 **洞察**: 这种"激活函数 + 残差"的分离让代价函数的构建非常灵活。例如,Huber 损失可以通过 `ActivationModelSmooth1Norm` + 任何残差来实现,无需修改残差代码。
 
-### 54.6.5 IntegratedActionModel:Euler vs RK4
+### 54.6.5 IntegratedActionModel:Euler vs RK4 ⭐⭐
 
 | 积分方法 | 精度 | 计算代价 | 适用场景 |
 |---------|------|---------|---------|
@@ -873,7 +873,7 @@ CostModelResidual(state, activation, residual)
 
 **MPC 中通常用 Euler**:$dt = 10\text{ms}$ 时 Euler 误差足够小,且快 4 倍。
 
-> ⚠️ **Pitfall**: RK4 的 `calcDiff()` 需要对 4 个中间点求导数,比 Euler 贵得多。在 MPC 中用 RK4 往往不划算——不如把省下的时间用来多跑几次 DDP 迭代。
+> ⚠️ **陷阱**: RK4 的 `calcDiff()` 需要对 4 个中间点求导数,比 Euler 贵得多。在 MPC 中用 RK4 往往不划算——不如把省下的时间用来多跑几次 DDP 迭代。
 
 **练习 54.6** (⭐⭐): 用 Crocoddyl Python 接口搭建一个 Panda 机械臂的轨迹优化:使用 `DifferentialActionModelFreeFwdDynamics` + `IntegratedActionModelEuler`。代价:末端位姿误差 + 控制正则。N=100 步,FDDP 求解。
 
@@ -881,9 +881,9 @@ CostModelResidual(state, activation, residual)
 
 ## 54.7 虚函数 vs CRTP:Crocoddyl 的设计决策 ⭐⭐⭐
 
-### 54.7.1 回顾 Ch14 的 CRTP 教义
+### 54.7.1 回顾 CRTP 教义（02_基础/10_Eigen） ⭐⭐
 
-Ch14 讲了 CRTP 的核心思想:**编译时多态,避免虚函数表(vtable)的间接调用开销**。
+02_基础/10_Eigen 中讲了 CRTP 的核心思想:**编译时多态,避免虚函数表(vtable)的间接调用开销**。
 
 Pinocchio、Sophus、Eigen 都用 CRTP:
 
@@ -897,7 +897,7 @@ struct ModelTpl : CRTPBase<Derived> {
 
 **CRTP 的好处**:编译器可以内联虚函数调用,节省 5-10ns 的 vtable 查找。
 
-### 54.7.2 Crocoddyl 的反例:虚函数够用
+### 54.7.2 Crocoddyl 的反例:虚函数够用 ⭐⭐
 
 Crocoddyl 的 `ActionModelAbstract` 是**经典的虚基类**:
 
@@ -911,7 +911,7 @@ class ActionModelAbstract {
 
 为什么不用 CRTP?
 
-### 54.7.3 性能分析:瓶颈不在调用开销
+### 54.7.3 性能分析:瓶颈不在调用开销 ⭐⭐⭐
 
 ```
 性能瓶颈分析:
@@ -929,7 +929,7 @@ class ActionModelAbstract {
 └──────────────────────────────────────────────────┘
 ```
 
-### 54.7.4 灵活性和 Python 绑定
+### 54.7.4 灵活性和 Python 绑定 ⭐⭐
 
 **灵活性**: Crocoddyl 用户经常在运行时根据配置选择不同的 ActionModel(自由飞行 vs 接触动力学 vs 自定义)。虚函数天然支持运行时多态,CRTP 需要类型擦除(复杂且脆弱)。
 
@@ -952,7 +952,7 @@ class MyPythonModel(crocoddyl.ActionModelAbstract):
 
 CRTP 无法做到这一点——Python 不能"模板化继承" C++ 类。
 
-### 54.7.5 设计决策总结
+### 54.7.5 设计决策总结 ⭐⭐
 
 ```
 设计决策矩阵:
@@ -967,7 +967,7 @@ CRTP 无法做到这一点——Python 不能"模板化继承" C++ 类。
 └────────────────┴──────────────────┴──────────────────┘
 ```
 
-> 🧠 **Deep Dive**: 这个案例说明**性能优化要看瓶颈**。如果你在写高频矩阵库(Eigen),每次调用只有几纳秒,虚函数的 5ns 开销是 100% 的性能损失——必须 CRTP。如果你在写应用层框架(Crocoddyl),每次调用要做 20 微秒的 Pinocchio 运算,虚函数的 5ns 是噪音中的噪音——用虚函数省事。
+> 🧠 **深入理解**: 这个案例说明**性能优化要看瓶颈**。如果你在写高频矩阵库(Eigen),每次调用只有几纳秒,虚函数的 5ns 开销是 100% 的性能损失——必须 CRTP。如果你在写应用层框架(Crocoddyl),每次调用要做 20 微秒的 Pinocchio 运算,虚函数的 5ns 是噪音中的噪音——用虚函数省事。
 
 **练习 54.7** (⭐⭐⭐): 写一个 benchmark:分别用虚函数和 CRTP 实现一个简单的 `calc()` 函数(内部做一次矩阵乘法)。在 $36 \times 36$ 矩阵上测量两种方式的耗时差异。结论是什么?
 
@@ -975,7 +975,7 @@ CRTP 无法做到这一点——Python 不能"模板化继承" C++ 类。
 
 ## 54.8 Crocoddyl 的 OpenMP 并行化 ⭐⭐
 
-### 54.8.1 可并行的部分与不可并行的部分
+### 54.8.1 可并行的部分与不可并行的部分 ⭐⭐⭐
 
 ```
 DDP 一次迭代的并行结构:
@@ -994,7 +994,7 @@ DDP 一次迭代的并行结构:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
-### 54.8.2 Crocoddyl 的 OpenMP 实现
+### 54.8.2 Crocoddyl 的 OpenMP 实现 ⭐⭐⭐
 
 ```cpp
 // From crocoddyl/core/optctrl/shooting.cpp (simplified)
@@ -1017,7 +1017,7 @@ void ShootingProblem::calcDiff(const std::vector<VectorXd>& xs,
 }
 ```
 
-### 54.8.3 加速比分析
+### 54.8.3 加速比分析 ⭐⭐⭐
 
 ```
 理论加速比 vs 实际加速比 (N=50, ANYmal 全身动力学):
@@ -1037,9 +1037,9 @@ void ShootingProblem::calcDiff(const std::vector<VectorXd>& xs,
 - False sharing: 相邻 Data 对象可能在同一缓存行
 ```
 
-> ⚠️ **Pitfall**: False sharing 是 OpenMP 的经典陷阱。如果 `Data[0]` 和 `Data[1]` 的某些成员恰好在同一个 64 字节缓存行,一个线程写 `Data[0]` 会导致另一个线程的缓存行失效,造成不必要的缓存同步。Crocoddyl 通过让每个 Data 对象足够大(几 KB)来自然避免这个问题。
+> ⚠️ **陷阱**: False sharing 是 OpenMP 的经典陷阱。如果 `Data[0]` 和 `Data[1]` 的某些成员恰好在同一个 64 字节缓存行,一个线程写 `Data[0]` 会导致另一个线程的缓存行失效,造成不必要的缓存同步。Crocoddyl 通过让每个 Data 对象足够大(几 KB)来自然避免这个问题。
 
-> 💡 **Insight**: 实际中 4 核是 Crocoddyl OpenMP 的"甜蜜点"——80% 效率,3.2 倍加速。超过 8 核后收益递减严重,因为 backward pass 是串行瓶颈(Amdahl 定律)。这正是 ParallelRiccati 要解决的问题。
+> 💡 **洞察**: 实际中 4 核是 Crocoddyl OpenMP 的"甜蜜点"——80% 效率,3.2 倍加速。超过 8 核后收益递减严重,因为 backward pass 是串行瓶颈(Amdahl 定律)。这正是 ParallelRiccati 要解决的问题。
 
 **练习 54.8** (⭐⭐): 编译 Crocoddyl 并用 `OMP_NUM_THREADS=1,2,4,8` 运行 `examples/cpp/quadrupedal_walking.cpp`。记录不同核数下的求解时间,绘制加速比曲线。观察到什么?
 
@@ -1047,9 +1047,9 @@ void ShootingProblem::calcDiff(const std::vector<VectorXd>& xs,
 
 ## 54.9 Aligator / ProxDDP / ParallelRiccati ⭐⭐⭐⭐
 
-### 54.9.1 Aligator:Crocoddyl 的"下一代"
+### 54.9.1 Aligator:Crocoddyl 的"下一代" ⭐⭐⭐
 
-**Aligator** (Simple Robotics, 2024) 是 Pinocchio/Crocoddyl 团队的新一代轨迹优化库:
+**Aligator** (LAAS-CNRS / Inria, Jallet, Carpentier 等, T-RO 2025) 是 Pinocchio/Crocoddyl 团队的新一代轨迹优化库:
 
 ```
 Crocoddyl 与 Aligator 的定位:
@@ -1070,7 +1070,7 @@ fmtlib (>=10) ──→ Aligator
 mimalloc (>=2.1) ──→ Aligator (高效内存分配)
 ```
 
-### 54.9.2 ProxDDP:增广拉格朗日约束处理
+### 54.9.2 ProxDDP:增广拉格朗日约束处理 ⭐⭐⭐⭐
 
 **问题**:经典 DDP/FDDP 处理约束(如关节限位、摩擦锥)很困难。通常的做法是:
 
@@ -1093,7 +1093,7 @@ $$\mathcal{L}_{\mu}(\mathbf{x}, \mathbf{u}, \boldsymbol{\lambda}) = l(\mathbf{x}
 
 其中 $\boldsymbol{\lambda}$ 是对偶变量(Lagrange 乘子),$\mu$ 是增广参数(惩罚系数)。
 
-### 54.9.3 ProxDDP 的双层循环结构
+### 54.9.3 ProxDDP 的双层循环结构 ⭐⭐⭐⭐
 
 ```
 算法: ProxDDP
@@ -1123,9 +1123,9 @@ $$\mathcal{L}_{\mu}(\mathbf{x}, \mathbf{u}, \boldsymbol{\lambda}) = l(\mathbf{x}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
-> 💡 **Insight**: ProxDDP 的精妙之处在于:**内层循环用的是标准 DDP,不需要任何修改**。约束信息被"编码"进了增广代价函数。这意味着 ProxDDP 可以复用所有的 DDP 基础设施(backward pass、forward pass、line search)。
+> 💡 **洞察**: ProxDDP 的精妙之处在于:**内层循环用的是标准 DDP,不需要任何修改**。约束信息被"编码"进了增广代价函数。这意味着 ProxDDP 可以复用所有的 DDP 基础设施(backward pass、forward pass、line search)。
 
-### 54.9.4 ProxDDP vs FDDP:何时用哪个?
+### 54.9.4 ProxDDP vs FDDP:何时用哪个? ⭐⭐⭐
 
 | 特性 | FDDP | ProxDDP |
 |------|------|---------|
@@ -1137,7 +1137,7 @@ $$\mathcal{L}_{\mu}(\mathbf{x}, \mathbf{u}, \boldsymbol{\lambda}) = l(\mathbf{x}
 | 实时性 | 成熟(Crocoddyl 调优) | 需要更多调参 |
 | 论文发表 | ICRA 2019 | T-RO 2025 |
 
-### 54.9.5 ParallelRiccati:打破 30 年的教条
+### 54.9.5 ParallelRiccati:打破 30 年的教条 ⭐⭐⭐⭐
 
 **"backward pass 不可并行"**:这是 DDP 社区从 1970 年 Jacobson 的论文以来的共识。$V_k$ 的计算依赖 $V_{k+1}$,必须严格顺序从 $N$ 到 $0$。
 
@@ -1176,7 +1176,7 @@ Level 3:        T₀₁₂₃₄₅₆₇                     ← 1 次乘法
 | 串行 Riccati | $O(N \cdot n_x^3)$ | 200 步顺序 |
 | Parallel Scan | $O(\log N \cdot n_x^3)$ on $P$ 处理器 | ~8 步 (32 核) |
 
-> 🧠 **Deep Dive**: Parallel scan 算法在计算机科学中早已成熟(parallel prefix sum),但把它应用到 Riccati 递推上需要一个关键观察:Riccati 算子构成一个**半群**,即它满足结合律。这不是显然的——需要仔细证明 $\mathbf{T}_k$ 的乘法确实是结合的。
+> 🧠 **深入理解**: Parallel scan 算法在计算机科学中早已成熟(parallel prefix sum),但把它应用到 Riccati 递推上需要一个关键观察:Riccati 算子构成一个**半群**,即它满足结合律。这不是显然的——需要仔细证明 $\mathbf{T}_k$ 的乘法确实是结合的。
 
 **性能数据** (Jallet et al. T-RO 2025):
 
@@ -1194,7 +1194,7 @@ ParallelRiccati 性能 (ANYmal 全身 MPC):
 └─────────────────────────────────────────┘
 ```
 
-> ⚠️ **Pitfall**: ParallelRiccati 的每次乘法涉及 $(2n_x+1) \times (2n_x+1)$ 的矩阵乘法,比普通 Riccati 的 $n_x \times n_x$ 操作大得多。因此,只有 N 足够大(> 50)时才值得并行化。对于 N=10 的短 horizon MPC,串行 Riccati 反而更快。
+> ⚠️ **陷阱**: ParallelRiccati 的每次乘法涉及 $(2n_x+1) \times (2n_x+1)$ 的矩阵乘法,比普通 Riccati 的 $n_x \times n_x$ 操作大得多。因此,只有 N 足够大(> 50)时才值得并行化。对于 N=10 的短 horizon MPC,串行 Riccati 反而更快。
 
 **练习 54.9a** (⭐⭐⭐): 用 Eigen 实现一个简化版的 Parallel Scan:给定 N 个 $3 \times 3$ 矩阵,用二叉树合并计算它们的连乘。与顺序连乘对比结果的正确性和速度。
 
@@ -1204,7 +1204,7 @@ ParallelRiccati 性能 (ANYmal 全身 MPC):
 
 ## 54.10 Crocoddyl 实战:从零搭建四足 trot 优化 ⭐⭐⭐
 
-### 54.10.1 整体流程
+### 54.10.1 整体流程 ⭐⭐
 
 ```
 四足 trot 轨迹优化搭建流程:
@@ -1225,7 +1225,17 @@ Step 7: 可视化结果
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
-### 54.10.2 Python 完整代码
+### 54.10.2 Python 完整代码 ⭐⭐
+
+**代码结构概述**：下面的代码实现了一个完整的四足 trot 轨迹优化。在阅读代码之前，先理解其整体架构：
+
+1. **加载模型**：从 `example_robot_data` 获取 ANYmal 四足机器人的 URDF 模型，Pinocchio 将其解析为 `Model` + `Data` 对象。
+2. **定义接触配置**：trot 步态中对角脚同时着地，因此每个 ActionModel 需要指定当前时间步哪些脚处于接触状态。接触模型使用 `ContactModel3D`（只有力，没有力矩），这对应于点接触假设。
+3. **定义代价函数**：残差式代价 `CostModelResidual` 由一个 `ResidualModel`（计算残差向量）和一个 `ActivationModel`（定义惩罚函数，默认 L2）组成。这种分离的设计使得同一个残差可以用不同的惩罚函数（L2, weighted L2, smooth L1 等）。
+4. **组装 ShootingProblem**：将 $N$ 个 `IntegratedActionModel`（每个包含接触 + 代价 + 积分器）串成一个 `ShootingProblem`。
+5. **求解**：`SolverFDDP` 执行 FDDP 算法，内部交替 backward pass（计算反馈增益）和 forward pass（rollout 新轨迹）。
+
+这个流程等价于：手动写出 NLP $\min \sum l_k(x_k, u_k)$ s.t. $x_{k+1} = f_k(x_k, u_k)$，然后用 FDDP 利用 Markov 结构高效求解。理解这一点，代码中的每一步就都有了对应的数学意义。
 
 ```python
 import numpy as np
@@ -1371,9 +1381,9 @@ print(f"Final gap norm: "
       f"{max(np.linalg.norm(g) for g in solver.fs):.6f}")
 ```
 
-> ⚠️ **Pitfall**: `isFeasible=False` 告诉 FDDP 初始轨迹**不满足动力学**(有 gaps)。如果你传 `True` 但轨迹实际不可行,FDDP 的 line search 会行为异常。保险起见,warm-start 时始终传 `False`。
+> ⚠️ **陷阱**: `isFeasible=False` 告诉 FDDP 初始轨迹**不满足动力学**(有 gaps)。如果你传 `True` 但轨迹实际不可行,FDDP 的 line search 会行为异常。保险起见,warm-start 时始终传 `False`。
 
-> 💡 **Insight**: `quasiStatic()` 是一个聪明的初始化方法:它计算让机器人在每个构型下"静力平衡"的控制输入。这比零初始化好得多,因为零扭矩会让机器人在重力下自由坠落。
+> 💡 **洞察**: `quasiStatic()` 是一个聪明的初始化方法:它计算让机器人在每个构型下"静力平衡"的控制输入。这比零初始化好得多,因为零扭矩会让机器人在重力下自由坠落。
 
 **练习 54.10a** (⭐⭐⭐): 修改上面的代码,把 trot 步态改为 bound 步态(前两脚同时、后两脚同时)。观察优化出的运动有什么不同。
 
@@ -1383,7 +1393,7 @@ print(f"Final gap norm: "
 
 ## 54.11 DDP 在 MPC 中的使用模式 ⭐⭐⭐
 
-### 54.11.1 Warm-Starting:MPC 的核心技巧
+### 54.11.1 Warm-Starting:MPC 的核心技巧 ⭐⭐
 
 MPC 每个控制周期(通常 1-10ms)需要重新求解一次 OCP。关键问题:**如何用上一次的解来"热启动"本次求解?**
 
@@ -1403,7 +1413,7 @@ MPC Warm-Start (时间平移):
 
 **关键点**:时间平移后,新增的最后一步是"猜测"——这产生了 FDDP 的 gap。这就是 FDDP 对 MPC 至关重要的原因。
 
-### 54.11.2 实时性策略:不等收敛
+### 54.11.2 实时性策略:不等收敛 ⭐⭐⭐
 
 MPC 不需要每次都求解到收敛!常见策略:
 
@@ -1430,7 +1440,7 @@ MPC 不需要每次都求解到收敛!常见策略:
 └────────────────────────────────────────────────────┘
 ```
 
-### 54.11.3 反馈增益的使用
+### 54.11.3 反馈增益的使用 ⭐⭐⭐
 
 DDP 的 backward pass 给出了反馈增益 $\mathbf{K}_k$。在 MPC 两次求解之间,可以用这个增益做闭环控制:
 
@@ -1449,9 +1459,9 @@ MPC + DDP 反馈增益:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
-> 💡 **Insight**: 这是 DDP 相对于 SQP 的天然优势。SQP 只给出开环轨迹 $\{\mathbf{u}_k^*\}$,没有反馈增益。OCS2 的 SQP 方案需要额外跑一次 LQR 来得到反馈增益,而 DDP 的反馈增益是"免费"的副产品。
+> 💡 **洞察**: 这是 DDP 相对于 SQP 的天然优势。SQP 只给出开环轨迹 $\{\mathbf{u}_k^*\}$,没有反馈增益。OCS2 的 SQP 方案需要额外跑一次 LQR 来得到反馈增益,而 DDP 的反馈增益是"免费"的副产品。
 
-> ⚠️ **Pitfall**: 反馈增益 $\mathbf{K}_k$ 只在当前最优解附近有效。如果实际状态偏离太多(比如外部扰动),$\mathbf{K}_k$ 的修正可能不够——需要等下一次 MPC 重新规划。
+> ⚠️ **陷阱**: 反馈增益 $\mathbf{K}_k$ 只在当前最优解附近有效。如果实际状态偏离太多(比如外部扰动),$\mathbf{K}_k$ 的修正可能不够——需要等下一次 MPC 重新规划。
 
 **练习 54.11** (⭐⭐⭐): 在 54.10 的四足 trot 例子上实现一个简单的 MPC 循环:每次只跑 3 次 FDDP 迭代,然后用反馈增益 $\mathbf{K}_0$ 应用第一步控制。在循环中引入随机扰动,观察系统的鲁棒性。
 
@@ -1459,7 +1469,7 @@ MPC + DDP 反馈增益:
 
 ## 54.12 DDP vs SQP:两大流派的对比 ⭐⭐⭐
 
-### 54.12.1 核心分歧
+### 54.12.1 核心分歧 ⭐⭐
 
 ```
 DDP 流派 (Crocoddyl, MuJoCo)       SQP 流派 (OCS2, ALTRO)
@@ -1473,7 +1483,7 @@ DDP 流派 (Crocoddyl, MuJoCo)       SQP 流派 (OCS2, ALTRO)
 └──────────────────────────┘       └──────────────────────────┘
 ```
 
-### 54.12.2 场景分析
+### 54.12.2 场景分析 ⭐⭐
 
 | 场景 | 推荐 | 理由 |
 |------|------|------|
@@ -1483,11 +1493,11 @@ DDP 流派 (Crocoddyl, MuJoCo)       SQP 流派 (OCS2, ALTRO)
 | 工业级产品 | OCS2 (SQP) | 代码成熟度,ETH ANYmal 验证 |
 | 研究前沿 | Aligator (ProxDDP) | 最灵活,ParallelRiccati |
 
-> 🧠 **Deep Dive**: 两派的分歧不是技术水平的差异,而是**设计哲学**的差异。DDP 把动力学"嵌入"求解器(通过 rollout),获得了效率和反馈增益;SQP 把动力学"外化"为约束,获得了通用性和约束处理能力。ProxDDP 试图兼得两者——用 ALM 在 DDP 框架内处理约束。
+> 🧠 **深入理解**: 两派的分歧不是技术水平的差异,而是**设计哲学**的差异。DDP 把动力学"嵌入"求解器(通过 rollout),获得了效率和反馈增益;SQP 把动力学"外化"为约束,获得了通用性和约束处理能力。ProxDDP 试图兼得两者——用 ALM 在 DDP 框架内处理约束。
 
 ---
 
-## 常见故障与排查
+## 🔧 故障排查手册
 
 | 现象 | 可能原因 | 排查方法 |
 |------|---------|---------|
@@ -1496,6 +1506,18 @@ DDP 流派 (Crocoddyl, MuJoCo)       SQP 流派 (OCS2, ALTRO)
 | 求解结果中接触力违反摩擦锥约束 | 使用无约束 FDDP 时,摩擦锥仅通过代价函数惩罚而非硬约束 | 1. 检查 `CostModelFrictionCone` 的权重是否足够大 2. 切换到 ProxDDP/CSQP 以硬约束方式处理摩擦锥 3. 对比约束违反量与摩擦锥余量 |
 | MPC warm-start 后首次迭代代价反而上升 | 新的 MPC 周期移除了首步、追加了末步,产生了 gap 和末步初始猜测不良 | 1. 确认 warm-start 的轨迹平移逻辑正确(shift + extrapolate) 2. 检查末步的初始控制是否合理(复制倒数第二步而非填零) 3. 允许 MPC 首次迭代多跑几步以消化 gap |
 | Crocoddyl `calcDiff()` 耗时远超预期(> 5ms) | 每次 `calcDiff()` 都重新创建 Data 对象,触发堆分配 | 1. 确认使用 `problem.createData()` 一次性预分配 2. 用 `EIGEN_RUNTIME_NO_MALLOC` 检测运行时堆分配 3. 对比 `calc()` 和 `calcDiff()` 的单独耗时,定位瓶颈 |
+
+---
+
+## 🔧 故障排查手册
+
+| 症状 | 可能原因 | 排查步骤 | 相关章节 |
+|------|---------|---------|---------|
+| backward pass Q_uu 不正定 | 正则化μ不足/动力学Hessian数值问题 | 增大μ或切换iLQR(Gauss-Newton近似丢弃二阶项) | 足式/100.3 |
+| forward pass 发散 | 步长过大/初始轨迹离最优太远 | 减小α或启用line search(Armijo条件) | 足式/100.4 |
+| warm-start 反而变慢 | 上一次解在约束边界震荡 | 检查约束激活状态变化；对比冷启动与热启动的迭代次数 | 足式/100.7 |
+| Crocoddyl calcDiff 报段错误 | Data未正确createData | 检查model/data匹配；确认使用problem.createData()预分配 | 足式/100.5 |
+| 并行Riccati结果不一致 | OpenMP线程数据竞争 | 检查Eigen内存对齐；用ThreadSanitizer检测竞态 | 足式/100.8 |
 
 ---
 
@@ -1633,12 +1655,57 @@ DDP 流派 (Crocoddyl, MuJoCo)       SQP 流派 (OCS2, ALTRO)
 6. **Jallet W., et al. (2025)** "Parallel and Proximal Constrained Linear-Quadratic Methods for Real-Time Nonlinear MPC". T-RO. **ProxDDP + ParallelRiccati**, 博士必读。
 7. **Kleff S., et al. (2022)** "On the Derivation of Contact Dynamics in Arbitrary Frames". Humanoids 2022. 接触动力学导数的推广。
 
-### 开放研究问题
+### ALIGATOR：Pinocchio 3.x 的新一代轨迹优化求解器 ⭐⭐⭐⭐
+
+**Aligator** 是 LAAS-CNRS / Inria（Jallet, Carpentier 等, T-RO 2025）开发的下一代轨迹优化框架，核心创新为 ProxDDP（增广拉格朗日约束处理）和 ParallelRiccati（$O(\log N)$ 并行 backward pass）。详见 54.9 节的完整架构分析、代码示例和性能对比。
+
+### MuJoCo MPC (Predictive Sampling) 与 DDP 的对比 ⭐⭐⭐
+
+**MuJoCo MPC** (Howell et al., 2022) 采用了与 DDP 完全不同的轨迹优化策略——**Predictive Sampling**（预测采样），也称为 Model Predictive Path Integral (MPPI) 的变体。
+
+**核心思想差异**：
+
+| 维度 | DDP (Crocoddyl/Aligator) | MuJoCo MPC (Predictive Sampling) |
+|------|--------------------------|----------------------------------|
+| **优化方法** | 基于梯度的二阶方法（Gauss-Newton） | 无梯度的采样方法（蒙特卡罗） |
+| **需要导数？** | 需要动力学的一阶导数（$f_x, f_u$） | 不需要——只需要仿真器前向模拟 |
+| **处理不可微动力学？** | 困难（接触切换处梯度不连续） | 自然处理——采样不关心可微性 |
+| **并行性** | 串行 backward pass（除非 ParallelRiccati） | 天然并行——每条采样轨迹独立 |
+| **最优性** | 局部最优（二阶收敛） | 统计意义上接近最优（采样精度） |
+| **样本效率** | 高（梯度提供精确方向） | 低（需要大量采样） |
+| **计算硬件** | CPU 友好（矩阵运算） | GPU 友好（大规模并行仿真） |
+
+**什么时候选 DDP，什么时候选 Predictive Sampling？**
+
+- **动力学可微且需要精确最优**：选 DDP / ProxDDP。Pinocchio 提供了精确的解析导数，DDP 可以达到二阶收敛精度。
+- **动力学含不可微环节（复杂接触、变摩擦）且有 GPU**：选 Predictive Sampling / MPPI。MuJoCo MJX 在 GPU 上可以并行仿真数千条轨迹，暴力搜索补偿了采样方法的低效率。
+- **混合策略（前沿方向）**：用 DDP 计算名义轨迹，然后在 DDP 解的邻域内用采样方法做鲁棒化。这结合了两者的优点——DDP 的精度和采样的鲁棒性。
+
+> **本质洞察**：DDP 的 backward pass 本质上是一个"信息从未来传递到现在"的过程——$V_{xx}(k)$ 编码了"从时间 $k$ 到终点的累积代价对状态扰动的敏感度"。这个信息传递是严格因果的（只能从后往前），因此 backward pass 天然串行。ParallelRiccati 的突破在于发现了一种数学等价形式，使得这个"因果传递"可以用非因果的并行计算来实现。
+
+> **本质洞察**：DDP 和 MPC 的关系不是"DDP 是 MPC 的一种求解器"，而是"DDP 利用了控制问题的 Markov 结构来高效求解 NLP"。任何 NLP 求解器（Ipopt, SQP）都可以做 MPC，但只有 DDP 家族利用了"时间步之间只有相邻耦合"这一特殊稀疏结构。这就是为什么 DDP 的复杂度是 $O(N)$ 而通用 NLP 是 $O(N^3)$——不是因为 DDP 更聪明，而是因为它利用了问题结构。
+
+### 开放研究问题 ⭐⭐⭐⭐
 
 - **GPU ParallelRiccati**: 能否把 parallel scan 移植到 GPU? SIMT 架构与树形归约的匹配度?
 - **学习 + DDP**: 用神经网络预测初始 $V_\mathbf{x}, V_{\mathbf{xx}}$ 来热启动 DDP (MPC-Net 方向, 足式/210_RL与MPC混合范式)。
 - **Contact-Implicit DDP**: 接触模式作为决策变量——极其困难的开放问题。
 - **Differentiable DDP**: 让 DDP 本身可微,嵌入端到端学习管线。
+- **DDP + Predictive Sampling 混合**：DDP 提供名义轨迹 + 采样做鲁棒化,兼顾精度与鲁棒性。
+
+### 跨章综合练习 ⭐⭐⭐
+
+**综合题：从 NLP 建模到 DDP 求解再到 WBC 执行的完整 MPC-WBC 链路**
+
+本题需要综合 足式/60_QP_NLP建模（NLP 问题结构）、足式/70_腿足简化模型理论（SRBD 动力学）、足式/90_WBC分层优化与TSID（WBC）和本章（DDP 求解）四章知识。
+
+1. **NLP 建模**（足式/60_QP_NLP建模 + 足式/70_腿足简化模型理论）：写出 Go2 四足机器人 trot 步态的 SRBD MPC 问题的完整 NLP 形式：(a) 状态变量 $\mathbf{x}_k$ 和控制变量 $\mathbf{u}_k$ 的定义及维度，(b) 动力学约束 $\mathbf{x}_{k+1} = f(\mathbf{x}_k, \mathbf{u}_k)$ 的具体形式，(c) 摩擦锥路径约束。
+
+2. **DDP 求解**（本章）：说明为什么这个 NLP 适合用 FDDP 而不是 Ipopt 求解（提示：Markov 结构、$O(N)$ 复杂度）。如果摩擦锥是硬约束而非 penalty，FDDP 是否仍然适用？为什么这时需要 ProxDDP？
+
+3. **MPC → WBC 接口**（本章 + 足式/90_WBC分层优化与TSID）：DDP MPC 求解后输出最优轨迹 $\{\mathbf{x}_0^*, \mathbf{u}_0^*, \mathbf{x}_1^*, ...\}$ 和反馈增益 $\{\mathbf{K}_0, \mathbf{K}_1, ...\}$。WBC 需要的输入是什么？说明如何从 MPC 输出中提取 WBC 的 (a) 期望 CoM 加速度、(b) 期望接触力、(c) 反馈增益的使用方式（当实际状态偏离名义轨迹时）。
+
+4. **整体时序分析**：画出一个控制周期（1 kHz）内 MPC 和 WBC 的时间预算分配。如果 MPC 以 30 Hz 运行（每 33 ms 更新一次），WBC 以 1 kHz 运行（每 1 ms 更新一次），那么在 MPC 两次更新之间，WBC 如何利用反馈增益 $\mathbf{K}_k$ 做实时补偿？
 
 ---
 
@@ -1672,8 +1739,8 @@ DDP 流派 (Crocoddyl, MuJoCo)       SQP 流派 (OCS2, ALTRO)
 ## 与其他章节的衔接
 
 **向前承接**:
-- Ch14 CRTP → **足式/100_DDP家族与Crocoddyl Crocoddyl 为什么不用 CRTP(反例)**
-- Ch17-20 并发 → **足式/100_DDP家族与Crocoddyl OpenMP 并行 + ParallelRiccati**
+- 02_基础/10_Eigen CRTP → **足式/100_DDP家族与Crocoddyl Crocoddyl 为什么不用 CRTP(反例)**
+- 02_基础/30_并发与实时 → **足式/100_DDP家族与Crocoddyl OpenMP 并行 + ParallelRiccati**
 - 足式/30_Pinocchio深度精读 Pinocchio Model-Data → **足式/100_DDP家族与Crocoddyl ActionModel-ActionData**
 - 足式/40_CppAD与代码生成 CppAD → **足式/100_DDP家族与Crocoddyl Crocoddyl 的 CodeGen 集成**
 - 足式/60_QP_NLP建模 NLP/QP → **足式/100_DDP家族与Crocoddyl DDP 是特殊的 NLP 求解器**

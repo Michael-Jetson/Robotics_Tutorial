@@ -42,10 +42,10 @@
 足式/80_接触力学与约束优化 接触约束 ──┤                        ├──> 足式/240_legged_control精读 legged_control 精读
 足式/100_DDP家族与Crocoddyl DDP/Crocoddyl┘                      └──> 复合/30_多模态MPC mobile_manipulator
 
-v8 主线:
-Ch17-20 并发 ──> 双线程 MPC 架构的基础
-Ch29 设计模式 ──> OCS2 大量用 Strategy/Factory/Facade
-Ch30 ROS2 ──────> MPC ROS Wrapper 是 Lifecycle Node
+外部知识依赖:
+C++ 并发编程(std::thread/atomic/memory_order) ──> 双线程 MPC 架构的基础
+设计模式(Strategy/Factory/Facade) ──> OCS2 大量用这三种模式
+ROS2 Lifecycle Node ──> MPC ROS Wrapper 是 Lifecycle Node
 ```
 
 ---
@@ -1121,7 +1121,9 @@ public:
 };
 ```
 
-> **🧠 深度理解**: 注意 `memory_order` 的选择。`acq_rel` 用于 swap 操作(同步点),`relaxed` 用于同一线程内的读写(无需同步)。这比 `seq_cst` 更高效,但正确性依赖于"只有一个生产者和一个消费者"的假设(SPSC)。这正是 v8 Ch17-20 讲过的 SPSC 无锁数据结构在 MPC 场景的落地。
+> **🧠 深度理解**: 注意 `memory_order` 的选择。`acq_rel` 用于 swap 操作(同步点),`relaxed` 用于同一线程内的读写(无需同步)。这比 `seq_cst` 更高效,但正确性依赖于"只有一个生产者和一个消费者"的假设(SPSC)。这是 C++ 并发编程中经典的 SPSC 无锁数据结构在 MPC 场景的落地——生产者(MPC 线程)写入最新 policy,消费者(MRT 线程)读取最新可用 policy,中间无锁、无阻塞、延迟确定。
+
+> **本质洞察**:Triple Buffer 的设计哲学不是"让两个线程同时访问同一数据",而是**让每个线程始终拥有自己的独占副本,通过原子指针交换来传递所有权**。这和 Rust 的所有权模型有异曲同工之妙——不共享可变数据,而是转移所有权,从根本上消除数据竞争。在 MPC 场景中,这意味着 MRT 线程读到的永远是一个完整、一致的 policy(不会读到"半写入"的脏数据),而 MPC 线程的写入也永远不会被阻塞。
 
 #### 55.7.4 OCS2 的 MPC_MRT_Interface
 
@@ -1759,6 +1761,18 @@ EndEffectorKinematics<cg_scalar_t>   // CppADCodeGen 代码生成
 
 ---
 
+## 🔧 故障排查手册
+
+| 症状 | 可能原因 | 排查步骤 | 相关章节 |
+|------|---------|---------|---------|
+| SQP不收敛 | 初始猜测太差/约束线性化精度不足 | 用rollout初始化；增加SQP内循环迭代次数 | 足式/110.3 |
+| 双线程数据撕裂 | Triple Buffer实现错误 | 检查memory_order/std::atomic使用；用ThreadSanitizer检测 | 足式/110.7 |
+| CppADCodeGen编译失败 | 模型维度变化后缓存过期 | 清除.so缓存重新生成；检查CppAD版本兼容性 | 足式/40 |
+| MPC频率不稳定 | GC暂停或页面错误 | 用mlockall+RT线程优先级；检查是否有运行时堆分配 | 足式/170 |
+| Centroidal模型接触力为负 | 摩擦锥约束未正确编码 | 检查ConeConstraint参数；验证法向力下界约束 | 足式/80 |
+
+---
+
 ## 55.14 本章小结 ⭐
 
 #### 核心概念回顾
@@ -1953,6 +1967,17 @@ void controlLoop() {
 
 列出支持 SQP 和支持 DDP 的论据。如果你要做新的腿足 MPC 框架,选哪个?为什么?
 
+#### [跨章综合题] 练习 55.9: 从动力学到实时部署的完整链路 ⭐⭐⭐
+
+本题需要综合 足式/50_空间向量与浮动基座动力学(浮动基座动力学)、足式/80_接触力学与约束优化(接触力学)和本章(OCS2 MPC)的知识。
+
+**场景**: 你需要为一个新的四足机器人(质量 15 kg,腿长 0.35 m)在 OCS2 中配置 Full Centroidal MPC。
+
+1. **(足式/50_空间向量与浮动基座动力学)** 写出该机器人的广义坐标 $q$ 和浮动基座动力学方程的维度。Centroidal Model 将状态压缩到了什么维度?为什么可以这样压缩?(提示:回顾 SRBD 假设)
+2. **(足式/80_接触力学与约束优化)** 在 trot 步态下,摩擦锥约束应该如何写?OCS2 的 `FrictionConeConstraint` 是用线性化多面体还是解析 SOC 锥?两者的数值特性差异是什么?
+3. **(本章)** 在 `task.info` 中,你需要设置哪些关键参数?写出 Q 矩阵和 R 矩阵的维度和典型权重选择。解释为什么基座高度跟踪权重通常远大于航向角权重。
+4. **(本章)** 如果 SQP-RTI 的单次迭代时间为 15 ms,MPC 周期设为 20 ms,MRT 运行在 1 kHz——画出时序图,标注 MPC 求解开始/结束、Triple Buffer swap、MRT 查询的时间点。讨论:如果某次 SQP 迭代因为步态切换而耗时 35 ms(超过一个 MPC 周期),系统会如何降级?
+
 ---
 
 ### 研究前沿与论文阅读
@@ -1977,11 +2002,47 @@ void controlLoop() {
 
 8. **Frison G., Diehl M. (2020)** "HPIPM: a high-performance QP framework for model predictive control" — IFAC. HPIPM 论文。
 
+#### OCS2 与 ALIGATOR/Crocoddyl/ProxDDP 的性能对比 ⭐⭐⭐
+
+随着腿足 MPC 框架的生态日趋丰富,理解不同框架的性能特征对工程选型至关重要。以下对比基于 2024-2025 年的公开基准测试(Stark et al. 2024, Jallet et al. 2024)和社区实测数据:
+
+| 维度 | **OCS2 (SQP+HPIPM)** | **Crocoddyl 2.x (FDDP)** | **ALIGATOR (Jallet 2024, ProxDDP)** |
+|------|----------------------|---------------------------|--------------------------------------|
+| **求解算法** | SQP: 线性化 + QP 子问题 | FDDP: 可行性驱动 DDP | ProxDDP: 近端增广拉格朗日 + DDP |
+| **约束处理** | 硬约束(QP 内直接处理摩擦锥、关节限位) | ALM 软约束 | 近端约束(ProxDDP) |
+| **典型求解时间(四足 trot, 1s horizon)** | 5-20 ms (SQP-RTI, 1 iter) | 10-30 ms (FDDP, 多 iter) | 3-10 ms (优化的 ProxDDP) |
+| **约束精度** | 精确满足(QP 层直接处理) | 渐近满足(ALM 收敛后) | 渐近满足但收敛更快 |
+| **代码生成** | CppAD/CppADCodeGen → 编译为 .so | 解析导数(Pinocchio) | 解析导数 + Jit 编译 |
+| **ROS 生态** | 完整(MPC_Node + MRT_Node + RViz) | 简单(需自己封装) | 极简(纯库) |
+| **切换系统支持** | 一等公民 | 需手动管理 | 需手动管理 |
+| **学习曲线** | 陡(五层抽象) | 较平(Python 友好) | 中(C++ 为主) |
+
+**关键洞察**:OCS2 的优势在于**硬约束处理的精确性**和**完整的 ROS 部署栈**;ProxDDP/ALIGATOR 的优势在于**原始求解速度**(不需要组装和求解 QP 子问题,直接在 DDP backward pass 中处理约束)。对于生产部署,OCS2 的工程成熟度更高;对于研究原型和需要快速迭代的场景,Crocoddyl/ALIGATOR 的 Python 绑定更方便。
+
+> **本质洞察**:SQP 和 ProxDDP 处理约束的哲学根本不同。SQP 把约束"交给 QP 求解器"——每次 SQP 迭代都精确满足线性化约束,通过多次迭代让非线性约束也收敛。ProxDDP 把约束"融入代价函数"——用近端算子(proximal operator)将约束违反惩罚到 DDP 的 Q-function 中,通过增广拉格朗日的外循环让约束逐步满足。**前者像法官(每步都判对错),后者像教练(让你逐步改进)**。在腿足场景中,摩擦锥等安全关键约束需要精确满足,这是 OCS2 选择 SQP 的核心理由。
+
+#### ADMM-based MPC 趋势 ⭐⭐⭐
+
+2024-2025 年,**ADMM(交替方向乘子法)** 作为 MPC 求解器后端正在成为新的研究热点,主要动力来自两个方向:
+
+**方向一:GPU 并行化**。ADMM 的每次迭代可以分解为独立的子问题,天然适合 GPU 并行。Plancher et al. 的 MPCGPU 和 Tracy et al. 的 TinyMPC 展示了 ADMM 在嵌入式/GPU 平台上的潜力——在 Jetson Orin 上实现亚毫秒级 MPC 求解。
+
+**方向二:分布式求解**。多机器人协同 MPC(如双四足抬重物)需要分布式优化。ADMM 天然支持将大问题分解为多个子问题,每个子机器人求解自己的子问题,通过共识变量协调。这是 OCS2 当前的 centralized 架构难以直接处理的。
+
+| ADMM 框架 | 平台 | 典型求解时间 | 特点 |
+|-----------|------|------------|------|
+| TinyMPC (Nguyen 2024) | ARM Cortex-M7 | < 1 ms (线性 MPC) | 嵌入式,代码生成 |
+| MPCGPU (Plancher 2024) | CUDA GPU | 0.1-1 ms | GPU 并行,batch 求解 |
+| cosmo-mpc (2025) | CPU multi-thread | 5-15 ms (非线性) | ADMM + SQP 混合 |
+
+**工程启示**:ADMM 目前主要适用于**线性 MPC**(如 SRBD 凸 MPC)和**中等规模非线性 MPC**。对于 OCS2 级别的大规模非线性 SQP(数百个决策变量、复杂约束),HPIPM 仍然是最成熟的选择。但 GPU 加速是明确的趋势——未来 2-3 年内,GPU-accelerated SQP 有望让 MPC 求解快一个数量级。
+
 #### 开放研究问题
 
-- **OCS2 on GPU**: HPIPM 是 CPU-only。能否用 GPU 加速 MPC 求解? 参考 cuHPIPM。
-- **分布式 OCS2**: 多机器人协同 MPC(如双四足抬重物)。
+- **OCS2 on GPU**: HPIPM 是 CPU-only。能否用 GPU 加速 MPC 求解? 参考 cuHPIPM 和 MPCGPU。ADMM-based 后端可能是 GPU 化的更自然路径。
+- **分布式 OCS2**: 多机器人协同 MPC(如双四足抬重物)。ADMM 的共识分解是一条可行路线。
 - **OCS2 + RL**: 用 NN 预测初始轨迹(热启动)、学习代价权重(逆 RL)、MPC-Net(OCS2 内置但实验性)。
+- **ProxDDP 替换 SQP 后端**: 在 OCS2 框架内用 ProxDDP 替代 SQP+HPIPM,能否同时获得 OCS2 的工程生态和 ProxDDP 的求解速度?
 
 ---
 

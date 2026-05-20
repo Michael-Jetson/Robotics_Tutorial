@@ -4,13 +4,13 @@
 
 ## 前置自测
 
-📋 **前置自测**（答不出 ≥ 2 题 → 先回 M07/M12/v8 Ch29 复习）
+📋 **前置自测**（答不出 ≥ 2 题 → 先回 M07/M12/`02_基础/30_软件工程` 复习）
 
-1. `pluginlib` 的 ClassLoader 如何通过字符串动态创建 C++ 对象？（v8 Ch29）
+1. `pluginlib` 的 ClassLoader 如何通过字符串动态创建 C++ 对象？（`02_基础/30_软件工程/10_设计模式与高级惯用法`）
 2. OMPL 中 RRT-Connect 的双树扩展策略是什么？它为什么比单树 RRT 更快？（M07）
 3. ros2_control 的 JointTrajectoryController 如何接收和执行轨迹？（M12）
 4. IK 求解器的性能光谱是什么？从 opw (~0.1us) 到 KDL (~2ms) 差了多少量级？（M03）
-5. Composite Pattern 如何用统一接口处理叶子节点和容器节点？（v8 Ch29）
+5. Composite Pattern 如何用统一接口处理叶子节点和容器节点？（`02_基础/30_软件工程/10_设计模式与高级惯用法`）
 
 ## 本章目标
 
@@ -26,13 +26,13 @@
 
 ## M14.1 MoveIt2 架构全景 ⭐⭐
 
-### 动机
+### 动机 ⭐⭐
 
 当你需要让一台 7-DOF 机械臂从当前位姿移动到目标位姿，同时避开桌子上的障碍物——这个问题涉及运动学（IK 求解）、碰撞检测（环境感知）、路径搜索（OMPL 规划器）、轨迹平滑（时间参数化）、命令执行（ros2_control）等多个子系统。
 
 MoveIt2 不是一个规划算法——它是一个**规划框架**，通过 pluginlib 插件架构统一了这些子系统。
 
-### 如果不用 MoveIt2 会怎样
+### 如果不用 MoveIt2 会怎样 ⭐⭐
 
 假设你要自己组装一个运动规划系统：
 1. 用 Pinocchio 做 FK/IK → 需要自己管理 URDF 加载和关节限位
@@ -45,7 +45,7 @@ MoveIt2 不是一个规划算法——它是一个**规划框架**，通过 plug
 
 > **本质洞察**：MoveIt2 的核心价值不是任何一个算法，而是**接口标准化**——它定义了规划器、IK 求解器、碰撞检测器、时间参数化器的标准接口，让所有实现都可以通过 pluginlib 运行时替换。这类似于 JDBC 之于数据库、OpenGL 之于图形渲染——抽象层的价值在于解耦和可替换性。
 
-### 架构分层
+### 架构分层 ⭐⭐
 
 ```
 用户 API 层:
@@ -81,11 +81,11 @@ kinematics:
     kinematics_solver_timeout: 0.05
 ```
 
-### pluginlib 三层工厂架构
+### pluginlib 三层工厂架构 ⭐⭐
 
 MoveIt2 里，规划器、IK 求解器、碰撞检测器**全都是 pluginlib 插件**。
 
-回顾 v8 Ch29 和 M12：我们在 v8 Ch29 中学习了工厂模式和 pluginlib 动态加载，在 M12 中看到 ros2_control 如何用 pluginlib 加载硬件驱动。MoveIt2 把这个模式推到了极致——几乎所有可变组件都是插件。
+回顾 `02_基础/30_软件工程/10_设计模式与高级惯用法` 和 M12：我们在 `02_基础/30_软件工程/10_设计模式与高级惯用法` 中学习了工厂模式和 pluginlib 动态加载，在 M12 中看到 ros2_control 如何用 pluginlib 加载硬件驱动。MoveIt2 把这个模式推到了极致——几乎所有可变组件都是插件。
 
 ```cpp
 // MoveIt2 内部加载规划器的核心逻辑
@@ -162,7 +162,7 @@ planner_instance.reset(
 
 ## M14.2 MoveGroupInterface vs MoveItCpp ⭐⭐
 
-### 动机
+### 动机 ⭐⭐
 
 MoveIt2 提供两套用户 API，适合不同场景。理解两者的区别是正确使用 MoveIt2 的第一步。
 
@@ -320,7 +320,7 @@ private:
 };
 ```
 
-PIMPL 的工程价值（回顾 v8 Ch29）：
+PIMPL 的工程价值（回顾 `02_基础/30_软件工程/10_设计模式与高级惯用法`）：
 1. **ABI 稳定**：修改内部实现不需要重新编译用户代码
 2. **编译隔离**：用户头文件不包含内部依赖（如 OMPL、FCL 的头文件）
 3. **封装性**：内部状态（ROS2 Action Client、规划器实例等）完全隐藏
@@ -392,7 +392,7 @@ if plan_result:
 
 ## M14.3 PlanningScene 管理 ⭐⭐
 
-### 动机
+### 动机 ⭐⭐
 
 运动规划不是在真空中进行的——机械臂必须避开桌子、物体、人和自身。PlanningScene 是 MoveIt2 中管理「机器人周围有什么」的核心组件。
 
@@ -552,13 +552,13 @@ MoveIt Setup Assistant 自动生成 ACM（通过在多个随机配置下采样�
 
 ## M14.4 MoveIt Task Constructor (MTC) 深度 ⭐⭐
 
-### 动机
+### 动机 ⭐⭐
 
 单次运动规划（从 A 到 B）用 MoveGroupInterface 就够了。但 pick-and-place 任务是**多阶段**的：打开夹爪 → 移动到预抓取位 → 接近物体 → 关闭夹爪 → 提起物体 → 移动到放置位 → 放下物体 → 后退。
 
 这 8 个阶段不是独立的——后一个阶段的起始状态是前一个阶段的结束状态，中间还有碰撞场景的变化（物体从桌上 attach 到末端）。MTC 专门解决这种**多阶段运动规划的约束传播和多解搜索**。
 
-### 核心概念
+### 核心概念 ⭐⭐
 
 **Stage（阶段）**是 MTC 的基本单元。每个 Stage 按功能分为三类：
 
@@ -586,7 +586,7 @@ CurrentState → OpenGripper → Connect → ComputeIK
 
 ### Composite Pattern 的应用
 
-MTC 的 Stage 体系直接应用了 Composite Pattern（回顾 v8 Ch29）：
+MTC 的 Stage 体系直接应用了 Composite Pattern（回顾 `02_基础/30_软件工程/10_设计模式与高级惯用法`）：
 
 ```
 Stage (基类 = Component)
@@ -1585,6 +1585,61 @@ BT.CPP (顶层)
 1. **[思考题]** 14-DOF 联合规划的 C-space 是独立 7-DOF 的两倍。OMPL 采样效率随维度急剧下降。替代策略？（考虑优先级规划、时间参数化协调）
 
 2. **[跨章综合题]** 结合 M12（ros2_control）、M13（BT.CPP）、M14（MoveIt2+MTC），设计一个完整的 pick-and-place 系统架构：(a) BT.CPP 顶层编排包含错误恢复，(b) BT Action 节点内部调用 MTC 做多阶段规划，(c) MTC 输出轨迹通过 JTC 执行，(d) PlanningScene 动态管理碰撞对象。画出完整的系统架构图和数据流。
+
+---
+
+## M14.8 前沿展望：MoveIt2 2026 路线图、MoveIt Servo 2.0 与 Foundation Model 集成 ⭐⭐⭐⭐
+
+前七节覆盖了 MoveIt2 和 MTC 从架构到工业部署的核心内容。MoveIt 生态仍在快速迭代，以下梳理近期路线图中与教学和工程选型直接相关的发展方向。
+
+### MoveIt2 2025-2026 路线图
+
+MoveIt2 社区（主要由 PickNik Robotics 驱动）在 2025-2026 年聚焦以下方向：
+
+| 方向 | 进展 | 对用户的影响 |
+|------|------|------------|
+| **Python-first API** | `moveit_py` 已成为推荐入口 | 80%+ 的新部署使用 Python，C++ 仅用于性能关键路径 |
+| **cuMotion 集成** | NVIDIA cuMotion（GPU 加速碰撞检测+规划）作为 pluginlib 插件接入 | 碰撞检测速度提升 10-100x，使 1000+ FPS 的实时避障成为可能 |
+| **行为树原生集成** | MoveIt Pro 的 Objective 节点模式向开源版渗透 | BT 节点可以直接调用 MoveIt2 API，无需自定义 Action Server 中转 |
+| **多机器人原生支持** | 双臂/多臂的 PlanningScene 和 SRDF 支持标准化 | 不再需要为双臂场景手动 hack SRDF |
+
+### MoveIt Servo 2.0
+
+MoveIt Servo 是 MoveIt2 中用于实时笛卡尔遥操作和 visual servoing 的组件。Servo 2.0（随 ROS2 Jazzy/Rolling 发布）相比 1.0 有重大架构变化：
+
+**关键改进**：
+1. **Composable Node 架构**：Servo 2.0 可以作为 composable node 加载到 move_group 进程中，消除了跨进程通信延迟——这对 visual servoing 的 100+Hz 重规划至关重要
+2. **改进的奇异性管理**：新增"奇异性缩放"模式——接近奇异构型时自动降低笛卡尔速度（而非硬停止），提供更平滑的操作体验
+3. **碰撞距离场**（Collision Distance Field）：用 3D 距离场替代逐对碰撞检查，实现亚毫秒级的碰撞距离计算
+
+> **本质洞察**：MoveIt Servo 的设计哲学与 MoveIt2 主规划管线截然不同。主规划管线是"离线"的——给定起点和终点，搜索一条完整路径。Servo 是"在线"的——每个控制周期根据当前状态和用户输入增量更新目标。这两种模式覆盖了机器人运动控制的两个极端：离线规划适合已知环境中的点到点运动；在线 Servo 适合未知/动态环境中的人机交互。
+
+### Foundation Model 集成概念
+
+2024-2025 年的一个趋势是将视觉-语言基础模型（Foundation Models）与 MoveIt2 集成，形成"感知→推理→规划→执行"的完整闭环：
+
+```
+用户指令 ("把红色杯子放到架子上")
+    │
+    ▼
+VLM (视觉-语言模型, 如 GPT-4V / Gemini)
+    ├── 场景理解: 识别杯子位置、架子位置、障碍物
+    ├── 任务分解: pick(红色杯子) → place(架子)
+    └── 抓取策略: 从侧面抓取（杯子有把手）
+    │
+    ▼
+MTC Task (MoveIt2)
+    ├── GenerateGraspPose: VLM 提供的抓取方向
+    ├── Connect + ComputeIK: MoveIt2 标准流程
+    └── 执行: ros2_control
+```
+
+**当前局限**：
+- VLM 的推理延迟（100ms-2s）与 MoveIt2 的规划延迟（100ms-1s）叠加，端到端延迟可能达到 3-5s——不适合需要快速反应的场景
+- VLM 的空间推理能力仍然有限——对于精确的 6-DOF 位姿估计，专用的位姿估计网络（如 FoundationPose, GraspNet）仍然优于通用 VLM
+- 安全保证：VLM 的输出是概率性的，不能保证物理安全——必须经过 MoveIt2 的碰撞检测和约束验证才能执行
+
+> **跨领域类比**：Foundation Model 在机器人中的角色类似于自动驾驶中的"感知-预测"模块——它提供高层语义理解（"这是一个杯子，应该从侧面抓"），但不直接控制执行器。MoveIt2/ros2_control 类似于"规划-控制"模块——负责把高层意图转化为安全的、物理可行的运动。两者的分工边界正在随着 Foundation Model 能力的增强而移动，但短期内"安全保证"仍然是传统规划框架的不可替代优势。
 
 ---
 

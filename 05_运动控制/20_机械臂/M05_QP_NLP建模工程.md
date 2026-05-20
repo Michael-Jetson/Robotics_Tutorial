@@ -6,7 +6,7 @@
 >
 > **共享属性**：✅ **规控方向共享**——腿足 MPC、无人机 MPC、机械臂 MPC 全部使用同一批 QP/NLP 求解器。这是 SLAM 工程师进入规控领域最大的认知跨越。
 >
-> **前置依赖**：v8 Ch17-18（Ceres Solver）、M01（Pinocchio 动力学引擎）
+> **前置依赖**：Ceres Solver 基础（非线性最小二乘与自动微分，见 02_基础 相关章节）、M01（Pinocchio 动力学引擎）
 >
 > **下游章节**：M03（IK 求解器深度）、M08（轨迹优化）、M10（时间参数化）
 >
@@ -20,11 +20,11 @@
 
 | 编号 | 问题 | 答不出时回顾 |
 |:----:|------|------------|
-| 1 | **Ceres 的问题形式**：写出 Ceres 求解的标准非线性最小二乘问题 $\min_x \sum_i \|f_i(x)\|^2$。Ceres 如何处理"关节角不能超过 ±170°"这种约束？（提示：它只支持简单边界约束 $lb \leq x \leq ub$） | v8 Ch17-18 |
+| 1 | **Ceres 的问题形式**：写出 Ceres 求解的标准非线性最小二乘问题 $\min_x \sum_i \|f_i(x)\|^2$。Ceres 如何处理"关节角不能超过 ±170°"这种约束？（提示：它只支持简单边界约束 $lb \leq x \leq ub$） | Ceres Solver 基础章节 |
 | 2 | **雅可比矩阵**：对于 7-DOF 机械臂，末端笛卡尔速度与关节速度的关系 $v = J(q)\dot{q}$ 中，$J$ 的维度是多少？如何用 Pinocchio 计算？ | M01 Pinocchio |
 | 3 | **凸优化基础**：什么是凸集？什么是凸函数？为什么二次函数 $\frac{1}{2}x^TQx + c^Tx$（$Q \succeq 0$）是凸的？凸优化问题有什么特殊性质？ | 线性代数 / 凸优化导论 |
 | 4 | **KKT 条件**：写出等式约束优化 $\min f(x) \text{ s.t. } g(x)=0$ 的 Lagrangian 和一阶必要条件。Lagrange 乘子 $\lambda$ 的物理意义是什么？ | 最优化理论 |
-| 5 | **自动微分**：Ceres 的 `AutoDiffCostFunction` 如何自动计算 Jacobian？正向模式和反向模式 AD 的区别是什么？ | v8 Ch17 |
+| 5 | **自动微分**：Ceres 的 `AutoDiffCostFunction` 如何自动计算 Jacobian？正向模式和反向模式 AD 的区别是什么？ | Ceres Solver 基础章节 |
 
 ---
 
@@ -43,9 +43,9 @@
 
 ## 1. 从 Ceres 到约束优化——问题建模范式的根本改变 ⭐
 
-### 1.1 你在 v8 学到的 Ceres 世界
+### 1.1 你在基础课程中学到的 Ceres 世界 ⭐
 
-回顾 v8 Ch17-18：Ceres Solver 解决的是非线性最小二乘（NLS）问题：
+回顾 Ceres Solver 基础：Ceres Solver 解决的是非线性最小二乘（NLS）问题：
 
 $$\min_x \sum_{i=1}^{m} \|f_i(x)\|^2$$
 
@@ -63,7 +63,7 @@ $$\min_x \sum_{i=1}^{m} \|f_i(x)\|^2$$
 
 > **本质洞察**：Ceres 和 GTSAM 的设计哲学是"世界是高斯的、约束是柔的"——传感器噪声是高斯分布，先验是高斯分布，连鲁棒核函数（Huber/Cauchy）也是对高斯的修正。在这个世界里，所有"约束"都以代价函数（cost function）的形式存在，权衡是通过权重矩阵 $\Sigma^{-1}$ 完成的。
 
-### 1.2 规控的世界：约束不是建议，是物理极限
+### 1.2 规控的世界：约束不是建议，是物理极限 ⭐
 
 现在考虑机械臂控制的典型问题：
 
@@ -98,7 +98,7 @@ $$\min_x \sum_{i=1}^{m} \|f_i(x)\|^2$$
 
 **结论**：规控问题需要**硬约束**处理能力。这不是"换一个更好的 Ceres"就能解决的——需要从根本上改变问题建模范式，从无约束最小二乘转向有约束 QP/NLP。
 
-### 1.3 QP 与 NLP 的数学定义
+### 1.3 QP 与 NLP 的数学定义 ⭐
 
 **二次规划（QP）**——目标函数是二次的，约束是线性的：
 
@@ -128,7 +128,7 @@ QP 是 NLP 的特殊情况（线性约束 + 二次目标）。正因如此，QP 
 | 轨迹优化 | NLP | 离线/1-10 Hz | Ipopt、SNOPT | 运动规划 |
 | 非线性 MPC | NLP（SQP→QP 子问题） | 10-50 Hz | OCS2(SQP+HPIPM) | 全模型 MPC |
 
-### 1.4 从 Gauss-Newton 到 KKT——算法层面的跨越
+### 1.4 从 Gauss-Newton 到 KKT——算法层面的跨越 ⭐⭐
 
 **Ceres 的求解核心**（Gauss-Newton / Levenberg-Marquardt）：
 
@@ -140,7 +140,7 @@ QP 是 NLP 的特殊情况（线性约束 + 二次目标）。正因如此，QP 
   4. 线搜索/信赖域更新
 ```
 
-这里的法方程 $(J^TJ + \lambda I)\delta x = -J^Tr$ 是一个**无约束线性系统**。Ceres 用稀疏 Cholesky 分解（`SPARSE_SCHUR`）或 PCG 迭代求解——这些方法你在 v8 Ch18 已经熟悉了。
+这里的法方程 $(J^TJ + \lambda I)\delta x = -J^Tr$ 是一个**无约束线性系统**。Ceres 用稀疏 Cholesky 分解（`SPARSE_SCHUR`）或 PCG 迭代求解——这些方法在 Ceres Solver 基础章节已经详细讲解过。
 
 **QP/NLP 的求解核心**（KKT 系统）：
 
@@ -164,7 +164,7 @@ $$\mu_i^* (Gx^* - h)_i = 0 \quad (\text{互补松弛条件})$$
 
 > **跨领域类比**：三种求解策略可以类比为三种搜索算法——活跃集法像**深度优先搜索**（从一个活跃集出发，每次改变一个约束，沿着约束边界"行走"直到最优）；内点法像**中心路径法**（从内部出发，沿着对数障碍函数的中心路径逐步逼近最优边界）；ADMM 像**分治法**（把大问题拆成小子问题，各自求解后协调）。不同的是，活跃集法在 warm-start 场景下接近 $O(1)$，内点法总是 $O(\sqrt{n})$ 次迭代但每次迭代高质量，ADMM 迭代廉价但可能需要较多次数。
 
-### 1.5 SLAM 到规控的认知跨越清单
+### 1.5 SLAM 到规控的认知跨越清单 ⭐
 
 | 维度 | SLAM（Ceres/GTSAM） | 规控（QP/NLP） |
 |------|---------------------|--------------|
@@ -216,7 +216,7 @@ $$\mu_i^* (Gx^* - h)_i = 0 \quad (\text{互补松弛条件})$$
 
 上一节解释了为什么 SLAM 工程师需要从 Ceres 跨越到约束优化。但约束优化不是一个求解器就能覆盖的领域——不同的求解器在算法、性能特征、API 风格上差异巨大。本节系统对比六大主流 QP 求解器，建立选型框架。
 
-### 2.1 动机：为什么有这么多 QP 求解器
+### 2.1 动机：为什么有这么多 QP 求解器 ⭐⭐
 
 在 SLAM 领域，你基本只需要 Ceres 和 GTSAM——一个做通用 NLS，一个做因子图。但在规控领域，QP 求解器的选择异常丰富，因为**不同的 QP 算法在不同场景下有数量级的性能差异**：
 
@@ -227,7 +227,7 @@ $$\mu_i^* (Gx^* - h)_i = 0 \quad (\text{互补松弛条件})$$
 
 选错求解器可能导致 10-100 倍的性能损失。这不是夸张——下文的基准测试数据会证明。
 
-### 2.2 六大求解器总览
+### 2.2 六大求解器总览 ⭐⭐
 
 | 求解器 | Stars | 语言 | 算法 | 许可证 | Eigen 原生 | 典型用户 | 实时性 |
 |--------|-------|------|------|--------|-----------|---------|--------|
@@ -246,7 +246,7 @@ $$\mu_i^* (Gx^* - h)_i = 0 \quad (\text{互补松弛条件})$$
 | 逆动力学 QP | 25±6 us | 441±193 us | **18x** |
 | 高精度 eps=1e-9 | — | — | **1.7-2.9x** |
 
-### 2.3 算法内核对比——四大家族
+### 2.3 算法内核对比——四大家族 ⭐⭐⭐
 
 为了理解性能差异的根源，我们需要深入理解四种算法家族的核心思想。每种算法的诞生都有其历史背景和工程动机——不是凭空创造的，而是对前一代方法局限性的回应。
 
@@ -358,7 +358,7 @@ $$L_\rho(x, \lambda, \mu) = \frac{1}{2}x^THx + g^Tx + \frac{1}{2\mu_e}\|Ax - b +
 | **精度控制** | 增广拉格朗日法的外层迭代提供精确的约束满足度控制（OSQP 的 ADMM 在高精度时收敛变慢） |
 | **活跃集检测** | ProxQP 在迭代过程中识别活跃约束，减少后续迭代的计算量 |
 
-### 2.4 选型决策流程
+### 2.4 选型决策流程 ⭐⭐
 
 ```
 你的问题是什么类型？
@@ -410,7 +410,7 @@ $$L_\rho(x, \lambda, \mu) = \frac{1}{2}x^THx + g^Tx + \frac{1}{2\mu_e}\|Ax - b +
 
 ## 3. OSQP 算法与 C++ 集成 ⭐⭐
 
-### 3.1 动机：为什么从 OSQP 入门
+### 3.1 动机：为什么从 OSQP 入门 ⭐⭐
 
 在众多 QP 求解器中，OSQP 是入门的最佳选择——不是因为它最快，而是因为三个务实的理由：
 
@@ -420,7 +420,7 @@ $$L_\rho(x, \lambda, \mu) = \frac{1}{2}x^THx + g^Tx + \frac{1}{2\mu_e}\|Ax - b +
 
 学 OSQP 不是为了永远用它——而是为了建立 QP 概念，之后切换到 ProxQP 或 HPIPM 只需改几行代码。
 
-### 3.2 OSQP 的标准 QP 形式
+### 3.2 OSQP 的标准 QP 形式 ⭐⭐
 
 OSQP 要求将 QP 统一写成：
 
@@ -439,7 +439,7 @@ $$\min_x \frac{1}{2} x^T P x + q^T x \qquad \text{s.t.} \quad l \leq Ax \leq u$$
 
 这种统一表达虽然需要一些组装工作，但好处是求解器内部无需区分约束类型——统一处理。
 
-### 3.3 C++ 集成（通过 osqp-eigen）
+### 3.3 C++ 集成（通过 osqp-eigen） ⭐⭐
 
 osqp-eigen（`robotology/osqp-eigen`）由 IIT（意大利理工学院）的 Stefano Dafarra 开发，是 OSQP C 接口的 Eigen 封装层。它将 OSQP 的 C 风格 API（裸指针、CSC 手工组装）包装成 Eigen 友好的 C++ 接口。
 
@@ -521,7 +521,7 @@ std::cout << "x* = " << x_opt.transpose() << std::endl;
 std::cout << "f* = " << obj_val << std::endl;
 ```
 
-### 3.4 OSQP 的工程关键参数
+### 3.4 OSQP 的工程关键参数 ⭐⭐
 
 | 参数 | 默认值 | 含义 | 调参建议 |
 |------|--------|------|---------|
@@ -536,7 +536,7 @@ std::cout << "f* = " << obj_val << std::endl;
 
 > **反事实推理**：如果在 1 kHz IK 场景中忘记设置 `max_iter`，OSQP 会用默认的 4000 次迭代上限。当问题接近不可行时（如机械臂接近奇异构型），ADMM 可能需要数百次迭代，导致求解时间从 100 us 飙升到数毫秒，超出 1 ms 控制预算。工程中应根据实时约束设置硬上限，并在达到上限时使用上一周期的解作为 fallback。
 
-### 3.5 warm-start 的正确使用
+### 3.5 warm-start 的正确使用 ⭐⭐
 
 warm-start 是 MPC 场景中最关键的加速手段。OSQP 支持同时提供原始变量 $x$ 和对偶变量 $y$ 的初始猜测：
 
@@ -570,7 +570,7 @@ for (int t = 0; t < total_steps; ++t) {
 
 **warm-start 的效果量化**：对于 MPC QP（N=20，n_x=12，n_u=6），warm-start 可以将迭代次数从冷启动的 80-150 次减少到 15-30 次——这对满足实时约束至关重要。
 
-### 3.6 与 ProxSuite 的代码量对比
+### 3.6 与 ProxSuite 的代码量对比 ⭐⭐
 
 同一问题用 ProxSuite 求解：
 
@@ -620,7 +620,7 @@ OSQP-Eigen 需要约 15 行样板代码（SparseMatrix 组装、data/settings �
 
 ## 4. ProxQP——Pinocchio 生态的新一代 QP 求解器 ⭐⭐
 
-### 4.1 动机：为什么 Pinocchio 生态需要自己的 QP 求解器
+### 4.1 动机：为什么 Pinocchio 生态需要自己的 QP 求解器 ⭐⭐
 
 回顾 M01：Pinocchio 是 INRIA 学派的动力学内核。TSID（基于 Pinocchio 的全身控制框架）最初使用 eiquadprog 作为 QP 后端——这是一个 Eigen 接口的双精度 QP 求解器，性能尚可但精度有限。
 
@@ -631,7 +631,7 @@ OSQP-Eigen 需要约 15 行样板代码（SparseMatrix 组装、data/settings �
 
 ProxSuite 团队（INRIA Simple-Robotics，与 Pinocchio 同一团队）在 2022 年推出 ProxQP 正是为了解决这两个问题——一个 Eigen 原生、高精度、为机器人 QP 尺寸优化的求解器。
 
-### 4.2 ProxQP 的 C++ 集成
+### 4.2 ProxQP 的 C++ 集成 ⭐⭐
 
 ProxSuite 提供密集（`dense`）和稀疏（`sparse`）两种接口。对于机器人 QP（通常 <500 变量），密集版本性能更好：
 
@@ -682,7 +682,7 @@ if (qp.results.info.status == QPSolverOutput::PROXQP_SOLVED) {
 | 初始化 | 分步 `setXxx()` | 单次 `init()` |
 | warm-start | `setWarmStart(x, y)` | `qp.results.x = x_prev; qp.solve()` |
 
-### 4.3 ProxQP vs OSQP：工程决策矩阵
+### 4.3 ProxQP vs OSQP：工程决策矩阵 ⭐⭐
 
 | 维度 | ProxQP | OSQP |
 |------|--------|------|
@@ -728,7 +728,7 @@ if (qp.results.info.status == QPSolverOutput::PROXQP_SOLVED) {
 
 ## 5. qpOASES 与 HPIPM——遗留经典与结构化专家 ⭐⭐
 
-### 5.1 qpOASES——活跃集法的工程标杆
+### 5.1 qpOASES——活跃集法的工程标杆 ⭐⭐
 
 **历史地位**：qpOASES 由 Ferreau 等人（2014）在 KU Leuven 开发，是第一个专门为嵌入式 MPC 设计的开源 QP 求解器。MIT Cheetah 3 的凸 MPC、acados 的早期版本、大量无人机 MPC 代码都使用 qpOASES。
 
@@ -758,7 +758,7 @@ qp.getPrimalSolution(x_opt);
 
 **与现代 C++ 的差距**：裸指针、C 风格数组、无 RAII、行优先存储（而 Eigen 默认列优先）——在新项目中不推荐直接使用。但理解其 API 对于阅读 MIT Cheetah、acados、rpg_mpc 等遗留代码至关重要。
 
-### 5.2 HPIPM——MPC 结构化 QP 的隐藏冠军
+### 5.2 HPIPM——MPC 结构化 QP 的隐藏冠军 ⭐⭐⭐
 
 **HPIPM 不是"又一个 QP 求解器"——它是专门为 MPC 设计的结构化求解器。** 理解 HPIPM 需要理解 MPC QP 的特殊结构。
 
@@ -809,7 +809,7 @@ KKT 矩阵结构:
 
 ## 6. Ipopt——NLP 的事实标准 ⭐⭐
 
-### 6.1 从 QP 到 NLP——当线性约束不够用时
+### 6.1 从 QP 到 NLP——当线性约束不够用时 ⭐⭐
 
 上面四个求解器处理的都是 QP——二次目标 + 线性约束。但机械臂的许多问题天然是非线性的：
 
@@ -822,7 +822,7 @@ KKT 矩阵结构:
 
 当 QP 近似不够准确时，需要直接求解 NLP。Ipopt（Interior Point OPTimizer）是这个领域的事实标准——由 CMU 的 Andreas Waechter 开发，2004 年发布，至今仍是学术界和工业界使用最广泛的开源 NLP 求解器。
 
-### 6.2 Ipopt 的内点法原理
+### 6.2 Ipopt 的内点法原理 ⭐⭐⭐
 
 Ipopt 使用**原始-对偶内点法**。核心迭代：在每个障碍参数 $\mu$ 值下，用 Newton 法求解修正的 KKT 系统：
 
@@ -830,7 +830,7 @@ $$\begin{bmatrix} W + \Sigma & A^T & C^T \\ A & 0 & 0 \\ C & 0 & -\text{diag}(s/
 
 其中 $W = \nabla^2_{xx} L$ 是 Lagrangian 的 Hessian。**收敛策略**：$\mu$ 从大值逐步减小到 0——每个 $\mu$ 值下做几次 Newton 迭代。
 
-### 6.3 Ipopt 的 C++ 接口——TNLP 虚函数模式
+### 6.3 Ipopt 的 C++ 接口——TNLP 虚函数模式 ⭐⭐
 
 **Ipopt 的 API 风格与 Ceres 截然不同**——Ceres 是模板仿函数 `operator()`，Ipopt 是虚函数继承 `TNLP`：
 
@@ -879,7 +879,7 @@ public:
 };
 ```
 
-### 6.4 ifopt——Ipopt 的 Eigen 友好封装
+### 6.4 ifopt——Ipopt 的 Eigen 友好封装 ⭐⭐
 
 直接使用 Ipopt 的 `TNLP` 接口工作量大。ETH ADRL 的 **ifopt**（`ethz-adrl/ifopt`，838 stars）提供了 Eigen 接口封装，使 NLP 构建变得模块化：
 
@@ -966,7 +966,7 @@ ifopt 的设计理念："每个 VariableSet / CostTerm / ConstraintSet 独立实
 
 ## 7. CasADi——符号建模框架 ⭐⭐
 
-### 7.1 动机：为什么需要符号框架
+### 7.1 动机：为什么需要符号框架 ⭐⭐
 
 上一节暴露了 Ipopt 使用的一个痛点：用户必须**手动**提供 Jacobian 和 Hessian 的稀疏结构和数值。对于 7-DOF 机械臂 + 50 步时域的 MPC（变量数 350，约束数可能达数百），手写 Jacobian 几乎不可行。
 
@@ -982,7 +982,7 @@ CasADi 工作流:
 
 > **跨领域类比**：CasADi 之于 Ipopt，就像 TensorFlow 之于 CUDA——TensorFlow 不直接做矩阵乘法，它构建计算图、自动微分、然后把计算分派给 CUDA/CPU。同样，CasADi 不直接求解优化问题，它构建符号表达式、自动微分、然后把 NLP 分派给 Ipopt 或其他求解器。这种"建模层 + 求解层"的分离是现代 MPC 工程的标准架构。
 
-### 7.2 SX vs MX——两种符号表示
+### 7.2 SX vs MX——两种符号表示 ⭐⭐
 
 CasADi 提供两种符号变量类型，选择取决于问题规模：
 
@@ -1046,7 +1046,7 @@ nlp = {'x': opt_vars, 'f': cost, 'g': ca.vertcat(*constraints)}
 solver = ca.nlpsol('solver', 'ipopt', nlp)
 ```
 
-### 7.3 代码生成——CasADi 到 C 的桥梁
+### 7.3 代码生成——CasADi 到 C 的桥梁 ⭐⭐
 
 CasADi 的 `CodeGenerator` 可以将符号函数导出为纯 C 代码：
 
@@ -1063,7 +1063,7 @@ cg.generate()
 
 生成的 C 代码包含目标函数、梯度、Jacobian 的数值评估函数——**不含求解器**。如果需要完整的"求解器 + 函数评估"自包含代码（用于嵌入式部署），应使用 **acados**（见 M08 轨迹优化）。
 
-### 7.4 CasADi + Pinocchio 的接口
+### 7.4 CasADi + Pinocchio 的接口 ⭐⭐⭐
 
 Pinocchio 3.x 支持 CasADi 标量类型——这意味着可以用 CasADi 符号作为 Pinocchio 算法的输入，获得动力学函数的符号表达式：
 
@@ -1361,7 +1361,7 @@ def shift_warm_start(prev_X, prev_U, x_measured, dynamics):
 
 ## 8. 机械臂三大典型优化问题建模模板 ⭐⭐
 
-### 8.1 总览
+### 8.1 总览 ⭐⭐
 
 前面各节分别讲了求解器的算法和 API。本节把它们落地到机械臂的三大核心优化问题上——每个问题给出完整的数学建模和 C++ 实现思路。
 
@@ -1371,7 +1371,7 @@ def shift_warm_start(prev_X, prev_U, x_measured, dynamics):
 | 力控 QP (TSID AccForce) | $\ddot{q}$ + 接触力 $f$（$\tau$ 由动力学恢复） | 接触、摩擦锥、力矩限 | 1 kHz | ProxQP |
 | MPC QP | $x_{0:N}$ + $u_{0:N-1}$ | 动力学、控制限、状态限 | 50-200 Hz | HPIPM |
 
-### 8.2 模板 1：瞬态 IK QP
+### 8.2 模板 1：瞬态 IK QP ⭐⭐
 
 **问题**：给定当前关节角 $q$ 和目标末端速度 $v_{des}$，求关节速度 $\dot{q}$。
 
@@ -1444,7 +1444,7 @@ Eigen::VectorXd solveIKQP(
 }
 ```
 
-### 8.3 模板 2：力控 QP（TSID 风格）
+### 8.3 模板 2：力控 QP（TSID 风格） ⭐⭐⭐
 
 **问题**：给定期望末端加速度 $a_{des}$，求关节加速度 $\ddot{q}$ 和接触力 $f$，再由动力学关系恢复执行器力矩 $\tau$。
 
@@ -1464,7 +1464,7 @@ $$\tau(\ddot q,f)=M\ddot{q}+h-J_c^T f \quad (\text{固定基座力矩恢复})$$
 
 > **实现口径**：TSID 的 `InverseDynamicsFormulationAccForce` 以加速度和接触力为优化变量，力矩由求解结果解码得到。若把 $\tau$ 也作为原始决策变量，那是更一般的 inverse-dynamics WBC QP 写法；两者都合理，但不要在同一个公式里混用。
 
-### 8.4 模板 3：MPC QP（滚动时域）
+### 8.4 模板 3：MPC QP（滚动时域） ⭐⭐⭐
 
 **密集形式 vs 稀疏形式**：
 
@@ -1506,7 +1506,7 @@ $$\tau(\ddot q,f)=M\ddot{q}+h-J_c^T f \quad (\text{固定基座力矩恢复})$$
 
 ## 9. 进阶专题：力分配与碰撞约束 ⭐⭐⭐
 
-### 9.1 力分配 QP——多点接触与夹持
+### 9.1 力分配 QP——多点接触与夹持 ⭐⭐⭐
 
 当机械臂执行夹持任务时，末端执行器的多个接触点需要协调施力。力分配 QP 确定每个接触点的力，使得合力满足任务需求，同时每个接触力在摩擦锥内。
 
@@ -1523,7 +1523,7 @@ $$\tau(\ddot q,f)=M\ddot{q}+h-J_c^T f \quad (\text{固定基座力矩恢复})$$
 
 $k=8$ 时最大近似误差 $1 - \cos(\pi/8) \approx 3.8\%$，工程上可以接受。
 
-### 9.2 碰撞回避约束的一阶近似
+### 9.2 碰撞回避约束的一阶近似 ⭐⭐⭐
 
 碰撞约束 $d(q) \geq d_{safe}$ 中的 $d(q)$ 是非线性的。一阶 Taylor 近似：
 
@@ -1550,20 +1550,60 @@ $$d(q + \dot{q}\Delta t) \approx d(q) + \nabla_q d(q)^T \dot{q} \Delta t \geq d_
 
 ---
 
-## 10. 与下游章节的接口 ⭐
+## 10. 前沿进展：Pinocchio 3.x 原生 NLP 接口与 Drake/CasADi 2026 对比 ⭐⭐⭐⭐
 
-### 10.1 与 M03 IK 求解器的关系
+### 10.1 Pinocchio 3.x 的原生 NLP 接口
+
+Pinocchio 3.x（2024-2026）在 CasADi 和 CppAD 后端之外，新增了与 NLP 求解器更紧密的集成路径。核心改进包括：
+
+- **`pinocchio::casadi` 模块成熟化**：Pinocchio 3.x 全面支持 `ModelTpl<casadi::SX>` 和 `ModelTpl<casadi::MX>`，使得通过 CasADi 直接构建动力学约束的 NLP 变得一行可写。不再需要手动拼接 RNEA 的符号输出——`cpin.rnea(cmodel, cdata, q_sym, v_sym, a_sym)` 返回的 `cdata.tau` 已经是完整的 CasADi 符号表达式
+- **约束直接导出**：Pinocchio 3.x 支持将关节限位、速度限、碰撞约束等直接导出为 CasADi 约束表达式，减少了手动约束组装的工作量
+- **`pinocchio::MathematicalProgram`（实验性）**：参考 Drake 的 `MathematicalProgram` 抽象，Pinocchio 社区正在开发统一的 NLP 构建接口，允许用 Pinocchio 模型直接组装优化问题并分派到 Ipopt/ProxQP/HPIPM
+
+> **本质洞察**：Pinocchio 3.x 的发展方向是从"动力学计算库"演化为"机器人优化建模平台"。这反映了规控领域的趋势：动力学和优化不再是分离的模块，而是融合为一个统一的"可微动力学 + 约束优化"栈。
+
+### 10.2 Drake vs CasADi 2026 生态对比 ⭐⭐⭐
+
+截至 2026 年，Drake 和 CasADi 是机械臂 NLP 建模的两大主流框架。它们的设计哲学和适用场景截然不同：
+
+| 维度 | Drake (MIT/TRI) | CasADi + Pinocchio |
+|------|-----------------|-------------------|
+| **语言** | C++（Python 绑定 via pybind11） | Python 优先，C 代码生成 |
+| **动力学来源** | MultibodyPlant 内置 | Pinocchio 外部库 |
+| **NLP 建模** | `MathematicalProgram` 统一接口 | `ca.Opti()` 或 `ca.nlpsol()` |
+| **QP 后端** | OSQP/Gurobi/MOSEK/SCS | Ipopt/qpOASES/HPIPM |
+| **NLP 后端** | SNOPT/Ipopt | Ipopt/SNOPT |
+| **接触建模** | 原生接触力优化（凸互补） | 需手动添加互补约束 |
+| **代码生成** | 不支持 | 支持（C 代码 + acados） |
+| **GPU 加速** | 不支持 | 通过 JAX/MJX 间接支持 |
+| **嵌入式部署** | 困难（依赖链重） | 通过 acados 成熟 |
+| **许可证** | BSD-3 | LGPL-3.0 |
+| **典型用户** | TRI、Boston Dynamics、研究机构 | INRIA、工业 MPC、学术界 |
+
+**选型建议**：
+- **接触丰富操作**（装配、抓取、多指操控）→ Drake（原生接触力优化是杀手特性）
+- **实时 MPC 部署**（1-100 Hz 控制循环）→ CasADi + acados（代码生成是杀手特性）
+- **学术研究/快速原型**→ CasADi `Opti()` API（开发效率最高）
+- **系统集成/工业认证**→ Drake（更完整的仿真-控制-验证栈）
+
+> **反事实推理**：如果你选择 Drake 做实时 MPC，会遇到什么问题？Drake 的 `MathematicalProgram` 每次调用都重新构建符号图，无法做 CasADi 式的"一次编译、多次调用"代码生成。对于 100 Hz MPC，这意味着每次 solve 都有 1-5 ms 的 NLP 构建开销——这在 CasADi + acados 中被代码生成完全消除（NLP 函数评估直接执行编译后的 C 代码，零构建开销）。反过来，如果你用 CasADi 做接触操控，则需要手动实现互补约束和摩擦锥的数值处理，而 Drake 的 `MultibodyPlant` 原生集成了接触力学。
+
+---
+
+## 11. 与下游章节的接口 ⭐
+
+### 11.1 与 M03 IK 求解器的关系 ⭐
 
 M03 中的 TRAC-IK、BioIK 等高级 IK 求解器内部都使用 QP/SQP 作为子问题。理解本章 QP 建模后，你可以理解 TRAC-IK 为什么同时运行 KDL 数值迭代和 SQP 两个求解器并取较快收敛的结果，也可以自己在 QP 层添加碰撞约束（TRAC-IK 原生不支持）。
 
-### 10.2 与 M08 轨迹优化的关系
+### 11.2 与 M08 轨迹优化的关系 ⭐
 
 M08 中的 TrajOpt、Crocoddyl、OCS2 全部基于本章的 NLP/QP 求解器：
 - TrajOpt 用序列 QP（SQP）：每次线性化约束然后求解 QP
 - Crocoddyl 用 DDP/iLQR：一种特殊 NLP 求解器，利用最优控制的 Bellman 结构
 - OCS2 用 SQP + HPIPM：外层 SQP 迭代，内层用 HPIPM 求解结构化 QP
 
-### 10.3 与 M10 时间参数化的关系
+### 11.3 与 M10 时间参数化的关系 ⭐
 
 M10 中的 TOPP-RA 内部在每个路径点求解一个小规模 LP（线性规划，QP 的特例——目标函数是线性的）。理解 QP 后，LP 是自然的简化。
 
@@ -1615,7 +1655,7 @@ M10 中的 TOPP-RA 内部在每个路径点求解一个小规模 LP（线性规�
 
 ---
 
-## 故障排查手册
+## 🔧 故障排查手册
 
 | 症状 | 可能原因 | 排查步骤 | 相关章节 |
 |------|---------|---------|---------|

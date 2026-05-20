@@ -22,9 +22,9 @@
 |:----:|------|------------|
 | 1 | **URDF 基础**：URDF 的 `<link>` 和 `<joint>` 分别描述什么？`<inertial>` 子元素中哪些参数最容易出错？ | P01 URDF/Xacro |
 | 2 | **Xacro 宏**：如何用 `xacro:property` 和 `xacro:if` 实现同一个 URDF 根据参数切换仿真/真机模式？ | P01 Xacro 参数化 |
-| 3 | **ROS2 基础**：什么是 `ros2_control` 的 `HardwareInterface`？它如何连接仿真和真机？ | v8 Ch31 ROS2 |
+| 3 | **ROS2 基础**：什么是 `ros2_control` 的 `HardwareInterface`？它如何连接仿真和真机？ | 02_基础/ROS2 基础 |
 | 4 | **RL 基础**：PPO 算法的 observation 和 action 分别是什么？什么是 reward shaping？ | RL 基础概念 |
-| 5 | **Docker 基础**：多阶段构建（multi-stage build）的目的是什么？如何减小部署镜像体积？ | v8 Ch45 Docker |
+| 5 | **Docker 基础**：多阶段构建（multi-stage build）的目的是什么？如何减小部署镜像体积？ | 02_基础/Docker 容器化部署 |
 
 ---
 
@@ -499,6 +499,35 @@ Domain Randomization 的概念由 Tobin et al.（2017, "Domain Randomization for
 
 **正确做法**：Isaac Lab、MuJoCo、PyBullet 都提供**运行时 randomization API**——在仿真重置时随机采样参数并应用到内存中的模型，不修改文件。
 
+### 域随机化的数学框架
+
+域随机化可以从**分布鲁棒优化**（Distributionally Robust Optimization, DRO）的视角理解。设仿真参数为 $\xi$（包含质量、摩擦、延迟等），策略为 $\pi_\theta$，则：
+
+**标准 RL 的目标**：在固定参数 $\xi_0$ 下最大化期望回报
+
+$$\max_\theta \mathbb{E}_{\tau \sim p(\tau|\pi_\theta, \xi_0)} \left[ \sum_t r(s_t, a_t) \right]$$
+
+**域随机化 RL 的目标**：在参数分布 $\Xi$ 上最大化期望回报
+
+$$\max_\theta \mathbb{E}_{\xi \sim \Xi} \left[ \mathbb{E}_{\tau \sim p(\tau|\pi_\theta, \xi)} \left[ \sum_t r(s_t, a_t) \right] \right]$$
+
+**DRO 视角**（更严格的鲁棒性保证）：
+
+$$\max_\theta \min_{\xi \in \Xi} \mathbb{E}_{\tau \sim p(\tau|\pi_\theta, \xi)} \left[ \sum_t r(s_t, a_t) \right]$$
+
+DR 实际是上述目标的蒙特卡洛近似——每个 episode 随机采样 $\xi$，隐式地在参数分布上做平均。DRO 版本要求最坏情况鲁棒，计算上更昂贵但理论保证更强。
+
+**随机化分布的选择**是关键的工程决策：
+
+| 分布类型 | 适用参数 | 优点 | 缺点 |
+|---------|---------|------|------|
+| 均匀分布 $U[a, b]$ | 质量、摩擦系数 | 简单、无偏 | 边界值训练频率与中间值相同 |
+| 对数均匀 $\exp(U[\log a, \log b])$ | PD 增益、延迟 | 覆盖多数量级 | 大值稀疏采样 |
+| 高斯 $\mathcal{N}(\mu, \sigma^2)$ | 传感器噪声 | 符合真实噪声分布 | 可能采到不合理值 |
+| 截断高斯 | 关节阻尼 | 避免极端值 | 需设置截断边界 |
+
+> **反事实推理**：如果随机化范围设得太窄（如质量只在 $\pm 5\%$ 内变化）会怎样？策略只对 5% 的参数变化鲁棒。真机的质量误差可能达 $\pm 15\%$（加了夹爪、负载变化），策略直接失效。反之，如果设得太宽（如质量在 $\pm 50\%$），训练变得极其困难——策略需要在差异巨大的环境中都表现良好，收敛缓慢甚至无法收敛。这就是为什么课程式随机化（Curriculum DR）很重要——从窄范围开始，逐步扩大。
+
 ### Isaac Lab 域随机化配置
 
 ```python
@@ -785,6 +814,28 @@ class VisualDRConfig:
 ### 动机——精确的基础模型
 
 域随机化需要一个"基准"——围绕基准做随机化。如果基准本身偏差很大，随机化再怎么扩大也可能不覆盖真实参数。**物理参数辨识（System Identification, SysId）**就是通过真机实验数据反向估计精确的物理参数。
+
+### SysId 的数学框架
+
+机械臂的逆动力学方程 $M(q)\ddot{q} + C(q,\dot{q})\dot{q} + g(q) = \tau$ 对动力学参数是**线性的**——这是 SysId 的关键数学性质。每个 link $i$ 有 10 个标准惯性参数：
+
+$$\phi_i = [m_i, \; m_i c_{x,i}, \; m_i c_{y,i}, \; m_i c_{z,i}, \; I_{xx,i}, \; I_{xy,i}, \; I_{xz,i}, \; I_{yy,i}, \; I_{yz,i}, \; I_{zz,i}]^T$$
+
+其中 $m_i$ 是质量，$c_{x,i}, c_{y,i}, c_{z,i}$ 是质心位置（注意使用 $m_i c_x$ 而非 $c_x$ 本身，以保证线性性），$I_{xx,i}$ 等是惯性张量分量。对 $n$ 自由度机械臂，总参数向量 $\phi \in \mathbb{R}^{10n}$。
+
+逆动力学方程可重写为**回归形式**：
+
+$$\tau = Y(q, \dot{q}, \ddot{q}) \cdot \phi$$
+
+其中 $Y(q, \dot{q}, \ddot{q}) \in \mathbb{R}^{n \times 10n}$ 称为**回归矩阵**（regressor matrix），仅依赖于关节运动学量（位置、速度、加速度），不依赖惯性参数。这个线性性意味着：给定 $K$ 组关节轨迹数据 $(q_k, \dot{q}_k, \ddot{q}_k, \tau_k)$，可以堆叠成**超定线性系统**：
+
+$$\begin{bmatrix} \tau_1 \\ \tau_2 \\ \vdots \\ \tau_K \end{bmatrix} = \begin{bmatrix} Y_1 \\ Y_2 \\ \vdots \\ Y_K \end{bmatrix} \phi \quad \Rightarrow \quad W = Y_{\text{stack}} \cdot \phi$$
+
+用最小二乘求解：$\hat{\phi} = (Y_{\text{stack}}^T Y_{\text{stack}})^{-1} Y_{\text{stack}}^T W$
+
+**激励轨迹设计**是 SysId 成功的前提。并非所有轨迹都能辨识出所有参数——回归矩阵 $Y_{\text{stack}}$ 必须有足够的数值秩。Fourier 基激励轨迹（由多个正弦分量叠加而成）通过优化频率和振幅来最大化 $Y_{\text{stack}}$ 的条件数，这是 Swevers et al. (1997) 提出的经典方法。
+
+> **跨领域类比**：SysId 的回归方法本质上与 SLAM 中的 Bundle Adjustment 相同——都是从观测数据反推模型参数。BA 从像素观测反推 3D 点和相机位姿，SysId 从力矩观测反推惯性参数。两者都使用最小二乘框架，都需要"激励"（BA 需要足够的视角变化，SysId 需要足够丰富的运动模式），都面临可观性问题（BA 中的 gauge freedom，SysId 中的不可辨识参数组合）。
 
 ### SysId 的核心流程
 

@@ -302,6 +302,8 @@ URDF 定义了机器人的物理模型（连杆、关节、几何）。但 MoveI
 
 这些信息存储在 **SRDF**（Semantic Robot Description Format）中。URDF 是"物理的"——描述机器人长什么样；SRDF 是"语义的"——描述机器人怎么被使用。
 
+> **跨领域类比——SRDF 与数据库 Schema**：SRDF 之于 URDF，类似于数据库 Schema（表结构定义、索引、约束）之于原始数据文件。原始数据文件只包含数据本身（对应 URDF 的物理几何），而 Schema 定义了数据的"使用方式"——哪些字段构成一个查询组（对应 Planning Group）、哪些字段对有唯一性约束（对应 Named States）、哪些外键关系可以忽略（对应 ACM 中禁用的碰撞对）。没有 Schema 的数据库可以运行但效率极低；没有 SRDF 的 MoveIt2 也可以规划但必须手动指定所有信息。
+
 ### 双臂 SRDF 完整配置
 
 ```xml
@@ -822,6 +824,8 @@ MoveIt2 规划的每一步（采样 → 碰撞检查 → 连接）中，碰撞�
 
 但绝大多数跨臂碰撞对在实际中不可能碰撞（如左臂底座和右臂底座，它们都固定在桌面上）。**ACM 优化就是识别并禁用这些"不可能碰撞"的对，减少碰撞检查的计算量**。
 
+> **跨领域类比——ACM 与防火墙白名单**：ACM 的工作方式与网络防火墙的白名单规则高度类似。防火墙默认检查所有流量（对应默认检查所有碰撞对），但管理员可以将已知安全的 IP 对加入白名单跳过检查（对应 ACM 中 disable 已知不碰撞的 link 对）。过度白名单（放行太多流量）会引入安全风险（对应过度 disable ACM 导致碰撞漏检）；白名单太保守（几乎不放行）则防火墙成为性能瓶颈（对应 ACM 未优化导致规划超时）。两者的调优原则相同：**在安全的前提下最大化效率**。
+
 ### ACM 优化方法
 
 **方法一：MoveIt2 Setup Assistant 自动生成**
@@ -911,6 +915,8 @@ acm.setEntry("left_panda_hand", "right_panda_hand", false);  // false = 检查�
 ```
 
 MTC 的 **Merger stage** 是处理双臂并行动作的关键——它把两个独立 stage 的轨迹合并为一条同步轨迹。
+
+> **跨领域类比——MTC 与 CI/CD Pipeline**：MTC 的 stage 编排与软件工程中的 CI/CD Pipeline（如 GitHub Actions、GitLab CI）有惊人的相似性。每个 MTC Stage 对应 CI/CD 中的一个 Job（build/test/deploy），Stage 之间的依赖关系对应 Job 之间的 `needs` 声明。Merger Stage 对应 CI/CD 中的"并行 Job 组"——两个独立 Job 同时运行，完成后合并结果进入下一阶段。MTC 的 fallback 机制（一个 solver 失败时尝试另一个）对应 CI/CD 的 retry 策略。两者的设计哲学都是**将复杂流程拆解为可组合、可独立测试的原子单元**。
 
 ### Merger Stage 详解
 
@@ -1717,6 +1723,45 @@ def replay_trajectory_in_mujoco(env, trajectory_msg):
 
 ---
 
+## D9.8 MoveIt2 2026 新特性与 Servo 2.0 双臂联动 ⭐⭐⭐
+
+### MoveIt2 Jazzy/Rolling 新特性对双臂的影响 ⭐⭐⭐
+
+MoveIt2 在 ROS2 Jazzy (2024) 和 Rolling (2025-2026) 版本中引入了多项对双臂系统有重大影响的改进：
+
+**Multi-Robot Support 重构**：MoveIt2 Rolling 引入了 `robot_model_loader` 的多实例支持——允许在同一个 `move_group` 节点中加载多个独立的 URDF/SRDF 模型。这对双臂系统的意义在于：不再需要把两臂合并到一个 URDF 中，而是可以保持各臂 URDF 独立，在运行时动态组合。优势是维护更简单（上游 URDF 更新不需要重新合并），劣势是跨臂碰撞检查需要额外配置。
+
+**OMPL 2.0(规划中)集成**：OMPL 2.0 引入了 Informed RRT* 的改进变体和 Experience-based Planning——规划器可以利用历史成功路径加速后续规划。对 14D 双臂规划的提速效果显著：D9.3 中讨论的 both_arms 规划超时问题（14D 空间太大）可以通过 experience database 缓解——首次规划可能需要 5 秒，但相似构型下的后续规划可降至 <0.5 秒。
+
+**Parallel Planning API**：MoveIt2 2025+ 提供了 `planMultipleGoals()` API，允许对同一请求并行运行多个规划器（RRT*, BIT*, PRM*），取最先成功的结果。这直接解决了 D9.3 中"同步规划选型困难"的问题——不必在规划器之间做选择，而是让它们赛跑。
+
+### Servo 2.0 双臂联动 ⭐⭐⭐
+
+MoveIt Servo（实时关节速度/笛卡尔速度命令接口）在 2.0 版本中增加了多组联动支持——可以同时对 `left_arm` 和 `right_arm` 发送笛卡尔速度命令，Servo 内部保证两组的速度指令在同一控制周期内下发。这对双臂遥操作（D08）和 Object Impedance 实时控制（D03.4）至关重要。
+
+Servo 2.0 的双臂模式支持两种协调方式：
+
+| 模式 | 输入 | 适用场景 |
+|------|------|---------|
+| **独立模式** | 两组独立的 twist 命令 | D02 独立任务 |
+| **协调模式** | 物体 twist + 相对 twist | D03 Object Impedance |
+
+协调模式下，Servo 内部将物体速度分解为两臂速度（利用 D01 的增广 Jacobian），并执行实时碰撞检查——如果预测到碰撞，自动降速或停止，比 D9.3 的离线规划更适合动态场景。
+
+### ⚠️ 常见陷阱
+
+```
+⚠️ 编程陷阱：Servo 2.0 的 twist 命令坐标系不一致
+   错误做法：左臂和右臂的 twist 都在 base_link 坐标系下给出
+   现象：两臂运动方向相反（如都向 x+ 运动，但右臂实际向 x- 运动）
+   根本原因：Servo 默认将 twist 解释为 end-effector 坐标系下的命令，
+            而左右臂的 end-effector 坐标系朝向可能相反
+   正确做法：统一使用 base_link 坐标系，并在 Servo 配置中设置
+            frame_id: "base_link"
+```
+
+---
+
 ## 本章小结
 
 | 知识点 | 核心内容 | 难度 | 关联章节 |
@@ -1728,6 +1773,7 @@ def replay_trajectory_in_mujoco(env, trajectory_msg):
 | MTC 双臂 | Merger stage、协同搬运管线、逆向推理 | ⭐⭐⭐ | M14 MTC |
 | ros2_control 同步 | 合并轨迹/并行/导纳三策略、选型 | ⭐⭐ | M12 ros2_control |
 | 仿真环境 | MuJoCo/Gazebo/Isaac Sim 选型与搭建 | ⭐⭐ | P02 sim-to-real |
+| MoveIt2 2026 新特性 | Parallel Planning、Experience-based、Servo 2.0 双臂联动 | ⭐⭐⭐ | — |
 
 ## 累积项目：本章新增模块
 

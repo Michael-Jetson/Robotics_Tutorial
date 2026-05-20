@@ -4,12 +4,12 @@
 
 ## 前置自测
 
-📋 **前置自测**（答不出 ≥ 2 题 → 先回 M11 / v8 Ch31 复习）
+📋 **前置自测**（答不出 ≥ 2 题 → 先回 M11 / `02_基础/50_ROS2工程化` 复习）
 
 1. 什么是 `SCHED_FIFO` 调度策略？它与 `SCHED_OTHER` 的延迟差异量级是多少？（M11）
-2. `pluginlib` 的动态加载机制是什么？它与 `dlopen` 的关系是什么？（v8 Ch31）
-3. ROS2 Lifecycle Node 的四个主要状态是什么？状态转换回调函数的命名规则是什么？（v8 Ch31）
-4. 什么是 RAII？在实时控制循环中为什么禁止使用 `new/delete`？（v8 Ch3, M11）
+2. `pluginlib` 的动态加载机制是什么？它与 `dlopen` 的关系是什么？（`02_基础/50_ROS2工程化/40_硬件集成与RL部署`）
+3. ROS2 Lifecycle Node 的四个主要状态是什么？状态转换回调函数的命名规则是什么？（`02_基础/50_ROS2工程化/40_硬件集成与RL部署`）
+4. 什么是 RAII？在实时控制循环中为什么禁止使用 `new/delete`？（`02_基础/10_C++语言核心/40_RAII与智能指针`、M11）
 5. URDF 的 `<ros2_control>` 标签中 `<hardware>` 和 `<joint>` 的语义是什么？（P01）
 
 ## 本章目标
@@ -24,13 +24,13 @@
 
 ## M12.1 ros2_control 架构全景 ⭐⭐
 
-### 动机
+### 动机 ⭐⭐
 
 假设你有一个 MoveIt2 规划好的关节轨迹，需要在真实的 Franka Panda 上执行。问题来了：MoveIt2 的规划算法不应该知道「这是 Franka」还是「这是 UR5e」还是「这是 Gazebo 仿真」——如果每换一种硬件就要改规划代码，维护成本将指数爆炸。
 
 同时，你可能还想在同一台机器人上切换控制模式：MoveIt2 规划执行时用轨迹跟踪控制器，RL 策略推理时用直接位置转发控制器，力控交互时用导纳控制器。如果每种控制器都要自己实现硬件通信，代码重复将不可收拾。
 
-### 如果不用 ros2_control 会怎样
+### 如果不用 ros2_control 会怎样 ⭐⭐
 
 在 ros2_control 出现之前（ROS1 早期），每个硬件厂商自己实现 ROS 驱动节点：
 - Franka 有自己的 `franka_ros`，发布 `/joint_states`，订阅 `/joint_commands`
@@ -45,7 +45,7 @@
 
 > **本质洞察**：ros2_control 的核心贡献不是某个具体算法，而是一个**抽象层**——它把「控制算法想读/写什么」和「硬件怎么读/写」彻底解耦。这类似于操作系统中设备驱动的角色：应用程序调用 `read()/write()`，不需要知道底层是 SSD 还是 HDD。
 
-### 历史背景
+### 历史背景 ⭐
 
 ros2_control 的前身是 ROS1 的 `ros_control`（2013 年由 Adolfo Rodriguez Tsouroukdissian 在 PAL Robotics 发起）。ROS1 版本已经引入了 Controller Manager 和 Hardware Interface 的分离，但存在几个关键问题：
 - 线程模型不灵活（所有控制器在同一线程）
@@ -54,7 +54,7 @@ ros2_control 的前身是 ROS1 的 `ros_control`（2013 年由 Adolfo Rodriguez 
 
 ROS2 版本（2020 年由 PickNik Robotics / Bence Magyar 等人主导重写）解决了这些问题，并引入了 Chainable Controllers、generate_parameter_library、更精细的错误处理等现代化设计。
 
-### 四大核心组件
+### 四大核心组件 ⭐⭐
 
 ros2_control 的架构由四个核心组件构成，它们通过明确的接口协作：
 
@@ -119,7 +119,7 @@ Controller 实现控制算法。它的 `update()` 方法在每个 RT 循环中�
 - 根据目标（轨迹点、力矩指令、导纳目标等）计算控制量
 - 将控制量写入 command interfaces
 
-### 主循环时序
+### 主循环时序 ⭐⭐
 
 ```
 时间 ────────────────────────────────────────────────────────►
@@ -192,7 +192,7 @@ Controller 实现控制算法。它的 `update()` 方法在每个 RT 循环中�
 
 ## M12.2 三种硬件组件类型 ⭐⭐
 
-### 动机
+### 动机 ⭐⭐
 
 在 M12.1 中我们知道 Hardware Interface 是与物理硬件通信的代码。但不同硬件的通信模式差异很大：
 - 一台 6-DOF 机械臂的 6 个关节通过同一个 EtherCAT 总线通信——读一次就得到所有关节的状态
@@ -201,7 +201,7 @@ Controller 实现控制算法。它的 `update()` 方法在每个 RT 循环中�
 
 如果用同一个接口来覆盖这三种场景，要么过于复杂（简单传感器也要实现命令写入），要么过于简单（无法表达总线共享的语义）。
 
-### 三种接口类型
+### 三种接口类型 ⭐⭐
 
 ros2_control 定义了三种硬件组件类型来覆盖这些场景：
 
@@ -308,13 +308,13 @@ Resource Manager 从 URDF 解析这些标签，通过 pluginlib 加载对应的�
 
 ## M12.3 编写自定义 SystemInterface ⭐⭐
 
-### 动机
+### 动机 ⭐⭐
 
 理解了架构之后，最重要的实践能力是**自己写一个硬件驱动**。无论你用的是哪种机器人——工业臂、协作臂、自定义关节——你都需要实现一个 Hardware Interface 来桥接 ros2_control 和你的硬件通信协议。
 
 本节以 SystemInterface 为例（因为它覆盖最常见的场景），完整演示一个从零开始的硬件驱动。
 
-### 生命周期状态机
+### 生命周期状态机 ⭐⭐
 
 在写代码之前，必须理解 Hardware Interface 的生命周期。它遵循 ROS2 Lifecycle Node 的状态机模型：
 
@@ -360,9 +360,9 @@ Resource Manager 从 URDF 解析这些标签，通过 pluginlib 加载对应的�
 
 > **跨领域类比**：这种分层设计类似于数据库连接池——`on_configure()` 是「建立连接」，`on_activate()` 是「从池中取出连接开始使用」，`on_deactivate()` 是「归还连接」，`on_cleanup()` 是「关闭连接」。连接的生命周期和使用的生命周期独立管理。
 
-### 完整代码实现
+### 完整代码实现 ⭐⭐
 
-下面是一个完整的自定义 SystemInterface 实现。我们分三个文件来组织：头文件、源文件、pluginlib 声明。
+下面我们分步构建一个完整的自定义 SystemInterface 实现。在深入代码之前，先理解每个文件的设计角色和它们之间的关系。我们分三个文件来组织：头文件、源文件、pluginlib 声明。
 
 **Step 1: 头文件——声明类结构**
 
@@ -2011,6 +2011,114 @@ $$a_{filtered}(t) = \alpha \cdot a_{raw}(t) + (1 - \alpha) \cdot a_{filtered}(t-
 2. **[A 型·滤波对比]** 用不同 EMA alpha 值（0.1, 0.3, 0.5, 0.8, 1.0）滤波同一策略输出。绘制关节加速度曲线，分析 alpha 对平滑性和响应速度的影响。
 
 3. **[跨章综合题]** 结合 M11（实时 C++）、M12.3（SystemInterface）、M12.9（RL 部署），设计完整的 RL 部署系统：(a) RT 线程运行 ros2_control（1kHz），(b) 非 RT 线程运行推理（50Hz），(c) 用 lock-free 环形缓冲区传递 action。画出线程模型和数据流图。
+
+---
+
+## M12.10 Chainable Controllers 实战与 gz_ros2_control 最新集成 ⭐⭐⭐
+
+### Chainable Controllers 深入理解
+
+Chainable Controllers 是 ros2_control 在 ROS2 Humble/Iron 之后引入的重要架构演进。它解决了一个长期痛点：**如何让一个控制器的输出直接作为另一个控制器的输入，而不经过硬件层**。
+
+**为什么需要链式控制器**：考虑一个典型的力控场景——外环是导纳控制器（根据力矩传感器输出位置偏差），内环是关节轨迹跟踪控制器（跟踪位置命令）。如果没有链式控制器，导纳控制器必须通过 ROS2 Action 把轨迹发给 JTC——这引入了毫秒级通信延迟，在 1kHz 的力控回路中不可接受。
+
+Chainable Controllers 允许导纳控制器直接把位置命令写入 JTC 的 reference interfaces（参考接口），JTC 在同一个 RT 循环中立刻读取并执行——零通信延迟，全部在进程内完成。
+
+**链式控制器的数据流**：
+
+```
+Admittance Controller (外环)
+  ├── 读取: F/T 传感器 state interfaces
+  ├── 计算: 导纳模型 → 位置偏差
+  └── 写入: JTC 的 reference interfaces (不是硬件 command interfaces!)
+        │
+        ▼
+JTC (内环)
+  ├── 读取: 关节位置 state interfaces + reference interfaces
+  ├── 计算: PID 跟踪
+  └── 写入: 硬件 command interfaces
+        │
+        ▼
+Hardware Interface → 电机
+```
+
+> **本质洞察**：Chainable Controllers 的核心设计理念不是"让控制器串联"——而是**让控制器在 RT 循环内共享数据路径，消除任何通信中间层**。Reference interfaces 本质上是进程内的共享内存指针，和 state/command interfaces 一样——只是它们的生产者和消费者都是控制器，而非硬件。这是 ros2_control 架构中"抽象层"理念的自然延伸：不仅硬件可以被抽象，控制器之间的数据传递也可以被抽象为统一的 interface 机制。
+
+**链式控制器的配置示例**：
+
+```yaml
+controller_manager:
+  ros__parameters:
+    update_rate: 1000  # 1kHz
+
+    admittance_controller:
+      type: admittance_controller/AdmittanceController
+
+    joint_trajectory_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+
+joint_trajectory_controller:
+  ros__parameters:
+    joints:
+      - joint1
+      - joint2
+      - joint3
+      - joint4
+      - joint5
+      - joint6
+      - joint7
+    # 声明 reference interfaces，供上游链式控制器写入
+    command_interfaces:
+      - position
+    state_interfaces:
+      - position
+      - velocity
+
+admittance_controller:
+  ros__parameters:
+    joints:
+      - joint1
+      - joint2
+      - joint3
+      - joint4
+      - joint5
+      - joint6
+      - joint7
+    # 指定链式下游：输出到 JTC 的 reference interfaces
+    command_interfaces:
+      - position
+    state_interfaces:
+      - position
+      - velocity
+    ft_sensor:
+      name: ft_sensor
+      frame:
+        id: tool0
+    # 链式配置：admittance → JTC
+    chainable_command_interface_name: position
+```
+
+**反事实推理**：如果不用 Chainable Controllers 而是用 ROS2 topic/action 连接两个控制器会怎样？外环输出的位置命令经过 DDS 序列化/反序列化、传输、反序列化到内环——延迟约 1-5ms。对于 1kHz 的力控回路，每个控制周期只有 1ms 预算，光通信就占满了。结果是力控带宽严重受限（外环频率被迫降到 100-200Hz），系统对接触力的响应变慢，安全性降低。
+
+### gz_ros2_control 最新集成（Gazebo Harmonic + Ionic）
+
+随着 Gazebo（原 Ignition Gazebo）升级到 Harmonic（2024）和 Ionic（2025）系列，`gz_ros2_control` 的集成方式也在演进。
+
+**当前推荐架构**（Gazebo Harmonic / ROS2 Rolling/Jazzy/Kilted）：
+
+| 组件 | 版本 | 说明 |
+|------|------|------|
+| Gazebo | Harmonic (gz-sim 8.x) 或 Ionic | 物理仿真引擎 |
+| gz_ros2_control | 1.x (Humble) / 2.x (Rolling) | ros2_control 与 Gazebo 桥梁 |
+| ros2_control | Humble/Iron/Jazzy/Kilted | 控制框架 |
+
+**关键变化**：
+1. **插件声明统一**：Harmonic 使用 `<plugin filename="gz_ros2_control-system">`（注意：不再是旧的 `libgazebo_ros2_control.so`）
+2. **SDF 优先**：Harmonic 推荐 SDF 而非 URDF 直接使用；但通过 `ros_gz_sim` 的 `create` 服务，URDF/Xacro 仍然可以自动转换为 SDF 加载
+3. **传感器插件集成**：gz_ros2_control 现已支持力矩传感器、IMU 等 sensor interface 的仿真后端
+4. **Mimic joints**：Harmonic 的 gz_ros2_control 支持 `mimic` 关节（如夹爪的左右手指镜像运动），无需额外 workaround
+
+> **跨领域类比**：gz_ros2_control 的角色类似于 Docker 的虚拟网络——它让 ros2_control 控制器"以为"自己在和真实硬件通信，实际上对面是 Gazebo 的物理引擎。这种"虚拟硬件"模式是 sim-to-real 的基础——M15 的 Mini-Manip 项目正是通过切换这一层来实现 Gazebo/Mock/真机三态切换。
 
 ---
 

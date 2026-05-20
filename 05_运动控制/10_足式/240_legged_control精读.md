@@ -2,7 +2,7 @@
 
 # 第 68 章 legged_control 完整项目精读——从 OCS2 到真机部署
 
-> **难度**: ⭐⭐⭐ | **预计学时**: 40-50 小时(2 周) | **前置**: 足式/30_Pinocchio深度精读-49, 足式/90_WBC分层优化与TSID-57, 足式/170_实时CPP工程-62
+> **难度**: ⭐⭐⭐ | **预计学时**: 40-50 小时(2 周) | **前置**: 足式/30_Pinocchio深度精读, 足式/90_WBC分层优化与TSID, 足式/170_实时CPP工程
 >
 > **一句话概要**: legged_control 是连接 OCS2 理论与真机部署的桥梁——它用约 15,000 行 C++ 将 NMPC、WBC、状态估计和硬件接口粘合为一个可运行的四足控制栈,是学完前面所有章节后的"毕业集成项目"。
 
@@ -245,7 +245,7 @@ read()     State         MPC query        WBC solve    write()
 | **HW::write()** | pos/vel/kp/kd/torque | 编码为电机命令 | UDP/CAN 发送 | ~0.05 ms |
 | **总计** | | | | ~0.4-0.7 ms |
 
-> 💡 **设计洞察**：为什么 WBC 占了大部分时间？因为 WBC 需要调用 Pinocchio 计算前向运动学 + 质量矩阵 + 非线性项（~0.1 ms），然后组装并求解 QP（~0.1-0.4 ms）。这也是为什么 WBC 的实时优化如此关键——足式/90_WBC分层优化与TSID §6.2-6.4 利用 `EIGEN_RUNTIME_NO_MALLOC` 宏在开发期拦截 Eigen 的运行时堆分配:当设置 `set_is_malloc_allowed(false)` 后任何堆分配请求都会触发 assertion 失败,从而将"隐性延迟"转化为"显性崩溃",帮助开发者在上线前消灭所有非确定性内存操作。
+> 💡 **设计洞察**：为什么 WBC 占了大部分时间？因为 WBC 需要调用 Pinocchio 计算前向运动学 + 质量矩阵 + 非线性项（~0.1 ms），然后组装并求解 QP（~0.1-0.4 ms）。这也是为什么 WBC 的实时优化如此关键——足式/90_WBC分层优化与TSID §6.2.4 利用 `EIGEN_RUNTIME_NO_MALLOC` 宏在开发期拦截 Eigen 的运行时堆分配:当设置 `set_is_malloc_allowed(false)` 后任何堆分配请求都会触发 assertion 失败,从而将"隐性延迟"转化为"显性崩溃",帮助开发者在上线前消灭所有非确定性内存操作。
 
 ### 68.2.3 ROS 包结构
 
@@ -724,7 +724,7 @@ void LeggedInterface::setupOptimalControlProblem(
 
 ### 68.5.1 从 足式/90_WBC分层优化与TSID 到 legged_control 的 WBC
 
-足式/90_WBC分层优化与TSID 已经详细推导了 WBC 的数学形式——全身动力学方程、QP 公式化、HQP 分层优化（详见 53.2-53.4 节）。本节聚焦于 legged_control 如何**工程实现**这些数学。
+足式/90_WBC分层优化与TSID 已经详细推导了 WBC 的数学形式——全身动力学方程、QP 公式化、HQP 分层优化（详见 53.2.4 节）。本节聚焦于 legged_control 如何**工程实现**这些数学。
 
 legged_control 的 WBC 有两个实现——`HierarchicalWbc`（默认）和 `WeightedWbc`（备选）。我们精读默认的 `HierarchicalWbc`。
 
@@ -1847,7 +1847,7 @@ if (estimatorType == "kalman") {
 
 ---
 
-## 常见故障与排查
+## 🔧 故障排查手册
 
 | 症状 | 可能原因 | 排查步骤 | 相关小节 |
 |------|---------|---------|---------|
@@ -1940,11 +1940,11 @@ if (estimatorType == "kalman") {
 
 | 前置章节 | 在本章中的体现 |
 |---------|--------------|
-| 足式/30_Pinocchio深度精读-49 Pinocchio + Centroidal | WBC 的动力学计算、MPC 的模型基础 |
+| 足式/30_Pinocchio深度精读 Pinocchio + Centroidal | WBC 的动力学计算、MPC 的模型基础 |
 | 足式/90_WBC分层优化与TSID WBC/TSID | HierarchicalWbc 的数学基础,本章不重复推导 |
 | 足式/110_OCS2完整栈与双线程MPC OCS2 | MPC 集成的框架基础,Triple Buffer 通信 |
 | 足式/130_腿足状态估计 状态估计 | LinearKalmanFilter 的理论基础 |
-| 足式/170_实时CPP工程-62 实时C++ + ros_control | Controller 插件、HardwareInterface |
+| 足式/170_实时CPP工程 实时C++ + ros_control | Controller 插件、HardwareInterface |
 
 **向后指向**：
 
@@ -1957,3 +1957,72 @@ if (estimatorType == "kalman") {
 ---
 
 > 走完 legged_control 的完整精读，你已经从"理解理论"跨越到"理解系统"。控制理论(MPC、WBC)只是大厦的几块砖,而 legged_control 展示了如何把砖砌成墙、把墙围成屋。下一章 足式/250_Mini-Legged综合实战 是你的"毕业设计"——**从零搭建一个简化四足控制器**。legged_control 是你的参考答案,但你需要独立走一遍从无到有的过程。
+
+---
+
+## 68.12 前沿展望：OCS2 后继生态与 RL Pipeline 对比 ⭐⭐⭐
+
+> **本节解决什么问题**：legged_control 依赖的 OCS2 框架已进入维护模式。了解后继项目和替代方案，对于规划你自己的研究平台至关重要。
+
+### OCS2 -> ALIGATOR/ProxDDP 迁移
+
+OCS2（Open Optimal Control Solver，ETH RSL）自 2017 年发布以来一直是腿足 MPC 的事实标准。但截至 2025-2026，OCS2 面临几个发展瓶颈：
+
+| 瓶颈 | 具体表现 | 影响 |
+|------|---------|------|
+| **SQP 求解器效率** | OCS2 的 SQP 在高维问题（>30 DOF，如人形机器人）上收敛慢 | 限制了向人形扩展 |
+| **ROS1 依赖** | 主分支仍基于 ROS1，ROS2 移植不完整 | 新项目需要用社区移植版 |
+| **维护活跃度** | 核心开发者（Farshidian 等）已转向其他项目 | Bug 修复和新功能更新减缓 |
+| **可微性** | CppAD 代码生成不支持 GPU 加速 | 无法利用 JAX/Warp 的可微仿真生态 |
+
+**ALIGATOR（INRIA/LAAS-CNRS，Jallet et al.）** 是 OCS2 的精神继承者之一，提出了 ProxDDP（Proximal Differential Dynamic Programming）算法：
+
+- **核心创新**：用近端算子（proximal operator）处理约束，避免了 SQP 的线性化误差累积
+- **性能**：在 30-DOF 人形 MPC 上比 OCS2 SQP 快 2-5 倍（Jallet et al., T-RO 2025）
+- **生态**：基于 Pinocchio 3.x + Eigen，与 legged_control 的数学后端兼容
+- **Python 接口**：提供完整的 Python bindings，支持与 JAX 互操作
+
+**从 OCS2 迁移到 ALIGATOR 的关键步骤**（概念级）：
+
+```
+OCS2 概念              →  ALIGATOR 对应
+─────────────────────────────────────────
+OptimalControlProblem  →  TrajOptProblem
+StateCost / StateInputCost → CostAbstract 子类
+StateConstraint        →  ConstraintAbstract 子类
+SqpMpc                 →  ProxDDP solver
+MPC_MRT_Interface      →  需要自行实现或使用 simple_mpc
+```
+
+**simple_mpc（INRIA）** 是基于 ALIGATOR 的腿足 MPC 参考实现，功能类似于 OCS2 的 `ocs2_legged_robot`。它的 C++ 代码量约 5000 行（不含 ALIGATOR 本身），比 OCS2 legged_robot 更精简。
+
+### legged_control vs IsaacLab RL Pipeline 对比
+
+legged_control 代表了"经典 MPC+WBC"路线，IsaacLab + rsl_rl 代表了"端到端 RL"路线。两者是当前腿足控制的两大主流框架，理解它们的差异对于选择研究方向至关重要。
+
+| 维度 | legged_control (MPC+WBC) | IsaacLab + rsl_rl (RL) |
+|------|-------------------------|----------------------|
+| **开发语言** | C++（实时控制）| Python + CUDA（训练），C++/Python（部署）|
+| **控制频率** | MPC 50-100 Hz + WBC 500-1000 Hz | 策略推理 50-200 Hz |
+| **训练需求** | 无训练——参数手调 | 需要 GPU 训练（1-12 小时）|
+| **安全保证** | 约束满足（摩擦锥、关节限位）| 无形式化保证——通过奖励惩罚隐式学习 |
+| **新机器人适配** | 修改 URDF + 参数文件（1-3 天）| 修改环境配置 + 重新训练（1-3 天训练 + 调参）|
+| **极限敏捷性** | 受限于模型精度和求解时间 | 可以超越模型——Parkour 级别 |
+| **可解释性** | 每个模块输出可检查 | 策略是黑盒 |
+| **部署复杂度** | 需要实时 Linux + ros_control | 只需推理运行时（ONNX/TorchScript）|
+| **社区规模** | 中等（控制/优化社区）| 大（ML + 机器人社区）|
+
+> **本质洞察**：legged_control 和 IsaacLab 不是"旧 vs 新"的替代关系，而是两种**根本不同的工程哲学**。legged_control 把控制知识编码为数学约束（"我知道物理规律，让优化器在规律允许的范围内找最优"），IsaacLab 把控制知识编码为奖励信号（"我定义什么是好的行为，让 RL 自己学怎么实现"）。前者的极限是人类对物理的理解深度，后者的极限是训练数据的丰富度和 GPU 的算力。2025-2026 的趋势是两者融合——DTC、Hybrid RL+MPC 等方案试图同时获得 MPC 的安全性和 RL 的适应性。
+
+### ⚠️ 常见陷阱
+
+> 🧠 **思维陷阱：认为"RL 是未来，MPC 已经过时"**
+> **新手想法**："看 ANYmal Parkour 和 Extreme Parkour 的结果，RL 已经全面超越 MPC 了"
+> **实际上**：这些 RL 结果在**训练分布内**表现惊人，但在分布外（如遇到训练中从未见过的地形类型或传感器故障模式）可能灾难性失败，且失败时没有预警。工业部署中（如 ANYbotics 的巡检机器人），仍然以 MPC+WBC 为主控、RL 为辅助——因为客户需要可审计、可预测的行为。
+> **正确理解**：选 MPC 还是 RL 取决于应用场景——安全关键场景选 MPC，极限性能场景选 RL，大多数场景选两者混合。
+
+### 练习
+
+**练习 68.12.A** ⭐⭐⭐：对比 legged_control 的 `HierarchicalWbc::update()` 和 IsaacLab 中 rsl_rl 策略网络的 `act()` 函数：两者的输入维度、输出维度、计算耗时分别是多少？讨论在什么条件下 WBC 的显式物理约束满足优于 RL 的隐式约束学习。
+
+**练习 68.12.B** ⭐⭐⭐⭐ [跨章综合]：设计一个从 legged_control 迁移到 ALIGATOR/simple_mpc 的方案。列出需要替换的模块（MPC 求解器、问题定义接口、MPC-MRT 通信），需要保留的模块（WBC、状态估计、硬件接口），以及迁移过程中的验证检查点。综合本章对 legged_control 架构的理解和足式/110_OCS2完整栈与双线程MPC 对 OCS2 的分析，评估迁移的工程量（人周）。

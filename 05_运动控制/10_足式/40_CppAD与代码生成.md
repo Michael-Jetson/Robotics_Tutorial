@@ -2,9 +2,9 @@
 
 # 第 48 章：CppAD 与 CppADCodeGen 预编译流水线
 
-> **本章定位**：从 Ch17 的 Ceres Jet 前向 AD 出发，进入工业级 tape-based 自动微分。CppAD 记录计算图，CppADCodeGen 将其编译为高性能 `.so` 动态库。这条流水线是 OCS2 及自定义实时约束/动力学热路径的常用方案——在合适的模型上，可把数值差分量级的导数计算降到微秒级预编译解析导数。Crocoddyl/Aligator 的主流策略略有不同，本章后半部分单独比较。
+> **本章定位**：从 Ceres Jet 前向 AD（01_数学/30_优化理论）出发，进入工业级 tape-based 自动微分。CppAD 记录计算图，CppADCodeGen 将其编译为高性能 `.so` 动态库。这条流水线是 OCS2 及自定义实时约束/动力学热路径的常用方案——在合适的模型上，可把数值差分量级的导数计算降到微秒级预编译解析导数。Crocoddyl/Aligator 的主流策略略有不同，本章后半部分单独比较。
 >
-> **前置依赖**：Ch17（Ceres Jet AD）、Ch2（编译模型 + dlopen）、Ch32（CMake 工程化）、足式/30_Pinocchio深度精读（Pinocchio 模板 Scalar 切换）
+> **前置依赖**：01_数学/30_优化理论（Ceres Jet AD）、02_基础/10_C++语言核心（编译模型 + dlopen）、02_基础/30_软件工程（CMake 工程化）、足式/30_Pinocchio深度精读（Pinocchio 模板 Scalar 切换）
 
 ---
 
@@ -12,9 +12,9 @@
 
 > 📋 **答不出 $\geq 2$ 题 $\to$ 先回前置章节复习**
 
-1. **[Ch17]** Ceres 的 `Jet<double, N>` 类型如何实现前向模式自动微分？dual number 的加法和乘法规则是什么？
-2. **[Ch2]** `dlopen` 和 `dlsym` 分别做什么？如何在运行时加载一个 `.so` 动态库中的函数？
-3. **[Ch32]** CMake 中 `add_custom_command` 和 `add_custom_target` 的区别是什么？如何让一个目标依赖于代码生成步骤？
+1. **[01_数学/30_优化理论]** Ceres 的 `Jet<double, N>` 类型如何实现前向模式自动微分？dual number 的加法和乘法规则是什么？
+2. **[02_基础/10_C++语言核心]** `dlopen` 和 `dlsym` 分别做什么？如何在运行时加载一个 `.so` 动态库中的函数？
+3. **[02_基础/30_软件工程]** CMake 中 `add_custom_command` 和 `add_custom_target` 的区别是什么？如何让一个目标依赖于代码生成步骤？
 4. **[足式/30_Pinocchio深度精读]** Pinocchio 的 `ModelTpl<Scalar>` 如何实现标量参数化？为什么同一份 RNEA 代码可以用 `double` 也可以用 `AD<double>`？
 5. **[数值方法]** 有限差分求导 $f'(x) \approx \frac{f(x+h)-f(x)}{h}$ 的误差来源有哪两个？为什么 $h$ 不能太大也不能太小？
 
@@ -24,7 +24,7 @@
 
 学完本章，学员应能：
 
-1. **解释** tape-based 反向 AD 的工作原理——从 CppAD 的 `Independent()` → 前向录制 → `ADFun` 构建 → `Jacobian()`/`Hessian()` 反向求值的完整流程，并与 Ch17 Ceres Jet 前向 AD 做原理和适用场景的对比
+1. **解释** tape-based 反向 AD 的工作原理——从 CppAD 的 `Independent()` → 前向录制 → `ADFun` 构建 → `Jacobian()`/`Hessian()` 反向求值的完整流程，并与 Ceres Jet 前向 AD（01_数学/30_优化理论）做原理和适用场景的对比
 2. **独立搭建** CppADCodeGen 的完整预编译流水线——从 C++ 模板函数 → tape 录制 → C 源码生成 → GCC/Clang 编译为 `.so` → 运行时 `dlopen` 加载并调用，理解每个阶段的输入/输出和可能的失败模式
 3. **集成** Pinocchio + CppADCodeGen 实现动力学导数的预编译——将 `pinocchio::ModelTpl<CppAD::cg::CG<double>>` 实例化的 RNEA/ABA 导出为独立 `.so`，在实时控制循环中以 ~1.5 $\mu$s 耗时获取机器精度的 Jacobian
 4. **阅读并理解** OCS2 `CppAdInterface` 的核心设计——hash 缓存机制（避免重复编译）、`thread_local` 线程安全模式、与 SQP 求解器的集成接口
@@ -32,11 +32,11 @@
 
 ---
 
-## 48.1 为什么需要代码生成——MPC 热路径的 1 $\mu$s 死线
+## 48.1 为什么需要代码生成——MPC 热路径的 1 $\mu$s 死线 ⭐⭐
 
 > **这一节解决什么问题**：腿足 MPC 需要在 10 ms 内完成数百次动力学求值+求导。数值差分太慢，解释执行的 AD 不够快。只有预编译代码生成才能满足实时性要求。
 
-### 问题场景：Go2 四足机器人 MPC
+### 问题场景：Go2 四足机器人 MPC ⭐⭐
 
 以 Unitree Go2 四足机器人为例。Go2 每条腿 3 个关节，共 12 自由度（DOF）。浮动基座引入 6 个额外自由度，因此广义速度维度 $n_v = 18$（配置空间维度 $n_q = 19$，因浮基旋转用四元数表示多 1 维，但 MPC 中的动力学 Jacobian 以 $n_v$ 为维度基准）。MPC 的典型配置为：
 
@@ -70,7 +70,7 @@ $$
 
 CodeGen 的增长率远低于线性——编译器将完整 Jacobian 展开为一段连续指令流，分支预测命中率极高，而数值差分每多一个维度就多两次完整的函数求值调用。这就是代码生成的威力所在。
 
-### 三种求导方案对比
+### 三种求导方案对比 ⭐⭐
 
 | 维度 | 数值差分 | CppAD 解释执行 | CppADCodeGen 预编译 |
 |:---|:---|:---|:---|
@@ -82,7 +82,7 @@ CodeGen 的增长率远低于线性——编译器将完整 Jacobian 展开为�
 | **适用场景** | 原型验证、低维问题 | 中等规模、快速迭代 | 生产部署、实时 MPC |
 | **代码改动后** | 无需额外步骤 | 无需额外步骤 | 需要重新生成 + 编译 |
 
-### 为什么数值差分在 MPC 中不可行
+### 为什么数值差分在 MPC 中不可行 ⭐⭐
 
 数值差分看似简单，实则在 MPC 热路径中有两个致命缺陷。
 
@@ -121,7 +121,7 @@ $$
 >
 > 数值差分对条件数敏感的动力学方程会产生**灾难性相消误差**。在实际腿足 MPC 中，当膝关节接近完全伸直（$\theta_{\text{knee}} \to 0$ 或 $\pi$）时，逆动力学 Jacobian 的数值差分可以产生 $10^{-3}$ 量级的相对误差——这不是理论上的担忧，而是实际调试中反复出现的问题。自动微分完全消除了这一问题，因为它计算的是解析导数，精度仅受机器精度限制。
 
-### 练习
+### 练习 ⭐⭐
 
 1. **[估算题]** H1 人形机器人 19 个驱动关节，浮动基座下 $n_v = 25$，若采用最小坐标状态近似 $n_x = 2n_v = 50$、控制维度 $n_u = 19$，MPC horizon $N=30$，SQP 迭代 4 次。假设 Jacobian 输入维度为 $n = 69$，单次动力学求值耗时 0.3 $\mu$s。分别估算：(a) 数值差分（中心）求一次 Jacobian 的耗时；(b) 单次 MPC 求解中 Jacobian 计算的总耗时；(c) 该总耗时占 10 ms 预算的百分比。对比 CppADCodeGen 方案（假设单次 3 $\mu$s），讨论哪种方案可行。
 
@@ -129,13 +129,13 @@ $$
 
 ---
 
-## 48.2 自动微分基础——从 Dual Number 到 Tape
+## 48.2 自动微分基础——从 Dual Number 到 Tape ⭐⭐
 
-> **这一节解决什么问题**：回顾 Ch17 的前向模式 AD（Ceres Jet），引入反向模式和 tape-based AD 的核心概念，为 CppAD 的使用打下数学基础。
+> **这一节解决什么问题**：回顾 01_数学/30_优化理论 中的前向模式 AD（Ceres Jet），引入反向模式和 tape-based AD 的核心概念，为 CppAD 的使用打下数学基础。
 
-### 前向模式 AD 回顾：Dual Number
+### 前向模式 AD 回顾：Dual Number ⭐⭐
 
-Ch17 已经介绍了 Ceres 的 `Jet<double, N>` 类型。这里从数学根基出发，重新推导 dual number 的工作原理，揭示其与链式法则的本质联系。
+01_数学/30_优化理论 已经介绍了 Ceres 的 `Jet<double, N>` 类型。这里从数学根基出发，重新推导 dual number 的工作原理，揭示其与链式法则的本质联系。
 
 **Dual number 的定义。** 在实数域 $\mathbb{R}$ 上扩展一个无穷小元 $\varepsilon$，满足：
 
@@ -173,7 +173,7 @@ $$
 
 **前向模式的计算代价。** 对 $f: \mathbb{R}^n \to \mathbb{R}^m$，一次前向 seed（选取一个切线方向 $\dot{x} = e_j$）计算 Jacobian 的第 $j$ 列。完整 Jacobian 需要 $n$ 次传播。如果用 `Jet<double, N>`，则一次传播内部做 $N$ 个切线方向的并行运算，总计算量为 $O(n \cdot C_f)$，其中 $C_f$ 是函数本身的 FLOP 数。
 
-### 反向模式 AD（反向传播）
+### 反向模式 AD（反向传播） ⭐⭐⭐
 
 前向模式对每个输入方向做一次传播——如果输入维度 $n$ 很大而输出维度 $m$ 很小，这就浪费了。反向模式从**输出端**出发，一次传播就得到**所有输入方向**的导数信息。
 
@@ -203,7 +203,7 @@ $$
 
 这与深度学习中的**反向传播**（backpropagation）本质相同。神经网络的 loss 是标量（$m = 1$），参数维度 $n$ 可达数十亿，因此反向模式是唯一可行的选择。PyTorch 的 `loss.backward()` 就是在执行一次反向模式 AD。
 
-### Tape-Based AD：CppAD 的核心机制
+### Tape-Based AD：CppAD 的核心机制 ⭐⭐⭐
 
 CppAD 使用 **tape**（记录带）机制实现自动微分。理解 tape 是掌握 CppAD 和 CppADCodeGen 的前提。
 
@@ -244,7 +244,7 @@ CppAD::ADFun<double> func(ax, ay)  ←── 结束录制：tape 被"密封"为 
 
 **内存特征。** tape 大小正比于运算数量，每条记录约 8--16 字节。对于机器人动力学这种"宽而浅"的计算图，tape 通常在 KB 到 MB 量级——完全可接受。
 
-### 计算图视角
+### 计算图视角 ⭐⭐
 
 为了建立直觉，考虑具体例子 $f(x_1, x_2) = x_1 \cdot \sin(x_2) + x_2^2$。
 
@@ -313,7 +313,7 @@ CppAD 的 tape 就是这个 DAG 的线性化存储。前向模式对应 `func.Fo
 > ```
 > `CondExpGt` 在 tape 上记录**两个分支**，求值时根据当前 $x_0$ 的值动态选择正确的分支及其导数。类似的还有 `CondExpLt`、`CondExpEq`、`CondExpLe`、`CondExpGe`。
 
-### 练习
+### 练习 ⭐⭐
 
 1. **[手算题]** 对 $f(x_1, x_2) = x_1 \cdot \exp(x_2) + \log(x_1)$，完成以下步骤：(a) 画出计算图（标注每个中间变量）；(b) 用前向模式分别设 seed $(\dot{x}_1, \dot{x}_2) = (1, 0)$ 和 $(0, 1)$，手算 $\frac{\partial f}{\partial x_1}$ 和 $\frac{\partial f}{\partial x_2}$；(c) 用反向模式设 seed $\bar{y} = 1$，一次传播同时得到两个偏导数；(d) 验证两种模式结果相同；(e) 在 $(x_1, x_2) = (2, 1)$ 处代入数值验证：$\frac{\partial f}{\partial x_1} = e + \frac{1}{2} \approx 3.218$，$\frac{\partial f}{\partial x_2} = 2e \approx 5.436$。
 
@@ -321,11 +321,11 @@ CppAD 的 tape 就是这个 DAG 的线性化存储。前向模式对应 `func.Fo
 
 ---
 
-## 48.3 CppAD 核心 API 精读
+## 48.3 CppAD 核心 API 精读 ⭐⭐
 
 > **这一节解决什么问题**：掌握 CppAD 的核心 API，能独立使用 CppAD 对任意 C++ 函数进行自动微分。
 
-### `AD<double>` 类型与 `Independent` 声明
+### `AD<double>` 类型与 `Independent` 声明 ⭐⭐
 
 CppAD 的使用遵循一个固定三步模式：声明自变量 $\to$ 录制计算 $\to$ 创建 `ADFun`。以下是最基本的完整示例：
 
@@ -379,7 +379,7 @@ int main() {
 - **必须**使用 `CppAD::sin`、`CppAD::exp` 等函数。`std::` 版本通常不会绑定到 CppAD 的 AD 重载；如果为了通过编译而显式 `Value()` 或转换成 `double`，该运算会脱离 tape，导数自然错误。
 - `ADFun` 构造函数的两个参数标记 tape 的"入口"（自变量）和"出口"（因变量）。
 
-### Forward 模式：切线方向
+### Forward 模式：切线方向 ⭐⭐⭐
 
 `ADFun::Forward(p, xp)` 计算第 $p$ 阶 Taylor 系数。最常用的是零阶（函数求值）和一阶（方向导数）：
 
@@ -406,7 +406,7 @@ std::vector<double> dy2 = func.Forward(1, dx2);
 
 注意 `Forward(1, dx)` **必须**在 `Forward(0, x)` 之后调用——一阶 Taylor 系数依赖于零阶状态。如果忘记先调用 `Forward(0, x)` 就直接调用 `Forward(1, dx)`，结果是未定义的。
 
-### Reverse 模式：伴随方向
+### Reverse 模式：伴随方向 ⭐⭐⭐
 
 `ADFun::Reverse(q, w)` 计算 adjoint 向量。对于 $q=1$，它执行 $w^T J$ 的计算：
 
@@ -425,7 +425,7 @@ std::vector<double> grad = func.Reverse(1, w);
 // 对标量输出函数，这比前向模式高效 n 倍（n 是输入维度）
 ```
 
-### Jacobian 与 Hessian
+### Jacobian 与 Hessian ⭐⭐
 
 CppAD 提供了高层接口，内部自动选择前向或反向模式并管理 seed 循环：
 
@@ -481,7 +481,7 @@ func.sparse_jac_rev(x_new, jac_pattern, coloring, sparse_jac, work);
 | Go2 四足 | $24 \times 48$ | ~35% | 12（vs 48） | ~4.0x |
 | H1 人形 | $24 \times 67$ | ~25% | 15（vs 67） | ~4.5x |
 
-### 内存模型与性能考量
+### 内存模型与性能考量 ⭐⭐⭐
 
 CppAD tape 的内存消耗与录制的运算数量线性相关：
 
@@ -510,7 +510,7 @@ CppADCodeGen 的解决方案：将 tape "展平"为纯 C 代码——**消除所
 > 2. **在 tape 录制期间调用 `CppAD::Value()`**：`Value(ax[0])` 提取 `AD<double>` 的数值部分，返回 `double`。这个 `double` 脱离了 tape 的追踪，后续用它参与的计算会被 tape 视为常量乘法/加法。最终导致 Jacobian 缺少对应的偏导数项——一个极难发现的 silent bug。
 > 3. **tape 录制期间的线程冲突**：CppAD 使用**线程局部**的全局 tape（每线程一条 tape）。如果在录制期间调用了一个也使用 `AD<double>` 的库函数（如 Pinocchio 的某些内部计算），该函数的运算也会被记录到当前 tape 上——这通常是你想要的。但如果两个线程同时录制，就必须用 CppAD 的多线程 tape 管理机制（`thread_alloc`）。
 
-### 练习
+### 练习 ⭐⭐
 
 1. **[编程题]** 用 CppAD 实现 Rosenbrock 函数 $f(x,y) = (1-x)^2 + 100(y-x^2)^2$ 的梯度和 Hessian 计算。在 $(x,y) = (0.5, 0.5)$ 处求值，并与解析结果对比。解析梯度：$\nabla f = \big(-2(1-x) - 400x(y-x^2),\; 200(y-x^2)\big)$。在 $(0.5, 0.5)$ 处：$\nabla f = (-1 + 400 \times 0.5 \times 0.25,\; 200 \times 0.25) = (49, 50)$。验证 CppAD 的数值结果。
 
@@ -518,11 +518,11 @@ CppADCodeGen 的解决方案：将 tape "展平"为纯 C 代码——**消除所
 
 ---
 
-## 48.4 CppADCodeGen——从 Tape 到 `.so` 动态库
+## 48.4 CppADCodeGen——从 Tape 到 `.so` 动态库 ⭐⭐⭐
 
 > **这一节解决什么问题**：CppAD 解释执行 tape 仍有显著开销（虚函数调度、分支预测失败）。CppADCodeGen 将 tape 翻译为纯 C 代码，编译为 `.so`，实现零开销原生调用。
 
-### 架构总览
+### 架构总览 ⭐⭐
 
 CppADCodeGen 的流水线是一个**离线编译**流程，每一步都有明确的产物：
 
@@ -544,7 +544,7 @@ CppAD tape (符号化)                     ← 内存中的 ADFun<CG<double>> �
 
 关键洞察：代码生成和编译在**部署前离线完成**。运行时只有 `dlopen` 加载（一次性，~1 ms）和原生函数调用（每次 ~1.5 $\mu$s）的开销。假如没有代码生成这一步，MPC 热路径每次迭代都必须解释执行 tape 指令——就像每次做菜都要逐行翻阅菜谱查步骤，而不是早已把步骤背熟一气呵成。
 
-### `CG<double>` 标量类型
+### `CG<double>` 标量类型 ⭐⭐⭐
 
 CppADCodeGen 引入了关键类型 `CppAD::cg::CG<double>`。它将 CppAD 的 tape 从"数值记录"升级为"符号记录"——不再存储中间数值，而是存储符号表达式（变量名、运算类型）。
 
@@ -565,7 +565,7 @@ using CGD   = CppAD::cg::CG<double>;      // CodeGen 符号标量
 using ADCGD = CppAD::AD<CGD>;             // AD 包装的 CodeGen 标量
 ```
 
-### 完整流水线代码
+### 完整流水线代码 ⭐⭐
 
 以下是一个完整的、可编译运行的 CppADCodeGen 示例。这里故意使用一个 2-DOF toy 函数
 $y = M(q)v$ 来展示 CodeGen 流水线和 Jacobian 结构；它形状像“质量矩阵乘速度”，但不是完整的机器人动力学扭矩公式：
@@ -668,7 +668,7 @@ int main() {
 }
 ```
 
-### 生成的 C 代码分析
+### 生成的 C 代码分析 ⭐⭐⭐
 
 CppADCodeGen 将符号 tape 翻译为什么样的 C 代码？以上面 2-DOF toy 函数的 Jacobian 为例，生成代码的结构大致如下（简化后便于阅读）：
 
@@ -719,7 +719,7 @@ void matrix_velocity_2dof_sparse_jacobian(
 
 这些特征使得 GCC `-O2` 优化后的代码性能**接近手写最优 C 代码**。实测表明，CodeGen 生成代码的 FLOP 数通常只比手写多 5--15%（主要来自未完全消除的临时变量）。
 
-### 编译优化选项
+### 编译优化选项 ⭐⭐
 
 | 编译选项 | 含义 | 对 Jacobian 性能的影响 | 注意事项 |
 |:---|:---|:---|:---|
@@ -742,7 +742,7 @@ void matrix_velocity_2dof_sparse_jacobian(
 
 编译时间随模型复杂度**超线性增长**。GCC 的寄存器分配（graph coloring NP-hard 的近似算法）和指令调度 pass 在大型单函数上的时间复杂度远超线性。`-O3` 的自动向量化分析进一步加剧了编译时间。
 
-### CMake 集成
+### CMake 集成 ⭐⭐
 
 在实际项目中，代码生成+编译需要集成到 CMake 构建系统。核心模式是 `add_custom_command` + `add_custom_target`：
 
@@ -800,7 +800,7 @@ add_dependencies(mpc_controller generate_dynamics)
 >
 > 3. **URDF 变化需要重新生成**：机器人模型的任何变化（关节质量、连杆惯量、运动链拓扑）都可能使已生成的 `.so` 失效。OCS2 的 `CppAdInterface` 主要按 `folderName/modelName/cppad_generated/{modelName}_lib.so` 管理生成库，`loadModelsIfAvailable()` 看到库文件存在就会加载；它本身并不会自动比较 URDF 文件内容。工程上应把 URDF、AD 函数结构、编译参数等变化纳入外层构建依赖或改变 `modelName/folderName`，否则可能加载到旧库。
 
-### 练习
+### 练习 ⭐⭐
 
 1. **[编程题]** 对 3-DOF 平面机械臂实现完整的 CppADCodeGen 流水线。正运动学为 $p_x = l_1\cos\theta_1 + l_2\cos(\theta_1+\theta_2) + l_3\cos(\theta_1+\theta_2+\theta_3)$，$p_y$ 类似。步骤：(a) 用 `AD<CG<double>>` 录制 FK 函数；(b) 调用 `ModelCSourceGen` 生成 C 源码并保存到文件（用 `cgen.setCreateJacobian(true)` 再调用 `libcgen.getSources()`）；(c) 用 GCC 编译为 `.so`；(d) `dlopen` 加载并调用 `model->Jacobian(q)` 求解析 Jacobian；(e) 与 CppAD 解释执行版本和数值差分版本在精度（相对误差）和速度（$\mu$s/call）上对比。
 
@@ -811,7 +811,7 @@ add_dependencies(mpc_controller generate_dynamics)
 
 > **这一节解决什么问题**：把 CppAD 和 CppADCodeGen 应用到真实的 Pinocchio 动力学计算中，实现从 URDF 加载到预编译 `.so` 调用的完整流水线。
 
-### 五步流水线
+### 五步流水线 ⭐⭐⭐
 
 整条流水线的核心思路：**让 Pinocchio 的 RNEA 算法在 CppAD 的 tape 上"跑一遍"**，然后把 tape 翻译成纯 C 代码并编译为共享库。运行时直接调用 `.so`，不再有任何 tape 解释开销。
 
@@ -937,7 +937,7 @@ std::vector<size_t> rows, cols;
 model->SparseJacobian(x, vals, rows, cols);
 ```
 
-### 性能基准
+### 性能基准 ⭐⭐
 
 以下数据在 Intel i7-12700H（单核，`-O2`）上测得，每个函数运行 10000 次取平均：
 
@@ -953,7 +953,7 @@ model->SparseJacobian(x, vals, rows, cols);
 
 趋势很明显：**DOF 越大，CodeGen 的加速比越高**。原因是数值差分的开销随 DOF 线性增长（每个维度一次扰动），而 CodeGen 的 Jacobian 是一段展开后的平坦代码，分支预测友好且可被编译器深度优化。
 
-### Tape 录制的条件分支陷阱
+### Tape 录制的条件分支陷阱 ⭐⭐⭐
 
 这是实际使用中最容易踩的坑。CppAD tape 的本质是**一次执行的线性计算图**——它无法表示"运行时根据值选择不同分支"。
 
@@ -1015,7 +1015,7 @@ ADCGScalar force = k * CppAD::log(1.0 + CppAD::exp(alpha * penetration)) / alpha
 
 > **常见陷阱**：Pinocchio 的一些高级功能（如约束动力学 `constraintDynamics()`）在内部使用条件分支，不能直接通过 tape 录制。使用前务必检查 Pinocchio 文档中的 **AD-compatible** 标记。安全的函数包括：`rnea()`、`aba()`、`crba()`、`computeJointJacobians()` 等核心算法。
 
-### 练习
+### 练习 ⭐⭐
 
 1. **[编程题]** 完成 Go2 四足机器人 RNEA 的完整 CodeGen 流水线。分别用 `double` 直接调用、CppAD 解释执行、CppADCodeGen 三种方式计算 RNEA 及其 Jacobian，对比耗时并绘制柱状图。
 2. **[分析题]** 将 tape 录制扩展到 ABA（Articulated Body Algorithm，正动力学），比较 RNEA 和 ABA 的 tape 操作数量与生成 C 代码的行数。解释为什么 ABA 的 tape 通常更大。
@@ -1026,7 +1026,7 @@ ADCGScalar force = k * CppAD::log(1.0 + CppAD::exp(alpha * penetration)) / alpha
 
 > **这一节解决什么问题**：OCS2 如何封装 CppAD/CppADCodeGen，使得 MPC 用户无需关心代码生成细节。
 
-### OCS2 定位与架构
+### OCS2 定位与架构 ⭐⭐
 
 OCS2（Optimal Control for Switched Systems）是 ETH RSL 开发的 MPC 框架，专为腿式机器人等切换系统设计。其核心设计决策：**把 AD 的全部复杂性封装在 `CppAdInterface` 内部**，上层 MPC 用户只需定义一个 `ad_function(input, output)` 回调函数。
 
@@ -1041,7 +1041,7 @@ OCS2（Optimal Control for Switched Systems）是 ETH RSL 开发的 MPC 框架�
                         +---------------------+
 ```
 
-### CppAdInterface 类设计
+### CppAdInterface 类设计 ⭐⭐⭐
 
 ```cpp
 // OCS2 源码简化版：ocs2_core/include/.../CppAdInterface.h
@@ -1107,7 +1107,7 @@ CppAdInterface adInterface(dynamicsAd, nx + nu, nx, "go2_dynamics");
 adInterface.createModels();  // 首次：录制+编译+缓存；后续：直接加载
 ```
 
-### 自动重编译机制
+### 自动重编译机制 ⭐⭐⭐
 
 OCS2 的磁盘缓存机制是其工程上的亮点，但要注意它不是“自动感知所有源文件变化”的构建系统：
 
@@ -1130,7 +1130,7 @@ loadModelsIfAvailable() 典型流程：
 - 后续运行：如果同名库已存在，毫秒级加载
 - 修改了 URDF、状态维度、AD 函数结构或被录进 tape 的常量时，必须显式重新生成，或改变 `modelName/folderName`，或由 CMake/脚本删除旧库后再生成
 
-### 多线程安全性
+### 多线程安全性 ⭐⭐⭐
 
 OCS2 MPC 运行在双线程模式：
 
@@ -1157,7 +1157,7 @@ vector_t CppAdInterface::getFunctionValue(const vector_t& input) {
 
 关键点：**`.so` 中的代码段 `.text` 是只读的**，多线程读同一份代码没有数据竞争。竞争只可能发生在 evaluation buffer（工作内存）上，用 `thread_local` 彻底消除。
 
-### 与 SQP 求解器的集成
+### 与 SQP 求解器的集成 ⭐⭐⭐
 
 OCS2 的 SQP 求解器在每次迭代中需要以下导数信息：
 
@@ -1172,7 +1172,7 @@ OCS2 的 SQP 求解器在每次迭代中需要以下导数信息：
 
 所有这些都通过同一套 `CppAdInterface` 抽象提供，SQP 求解器完全不知道底层是 CodeGen 还是其他实现。这种解耦是 OCS2 的设计优点。
 
-### 练习
+### 练习 ⭐⭐
 
 1. **[源码阅读题]** 在 OCS2 源码（`ocs2_core/src/automatic_differentiation/`）中找到 `CppAdInterface` 的完整实现，画出其与 `SystemDynamicsBase`、`CostFunctionBase` 的类关系图。
 2. **[思考题]** 如果 `loadModelsIfAvailable()` 只按 `{folderName}/{modelName}` 找到旧的 `.so` 就加载，而没有检查 URDF 文件内容、AD 函数源码或编译参数变化，会导致什么问题？如何用 CMake 依赖、模型内容 hash 或版本化 `modelName` 改进？
@@ -1183,7 +1183,7 @@ OCS2 的 SQP 求解器在每次迭代中需要以下导数信息：
 
 > **这一节解决什么问题**：与 OCS2 不同，Crocoddyl/Aligator 采用混合策略——手写解析导数为主，选择性使用 CodeGen。
 
-### Crocoddyl：ActionModel + 手写导数
+### Crocoddyl：ActionModel + 手写导数 ⭐⭐⭐
 
 Crocoddyl 的设计哲学是**"导数由用户负责"**：
 
@@ -1217,7 +1217,7 @@ void ActionModelFreeFwdDynamics::calcDiff(...) {
 
 > **注意**：Crocoddyl 3.x 进行了重大 API 重构，与 2.x 不向后兼容。新项目建议直接从 3.x 版本开始。
 
-### Aligator (ProxDDP)：并行 Riccati + 选择性 CodeGen
+### Aligator (ProxDDP)：并行 Riccati + 选择性 CodeGen ⭐⭐⭐
 
 Aligator 是 INRIA 开发的下一代轨迹优化器，其核心创新在于 **Parallel Riccati Solver**。
 
@@ -1235,7 +1235,7 @@ $$\text{Aligator 并行归约：分块消元} \quad \Rightarrow \quad O(\log N) 
 - **复杂成本/约束**：用 CppADCodeGen 自动微分——正确性自动保证
 - **简单二次代价**：直接写解析表达式——无需任何 AD 开销
 
-### OCS2 vs Crocoddyl/Aligator 设计哲学对比
+### OCS2 vs Crocoddyl/Aligator 设计哲学对比 ⭐⭐
 
 | 维度 | OCS2 | Crocoddyl 3.x | Aligator |
 |------|------|-----------|---------|
@@ -1247,13 +1247,13 @@ $$\text{Aligator 并行归约：分块消元} \quad \Rightarrow \quad O(\log N) 
 | 维护状态 | 维护模式 v1.0 | 3.x 活跃开发 | 活跃开发（推荐） |
 | 典型用户 | ANYmal 部署 | 研究原型 | 新项目首选 |
 
-### 设计 tradeoff 的深层原因
+### 设计 tradeoff 的深层原因 ⭐⭐⭐
 
 - **OCS2 "全部 CodeGen"**：ETH RSL 的 ANYmal 需要生产级可靠性，不能依赖人工推导正确性。首次启动慢但运行时极快，适合部署场景。
 - **Crocoddyl "全部手写"**：LAAS-CNRS 偏重快速迭代，Pinocchio 已有主要算法的解析导数，研究场景频繁修改不想等编译。
 - **Aligator 取两者之长**：动力学用解析导数（最快且已验证），自定义部分用 CodeGen（正确性自动保证），并行求解器减少了对单步极致性能的依赖。
 
-### 练习
+### 练习 ⭐⭐
 
 1. **[对比题]** 分析 OCS2 "tape everything" 和 Crocoddyl "hand-derive everything" 两种极端策略的 tradeoff。在项目的什么阶段各自更合适？
 2. **[思考题]** Aligator 的并行 Riccati 需要 $O(\log N)$ 步归约。如果每步动力学求导变快（通过 CodeGen），对并行 Riccati 的整体收益影响大吗？为什么？
@@ -1264,7 +1264,7 @@ $$\text{Aligator 并行归约：分块消元} \quad \Rightarrow \quad O(\log N) 
 
 > **这一节解决什么问题**：实际工程中如何选择 AD 方案。
 
-### 决策矩阵
+### 决策矩阵 ⭐⭐
 
 | 维度 | CppAD 解释 | CppADCodeGen | Drake AutoDiffXd | Pinocchio 解析 | JAX / PyTorch |
 |------|-----------|-------------|-----------------|---------------|------------|
@@ -1277,7 +1277,7 @@ $$\text{Aligator 并行归约：分块消元} \quad \Rightarrow \quad O(\log N) 
 | 条件分支 | `CondExp` | `CondExp` | 原生支持 | N/A | 原生支持 |
 | MPC 适用性 | 原型验证 | 生产部署 | 原型验证 | 生产部署 | 训练 / 离线规划 |
 
-### 选型决策树
+### 选型决策树 ⭐⭐
 
 ```
 开始
@@ -1301,7 +1301,7 @@ $$\text{Aligator 并行归约：分块消元} \quad \Rightarrow \quad O(\log N) 
       \-- Python 生态 --> CasADi 或 JAX
 ```
 
-### 一个常见误区
+### 一个常见误区 ⭐⭐
 
 > **"CppADCodeGen 一定比 Pinocchio 解析导数快"——这是错的。**
 
@@ -1313,7 +1313,7 @@ Pinocchio 的解析导数（如 `computeABADerivatives`）是数学家手工推�
 2. **复合函数**——多步计算串联后的端到端导数
 3. **正确性保证**——避免手动推导出错的风险
 
-### 前沿：Enzyme —— LLVM 级 AD
+### 前沿：Enzyme —— LLVM 级 AD ⭐⭐⭐⭐
 
 传统 AD（CppAD、PyTorch autograd）工作在**源码级**或**操作符级**。Enzyme 则直接在 **LLVM IR 级**进行自动微分：
 
@@ -1329,7 +1329,7 @@ Pinocchio 的解析导数（如 `computeABADerivatives`）是数学家手工推�
 
 当前状态（截至 2025）：Julia 生态已较成熟（`Enzyme.jl`），C++ 生态仍处实验阶段，尚无 Pinocchio/Drake 正式集成。关键论文：Moses & Churavy, NeurIPS 2020。如果 Enzyme 在 C++ 生态成熟，可能使 CppADCodeGen 的整条流水线成为历史——直接在编译期对原始 `double` 代码微分即可。
 
-### 练习
+### 练习 ⭐⭐
 
 1. **[设计题]** 你要为一个 12-DOF 轮足机器人开发 MPC 控制器，项目周期 6 个月（前 3 个月原型，后 3 个月部署）。设计你的 AD 方案迁移路径，并说明每个阶段的选择理由。
 2. **[调研题]** 调研 Enzyme 在 Pinocchio 或 Drake 中的集成进展，是否有公开的 benchmark 数据？
@@ -1338,7 +1338,7 @@ Pinocchio 的解析导数（如 `computeABADerivatives`）是数学家手工推�
 
 ## 48.9 前沿与展望 ⭐⭐⭐
 
-### 可微分仿真
+### 可微分仿真 ⭐⭐⭐
 
 传统流水线是"仿真器 + 外部 AD 工具"各自独立。新一代可微分仿真器将 AD 融入物理引擎核心：
 
@@ -1346,7 +1346,7 @@ Pinocchio 的解析导数（如 `computeABADerivatives`）是数学家手工推�
 
 **Drake AutoDiffXd 路线**：Drake 所有 System 组件都支持 `AutoDiffXd` 标量类型——"仿真即微分"。优势是与仿真器无缝集成，劣势是运行时性能不如 CodeGen。
 
-### GPU 上的 AD
+### GPU 上的 AD ⭐⭐⭐⭐
 
 | 框架 | 特点 | 适用场景 |
 |------|------|---------|
@@ -1356,7 +1356,7 @@ Pinocchio 的解析导数（如 `computeABADerivatives`）是数学家手工推�
 
 机器人领域的常见模式：**训练用 Python/JAX（GPU），部署用 C++/CppADCodeGen（CPU 实时）**。这导致了"双语言问题"——训练和部署的动力学模型需要维护两套代码。
 
-### 从 MPC 到学习：AD 的角色转变
+### 从 MPC 到学习：AD 的角色转变 ⭐⭐⭐
 
 AD 在机器人学中的角色正在从"MPC 的求导工具"演变为贯穿研究方法论的基础设施。
 
@@ -1409,9 +1409,50 @@ CasADi 是另一个在机器人 MPC 中广泛使用的自动微分框架。两�
 
 ---
 
+## 48.10 Python AD 生态：JAX/Diffrax/torch.func 在机器人中的应用趋势 ⭐⭐⭐
+
+### JAX 生态与 CppAD 的定位差异 ⭐⭐⭐
+
+CppAD/CppADCodeGen 是 C++ 世界的 AD 方案，核心优势是与 Pinocchio/OCS2 的零缝集成和微秒级预编译性能。但 2024-2026 年，Python 端的 AD 生态正在快速成熟，尤其是 JAX 生态，它在机器人学研究中的使用率急速上升。
+
+| 维度 | CppAD/CodeGen | JAX (`jax.grad`/`jax.jacobian`) | PyTorch (`torch.func`) |
+|------|-------------|-------------------------------|----------------------|
+| **语言** | C++ | Python (XLA 编译) | Python (Dynamo 编译) |
+| **AD 方式** | Tape + CodeGen | 函数式变换（`grad`/`jacfwd`/`jacrev`） | 函数式变换（`grad`/`jacrev`/`vmap`） |
+| **GPU 支持** | 无 | 原生（XLA 后端） | 原生（CUDA 后端） |
+| **批量处理** | 手动循环 | `vmap` 自动向量化 | `vmap` 自动向量化 |
+| **实时部署** | 微秒级 `.so` | 毫秒级 JIT（首次编译慢） | 毫秒级 JIT |
+| **典型用途** | OCS2 MPC 热路径 | MJX 可微仿真、Brax RL | RL 策略训练、可微控制研究 |
+
+### JAX 在机器人 MPC/RL 中的崛起 ⭐⭐⭐
+
+JAX 的 `jax.grad` + `jax.jit` + `jax.vmap` 三件套为机器人学提供了一种全新的开发范式：
+
+- **`jax.grad`**：对任意 Python 函数自动求梯度，无需手动定义 tape 或标量类型替换
+- **`jax.jit`**：将 Python 函数编译为 XLA 机器码，性能接近手写 C++
+- **`jax.vmap`**：自动向量化——将"对单个样本的函数"变为"对批量样本的函数"，在 GPU 上并行执行
+
+在腿足 RL 训练场景中，`vmap` 的威力尤其突出。传统做法是循环遍历 4096 个并行环境逐一计算动力学，`vmap` 则自动将循环编译为 GPU 并行指令——训练吞吐量提升 10-100 倍。
+
+**Diffrax**（Patrick Kidger, 2022）是 JAX 生态中的微分方程求解器库，支持 ODE/SDE 的可微求解。对于腿足机器人，Diffrax 可以将连续时间动力学 $\dot{x} = f(x, u)$ 的数值积分过程（如 RK4）变为可微的——这意味着你可以直接对"从初始状态经过 N 步积分后的终态"求关于初始控制序列的梯度。这是可微 MPC（Differentiable MPC）的基础。
+
+### torch.func：PyTorch 的函数式 AD 变换 ⭐⭐⭐
+
+PyTorch 在 2.0 版本（2023）引入了 `torch.func` 模块，提供了类 JAX 的函数式 AD 变换：
+
+- **`torch.func.jacrev`**：反向模式 Jacobian，适合 $m \gg n$（输出维度远小于输入维度）的场景
+- **`torch.func.jacfwd`**：前向模式 Jacobian，适合 $n \gg m$（输入维度远小于输出维度）的场景
+- **`torch.func.vmap`**：自动向量化，与 JAX 的 `vmap` 功能对等
+
+对于已经深度使用 PyTorch 进行 RL 训练（如 rsl_rl、IsaacLab）的团队，`torch.func` 提供了不切换框架就能获得高效 AD 能力的途径。例如，在 RL 的奖励整形中，可以用 `jacrev` 计算策略输出关于观测的 Jacobian，作为正则化信号防止策略过于"激进"。
+
+> **本质洞察**：CppAD/CodeGen 和 JAX/torch.func 解决的是同一个数学问题（自动微分），但面向完全不同的工程约束。CppAD/CodeGen 面向"微秒级实时 C++ 控制循环"，JAX/torch.func 面向"毫秒级 GPU 并行训练/优化"。前者是部署侧的选择，后者是研究侧的选择。未来的趋势是：研究阶段用 JAX/PyTorch 快速验证可微优化思路，部署阶段用 CppAD/CodeGen 生成实时可执行代码。
+
+---
+
 ## 本章小结
 
-### 核心概念回顾
+### 核心概念回顾 ⭐
 
 | 概念 | 关键要点 |
 |------|---------|
@@ -1424,7 +1465,7 @@ CasADi 是另一个在机器人 MPC 中广泛使用的自动微分框架。两�
 | Crocoddyl / Aligator | 解析导数优先，CodeGen 为辅，并行 Riccati 求解 |
 | 选型三角 | 解释执行（原型）/ CodeGen（生产）/ 解析导数（最快） |
 
-### 学习时间估算
+### 学习时间估算 ⭐
 
 **1.5 周（25-30 小时）**：
 
@@ -1437,7 +1478,7 @@ CasADi 是另一个在机器人 MPC 中广泛使用的自动微分框架。两�
 | Crocoddyl / Aligator 对比学习 | 2-3 小时 |
 | 实战练习 + 性能基准测试 | 4-5 小时 |
 
-### 下游章节导引
+### 下游章节导引 ⭐
 
 - **$\to$ 足式/90_WBC分层优化与TSID WBC**：全身控制的实时 QP 约束 Jacobian 来自 CppADCodeGen
 - **$\to$ 足式/110_OCS2完整栈与双线程MPC OCS2 MPC**：完整 MPC 栈依赖 `CppAdInterface` 提供动力学导数
@@ -1467,7 +1508,7 @@ CasADi 是另一个在机器人 MPC 中广泛使用的自动微分框架。两�
 
 ---
 
-## 常见故障与排查
+## 🔧 故障排查手册
 
 | 现象 | 可能原因 | 排查方法 |
 |------|---------|---------|

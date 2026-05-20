@@ -1384,7 +1384,110 @@ $$\frac{\partial d}{\partial y} = \frac{1}{\Delta y}\left[(1-s)(d_{01} - d_{00})
 
 ---
 
-## 67.10 本章小结
+## 67.10 前沿：可微仿真与端到端感知运动 ⭐⭐⭐⭐
+
+> **本节解决什么问题**：Grandia 2023 的 Perceptive MPC 是"感知数据 -> 手工设计的约束/代价 -> SQP 求解"的经典管线。近年来，两条新路径正在挑战这一范式：(1) 可微仿真使地形交互可以端到端反向传播；(2) 端到端学习直接从感知到动作，跳过显式 MPC。
+
+### 可微仿真在 Perceptive MPC 中的应用（DiffTaichi / Warp / MJX）
+
+**核心思想**：传统 MPC 把地形视为"外部查表数据"——SQP 每步查询高程图得到约束值和梯度。可微仿真（differentiable simulation）提供了另一条路：直接把地形交互（接触、摩擦、碰撞）放进可微的物理引擎中，让梯度从仿真结果一路反传到控制输入。
+
+**代表性可微仿真框架**：
+
+| 框架 | 开发者 | 后端 | 地形支持 | 适用场景 |
+|------|--------|------|---------|---------|
+| DiffTaichi (Hu et al., ICLR 2020) | MIT CSAIL | Taichi (CPU/GPU) | 高程图 heightfield | 研究原型、可微物理推导 |
+| NVIDIA Warp | NVIDIA | CUDA | SDF + mesh | 工业级可微仿真、大规模并行 |
+| MuJoCo MJX (Freeman et al., 2021) | Google DeepMind | JAX (XLA) | 高程图 hfield | 大规模 RL 训练、可微 MPC |
+| Drake + JAX | MIT Robot Locomotion Group | JAX | 接触几何 | 接触隐式优化 |
+
+**可微地形交互的数学本质**：
+
+在传统 MPC 中，地形约束 $g(\mathbf{x}, M) \geq 0$ 的梯度 $\partial g / \partial \mathbf{x}$ 通过查表+有限差分或解析公式获得。在可微仿真中，接触力 $\lambda$ 本身是优化问题的解：
+
+$$\lambda^* = \arg\min_{\lambda \geq 0} \frac{1}{2} \lambda^T A \lambda + \lambda^T b$$
+
+通过对这个内层 QP 应用隐函数定理（Implicit Function Theorem），可以得到 $\partial \lambda^* / \partial \mathbf{q}$——即接触力相对于关节状态的精确梯度。这使得 MPC 可以"感知"到地形摩擦、弹性等物理属性的变化，而不仅仅是几何形状。
+
+**Warp 在 Perceptive MPC 中的应用前景**：
+
+NVIDIA Warp 提供了 CUDA 加速的可微 SDF 查询，可以直接替代 OCS2 中手工实现的 `BilinearInterpolation` + `EndEffectorDistanceConstraint`：
+
+```python
+# Warp 的可微 SDF 查询（概念示意）
+import warp as wp
+
+@wp.kernel
+def sdf_constraint(
+    foot_positions: wp.array(dtype=wp.vec3),
+    sdf_volume: wp.Volume,
+    distances: wp.array(dtype=float),
+    gradients: wp.array(dtype=wp.vec3)):
+
+    tid = wp.tid()
+    p = foot_positions[tid]
+
+    # 可微 SDF 查询——自动获得值和梯度
+    d = wp.volume_sample_f(sdf_volume, p, wp.Volume.LINEAR)
+    distances[tid] = d
+
+    # 梯度通过 Warp 的自动微分自动计算
+    gradients[tid] = wp.volume_sample_grad_f(sdf_volume, p, wp.Volume.LINEAR)
+```
+
+### 端到端感知运动（End-to-End Perceptive Locomotion，2024-2026 进展）
+
+**核心问题**：Grandia 2023 的管线有 6 个模块（高程图 -> 分类 -> 分割 -> SDF -> MPC -> WBC），每个模块的误差会累积传播。能否用端到端学习直接从原始感知到关节动作，跳过中间的手工管线？
+
+**2024-2026 标志性进展**：
+
+| 工作 | 年份 | 方法 | 关键创新 | 与 Perceptive MPC 的关系 |
+|------|------|------|---------|------------------------|
+| ANYmal Parkour (Hoeller et al.) | 2024, Science Robotics | 纯 RL + 深度图 | 在极端地形上超越 MPC | 证明端到端 RL 在感知运动上的上限 |
+| Extreme Parkour (Cheng et al.) | 2024, ICRA | RL + 深度图 + 特权学习 | 跑酷级别的敏捷运动 | 不需要高程图/SDF 等中间表示 |
+| DTC (Jenelten et al.) | 2024, Science Robotics | RL + MPC 混合 | MPC 生成参考 + RL 跟踪补偿 | 保留 MPC 的约束满足能力 |
+| NaVILA | 2025, RSS | VLA + 运动策略 | 语言指令驱动的感知导航运动 | 把感知从几何扩展到语义 |
+
+**端到端 vs 模块化管线的深层对比**：
+
+| 维度 | Perceptive MPC（模块化） | 端到端 RL |
+|------|------------------------|-----------|
+| **可解释性** | 每个模块的输出可检查（高程图、SDF、约束值） | 黑盒——策略失败时难以定位原因 |
+| **安全保证** | MPC 的约束满足提供形式化安全保证 | 无形式化保证——只有统计安全性 |
+| **泛化能力** | 受限于手工设计的特征（坡度、粗糙度等） | 可以学到人类未想到的特征 |
+| **极限性能** | 受限于 SQP 的实时性和模型精度 | 在训练分布内可达到更高的敏捷性 |
+| **部署可靠性** | 管线中任何模块故障可检测和降级 | 一旦策略失效，通常是灾难性的 |
+
+> **本质洞察**：Perceptive MPC 和端到端 RL 的分歧**不是**"哪个更好"的问题，**而是**"安全保证 vs 极限性能"的根本权衡。对于工业部署（矿井巡检、管道检修），Perceptive MPC 的可审计性和降级能力更重要——你需要向客户解释"为什么机器人做了这个决策"。对于研究探索（parkour、极端地形），端到端 RL 能达到更高的性能上限。2024-2026 的趋势是**融合两者**——用 MPC 提供安全框架和约束满足，用 RL 在 MPC 的约束空间内学习最优行为（DTC 模式），同时用可微仿真打通两者之间的梯度通道。
+
+### ⚠️ 常见陷阱
+
+> 🧠 **思维陷阱：认为"可微仿真可以让 MPC 自动学会处理地形"**
+> **新手想法**："有了可微仿真，MPC 的代价函数权重和约束参数可以自动学出来，不需要手动调了"
+> **实际上**：可微仿真的梯度在接触不连续点（如脚着地/离地瞬间）处是不准确的——接触是一个互补问题，其解在接触/非接触边界上不可微。Randomized smoothing 和 relaxation 等技术可以缓解这个问题，但完全消除还需要更多研究。
+> **正确理解**：可微仿真的梯度在接触**持续**阶段是准确的，在接触**切换**瞬间需要特殊处理。
+
+### 练习
+
+1. **[文献调研]** 阅读 DTC（Jenelten et al., 2024, Science Robotics）的方法部分，画出 MPC 参考生成 + RL 跟踪策略的完整数据流图。与 Grandia 2023 的纯 MPC 管线对比：哪些模块被 RL 替代了？哪些被保留了？
+
+2. **[跨章综合题]** 综合本章的 Perceptive MPC 管线（67.2-67.9）和足式/210_RL与MPC混合范式 的 RL+MPC 混合范式，设计一个"DTC-style Perceptive Controller"：MPC 利用高程图和 SDF 生成安全参考轨迹，RL 策略从深度图直接学习残差补偿。定义 MPC 和 RL 各自的输入/输出接口、运行频率和责任边界。讨论当感知失效时，这个混合架构如何降级。
+
+---
+
+## 🔧 故障排查手册
+
+| 症状 | 可能原因 | 排查步骤 | 相关小节 |
+|------|---------|---------|---------|
+| MPC 输出 NaN 或求解失败（SQP 不收敛） | SDF 查询返回异常值（超出地图范围返回 0 而非安全默认值），或地形约束与物理约束矛盾导致不可行 | 1. 打印每次 SQP 迭代的 cost 和 constraint violation 2. 检查 SDF 边界处理逻辑 3. 临时关闭地形约束确认是否为感知数据导致 4. 检查初始猜测是否在可行域内 | 67.4, 67.5 |
+| 摆动腿仍然碰撞地形——虽然有 SDF 约束 | SDF 分辨率过粗导致小障碍物被"平滑掉"，或 SDF 膨胀半径小于机器人脚的实际尺寸 | 1. 在 RViz 中叠加 SDF 等高线和实际地形 2. 检查膨胀半径是否 >= 脚掌半径 + 安全裕度 3. 减小 SDF 分辨率（0.04m -> 0.02m）看碰撞是否消失 | 67.4 |
+| 感知线程和 MPC 线程之间数据不一致——机器人在平地上也出现异常避障动作 | double buffer 交换时序错误，MPC 读到了只写了一半的感知数据 | 1. 在 double buffer 的读写两端加时间戳日志 2. 确认交换操作是原子的（`std::atomic<int>` 指针交换） 3. 在 MPC 侧检查 SDF 场的数据完整性（无全零或全 NaN 行） | 67.2 |
+| 躯体高度跟踪在上坡时过度补偿——机器人过度下蹲导致膝关节力矩过大 | 地形参考高度 $z_{\text{ref}}(x,y)$ 的平滑窗口过小，地形噪声直接传递到高度参考 | 1. 可视化 $z_{\text{ref}}$ 层的时间序列 2. 增大高度参考的空间平滑窗口（从 3x3 到 7x7） 3. 降低高度跟踪代价权重 $w_h$ | 67.5 |
+| 部署后整体延迟超出预算（端到端 > 100ms）——机器人反应迟钝 | 感知管线某个模块耗时异常（常见：点云预处理未降采样、SDF 计算未用 EDT 而用暴力搜索） | 1. 对每个模块单独计时（用 `std::chrono` 或 `ros2 topic delay`） 2. 找到最慢的模块并优化 3. 参考 67.2 频率预算表检查各模块是否达标 | 67.2, 67.9 |
+
+---
+
+## 67.11 本章小结
 
 ### 知识点总结
 
