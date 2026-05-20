@@ -5,6 +5,7 @@ on:
   push:
     branches: [main]
     paths:
+      - '00_项目导航/**'
       - '01_数学/**'
       - '02_基础/**'
       - '03_SLAM/**'
@@ -13,6 +14,7 @@ on:
       - '06_具身智能/**'
       - 'SUMMARY.md'
       - 'README.md'
+      - '.github/workflows/sync-to-locowiki.yml'
 
 jobs:
   sync:
@@ -55,31 +57,56 @@ jobs:
       - name: Copy docs (md + images only)
         run: |
           TARGET_DIR="target/wiki/【体系化进阶】Robotics Tutorial"
+          rm -rf "$TARGET_DIR"
+          mkdir -p "$TARGET_DIR"
 
-          # Copy README and SUMMARY to target root
-          cp source/README.md "$TARGET_DIR/" 2>/dev/null || true
-          cp source/SUMMARY.md "$TARGET_DIR/" 2>/dev/null || true
+          for file in README.md SUMMARY.md LICENSE; do
+            if [ -f "source/$file" ]; then
+              cp "source/$file" "$TARGET_DIR/"
+            fi
+          done
 
-          # Sync completed directions
-          DEST="$TARGET_DIR/05_运动控制/足式"
-          mkdir -p "$DEST"
-          rsync -av --delete \
-            --include='*/' \
-            --include='*.md' \
-            --include='*.png' \
-            --include='*.jpg' \
-            --include='*.jpeg' \
-            --include='*.svg' \
-            --include='*.gif' \
-            --include='*.webp' \
-            --exclude='*' \
-            "source/05_运动控制/足式/" "$DEST/"
+          for dir in \
+            "00_项目导航" \
+            "01_数学" \
+            "02_基础" \
+            "03_SLAM" \
+            "04_移动机器人规控" \
+            "05_运动控制" \
+            "06_具身智能"
+          do
+            if [ ! -d "source/$dir" ]; then
+              continue
+            fi
 
-          # Add more directions here as they complete:
-          # mkdir -p "$TARGET_DIR/05_运动控制/机械臂"
-          # rsync -av --delete ... "source/05_运动控制/机械臂/" "$TARGET_DIR/05_运动控制/机械臂/"
+            mkdir -p "$TARGET_DIR/$dir"
+            rsync -av --delete \
+              --exclude='_archive/***' \
+              --exclude='*/_archive/***' \
+              --exclude='*.bak' \
+              --exclude='*复制版本*' \
+              --include='*/' \
+              --include='*.md' \
+              --include='*.png' \
+              --include='*.jpg' \
+              --include='*.jpeg' \
+              --include='*.svg' \
+              --include='*.gif' \
+              --include='*.webp' \
+              --include='*.pdf' \
+              --exclude='*' \
+              "source/$dir/" "$TARGET_DIR/$dir/"
+          done
 
+          # Remove empty directories left by include/exclude filtering.
           find "$TARGET_DIR" -type d -empty -delete
+
+      - name: List synced files
+        run: |
+          TARGET_DIR="target/wiki/【体系化进阶】Robotics Tutorial"
+          find "$TARGET_DIR" -type f | sort | sed "s#^$TARGET_DIR/##" | head -n 200
+          echo "Synced file count:"
+          find "$TARGET_DIR" -type f | wc -l
 
       - name: Check for changes
         id: changes
@@ -124,7 +151,7 @@ jobs:
           - 内容：机器人学系统化教学文档
           - 作者：Pengfei Guo, DAMIAO Technology
           - 协议：CC BY 4.0
-          - 同步范围：已完成方向的 .md 文档与图片
+          - 同步范围：项目级 Markdown 文档与媒体资源
 
           Auto-synced by GitHub Actions
           PREOF
