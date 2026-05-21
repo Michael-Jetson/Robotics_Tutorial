@@ -33,10 +33,10 @@
 
 | 章节 | 关联知识 | 在本章中的用途 |
 |------|---------|---------------|
-| 02_基础/10_Eigen | Eigen 表达式模板 / 对齐 / SIMD | WBC 是高频矩阵运算,必须理解 Eigen 的内存行为 |
-| 02_基础/30_并发与实时 | 并发与线程安全 | WBC 在 SCHED_FIFO 实时线程中运行 |
-| 02_基础/20_设计模式 | 设计模式 - Strategy | TSID 的 Task/Constraint/Solver 是 Strategy 模式的教科书案例 |
-| 02_基础/40_内存管理 | pmr 分配器 | WBC 的无堆分配替代方案 |
+| 02_C++基础与进阶/10_Eigen | Eigen 表达式模板 / 对齐 / SIMD | WBC 是高频矩阵运算,必须理解 Eigen 的内存行为 |
+| 02_C++基础与进阶/30_并发与实时 | 并发与线程安全 | WBC 在 SCHED_FIFO 实时线程中运行 |
+| 02_C++基础与进阶/20_设计模式 | 设计模式 - Strategy | TSID 的 Task/Constraint/Solver 是 Strategy 模式的教科书案例 |
+| 02_C++基础与进阶/40_内存管理 | pmr 分配器 | WBC 的无堆分配替代方案 |
 
 **本大纲前置**:
 
@@ -495,7 +495,7 @@ $$\ddot{\mathbf{q}}_i^{\text{cmd}} = \ddot{\mathbf{q}}_{i-1}^{\text{cmd}} + (J_i
 
 TSID (Task Space Inverse Dynamics) 是 Pinocchio 生态的**工业级 WBC 实现**,由 LAAS-CNRS 的 Andrea Del Prete 等人开发。当前版本为 1.9.x,同时提供 C++ 和 Python 接口(通过 EigenPy 和 Boost.Python 绑定)。
 
-TSID 的核心设计思想是 **Strategy Pattern** (02_基础/20_设计模式) 的教科书级应用:将"描述要做什么"(Task)、"描述必须满足什么"(Constraint)、"如何求解"(Solver) 三者完全分离:
+TSID 的核心设计思想是 **Strategy Pattern** (02_C++基础与进阶/20_设计模式) 的教科书级应用:将"描述要做什么"(Task)、"描述必须满足什么"(Constraint)、"如何求解"(Solver) 三者完全分离:
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -978,7 +978,7 @@ class WBC {
 
 #### 53.6.5 pmr 分配器替代方案
 
-如果你确实需要在实时路径上分配内存(例如接触点数量动态变化),可以使用 02_基础/40_内存管理 中介绍的 `std::pmr` 方案:
+如果你确实需要在实时路径上分配内存(例如接触点数量动态变化),可以使用 02_C++基础与进阶/40_内存管理 中介绍的 `std::pmr` 方案:
 
 ```cpp
 #include <memory_resource>

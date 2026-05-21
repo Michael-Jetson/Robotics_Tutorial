@@ -4,7 +4,7 @@
 
 > **本章定位**：从 Ceres Jet 前向 AD（01_数学/30_优化理论）出发，进入工业级 tape-based 自动微分。CppAD 记录计算图，CppADCodeGen 将其编译为高性能 `.so` 动态库。这条流水线是 OCS2 及自定义实时约束/动力学热路径的常用方案——在合适的模型上，可把数值差分量级的导数计算降到微秒级预编译解析导数。Crocoddyl/Aligator 的主流策略略有不同，本章后半部分单独比较。
 >
-> **前置依赖**：01_数学/30_优化理论（Ceres Jet AD）、02_基础/10_C++语言核心（编译模型 + dlopen）、02_基础/30_软件工程（CMake 工程化）、足式/30_Pinocchio深度精读（Pinocchio 模板 Scalar 切换）
+> **前置依赖**：01_数学/30_优化理论（Ceres Jet AD）、02_C++基础与进阶/10_C++语言核心（编译模型 + dlopen）、02_C++基础与进阶/30_软件工程（CMake 工程化）、足式/30_Pinocchio深度精读（Pinocchio 模板 Scalar 切换）
 
 ---
 
@@ -13,8 +13,8 @@
 > 📋 **答不出 $\geq 2$ 题 $\to$ 先回前置章节复习**
 
 1. **[01_数学/30_优化理论]** Ceres 的 `Jet<double, N>` 类型如何实现前向模式自动微分？dual number 的加法和乘法规则是什么？
-2. **[02_基础/10_C++语言核心]** `dlopen` 和 `dlsym` 分别做什么？如何在运行时加载一个 `.so` 动态库中的函数？
-3. **[02_基础/30_软件工程]** CMake 中 `add_custom_command` 和 `add_custom_target` 的区别是什么？如何让一个目标依赖于代码生成步骤？
+2. **[02_C++基础与进阶/10_C++语言核心]** `dlopen` 和 `dlsym` 分别做什么？如何在运行时加载一个 `.so` 动态库中的函数？
+3. **[02_C++基础与进阶/30_软件工程]** CMake 中 `add_custom_command` 和 `add_custom_target` 的区别是什么？如何让一个目标依赖于代码生成步骤？
 4. **[足式/30_Pinocchio深度精读]** Pinocchio 的 `ModelTpl<Scalar>` 如何实现标量参数化？为什么同一份 RNEA 代码可以用 `double` 也可以用 `AD<double>`？
 5. **[数值方法]** 有限差分求导 $f'(x) \approx \frac{f(x+h)-f(x)}{h}$ 的误差来源有哪两个？为什么 $h$ 不能太大也不能太小？
 

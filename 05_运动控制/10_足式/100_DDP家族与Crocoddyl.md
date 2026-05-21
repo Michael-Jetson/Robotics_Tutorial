@@ -10,7 +10,7 @@
 足式/60_QP_NLP建模 NLP基础 ──→ [足式/100_DDP家族与Crocoddyl DDP家族] ──→ 足式/110_OCS2完整栈与双线程MPC OCS2/SQP
 足式/30_Pinocchio深度精读 Pinocchio ──→ [Crocoddyl架构] ──→ 足式/110_OCS2完整栈与双线程MPC 工业级MPC
 足式/80_接触力学与约束优化 接触力学 ──→ [接触动力学OC] ──→ 足式/120_步态管理与接触序列 步态管理
-02_基础/10_Eigen CRTP    ──→ [虚函数反例]   ──→ 设计决策案例
+02_C++基础与进阶/10_Eigen CRTP    ──→ [虚函数反例]   ──→ 设计决策案例
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
@@ -30,7 +30,7 @@
 
 1. **写出 DDP 的 backward/forward pass 完整伪代码**——理解每一步数学推导
 2. **区分 DDP / iLQR / FDDP 三者的数学差异**——知道何时选哪种
-3. **解释 Crocoddyl 为什么选虚函数而不是 CRTP**——02_基础/10_Eigen 的精彩反例
+3. **解释 Crocoddyl 为什么选虚函数而不是 CRTP**——02_C++基础与进阶/10_Eigen 的精彩反例
 4. **用 Crocoddyl 搭建四足 trot 轨迹优化**——从 ActionModel 到 Solver 全流程
 5. **理解 ProxDDP 的增广拉格朗日框架**——约束 DDP 的前沿方法
 6. **复述 ParallelRiccati 的 parallel scan 思想**——打破"backward pass 不可并行"的教条
@@ -40,10 +40,10 @@
 ```
 必修前置(v8 主线)              本课程前置
 ┌─────────────────────┐    ┌──────────────────────┐
-│ 02_基础/10_Eigen 多态+CRTP│    │ 足式/30_Pinocchio深度精读 Pinocchio    │
-│ 02_基础/10_Eigen         │    │ 足式/60_QP_NLP建模 NLP/QP 基础     │
-│ 02_基础/30_并发与实时     │    │ 足式/70_腿足简化模型理论 简化模型+接触 │
-│ 02_基础/10_Eigen Concepts│    │ 足式/90_WBC分层优化与TSID WBC/TSID  │
+│ 02_C++基础与进阶/10_Eigen 多态+CRTP│    │ 足式/30_Pinocchio深度精读 Pinocchio    │
+│ 02_C++基础与进阶/10_Eigen         │    │ 足式/60_QP_NLP建模 NLP/QP 基础     │
+│ 02_C++基础与进阶/30_并发与实时     │    │ 足式/70_腿足简化模型理论 简化模型+接触 │
+│ 02_C++基础与进阶/10_Eigen Concepts│    │ 足式/90_WBC分层优化与TSID WBC/TSID  │
 └─────────────────────┘    └──────────────────────┘
 ```
 
@@ -700,7 +700,7 @@ struct ActionDataAbstractTpl {
 };
 ```
 
-> 💡 **洞察**: 所有矩阵在 `createData()` 时**一次性分配**,之后 `calc()` / `calcDiff()` 只是**填充已有内存**,不做任何堆分配。这对实时性至关重要——02_基础/40_内存管理 中深入讨论了 pmr(Polymorphic Memory Resource)分配器的原理:通过在启动时预分配一块连续内存池,运行时的所有"分配"都变成指针偏移操作(O(1),无系统调用),从而消除 `malloc` 在实时线程中引发的不确定延迟。Crocoddyl 的 `createData()` 预分配策略与 pmr 的思路一致,只是实现层面更简单——直接在构造函数中 resize 所有 Eigen 矩阵。
+> 💡 **洞察**: 所有矩阵在 `createData()` 时**一次性分配**,之后 `calc()` / `calcDiff()` 只是**填充已有内存**,不做任何堆分配。这对实时性至关重要——02_C++基础与进阶/40_内存管理 中深入讨论了 pmr(Polymorphic Memory Resource)分配器的原理:通过在启动时预分配一块连续内存池,运行时的所有"分配"都变成指针偏移操作(O(1),无系统调用),从而消除 `malloc` 在实时线程中引发的不确定延迟。Crocoddyl 的 `createData()` 预分配策略与 pmr 的思路一致,只是实现层面更简单——直接在构造函数中 resize 所有 Eigen 矩阵。
 
 ### 54.5.4 线程安全性分析 ⭐⭐⭐
 
@@ -881,9 +881,9 @@ CostModelResidual(state, activation, residual)
 
 ## 54.7 虚函数 vs CRTP:Crocoddyl 的设计决策 ⭐⭐⭐
 
-### 54.7.1 回顾 CRTP 教义（02_基础/10_Eigen） ⭐⭐
+### 54.7.1 回顾 CRTP 教义（02_C++基础与进阶/10_Eigen） ⭐⭐
 
-02_基础/10_Eigen 中讲了 CRTP 的核心思想:**编译时多态,避免虚函数表(vtable)的间接调用开销**。
+02_C++基础与进阶/10_Eigen 中讲了 CRTP 的核心思想:**编译时多态,避免虚函数表(vtable)的间接调用开销**。
 
 Pinocchio、Sophus、Eigen 都用 CRTP:
 
@@ -1739,8 +1739,8 @@ DDP 流派 (Crocoddyl, MuJoCo)       SQP 流派 (OCS2, ALTRO)
 ## 与其他章节的衔接
 
 **向前承接**:
-- 02_基础/10_Eigen CRTP → **足式/100_DDP家族与Crocoddyl Crocoddyl 为什么不用 CRTP(反例)**
-- 02_基础/30_并发与实时 → **足式/100_DDP家族与Crocoddyl OpenMP 并行 + ParallelRiccati**
+- 02_C++基础与进阶/10_Eigen CRTP → **足式/100_DDP家族与Crocoddyl Crocoddyl 为什么不用 CRTP(反例)**
+- 02_C++基础与进阶/30_并发与实时 → **足式/100_DDP家族与Crocoddyl OpenMP 并行 + ParallelRiccati**
 - 足式/30_Pinocchio深度精读 Pinocchio Model-Data → **足式/100_DDP家族与Crocoddyl ActionModel-ActionData**
 - 足式/40_CppAD与代码生成 CppAD → **足式/100_DDP家族与Crocoddyl Crocoddyl 的 CodeGen 集成**
 - 足式/60_QP_NLP建模 NLP/QP → **足式/100_DDP家族与Crocoddyl DDP 是特殊的 NLP 求解器**

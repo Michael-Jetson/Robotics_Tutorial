@@ -22,9 +22,9 @@
 |:----:|------|------------|
 | 1 | **URDF 基础**：URDF 的 `<link>` 和 `<joint>` 分别描述什么？`<inertial>` 子元素中哪些参数最容易出错？ | P01 URDF/Xacro |
 | 2 | **Xacro 宏**：如何用 `xacro:property` 和 `xacro:if` 实现同一个 URDF 根据参数切换仿真/真机模式？ | P01 Xacro 参数化 |
-| 3 | **ROS2 基础**：什么是 `ros2_control` 的 `HardwareInterface`？它如何连接仿真和真机？ | 02_基础/ROS2 基础 |
+| 3 | **ROS2 基础**：什么是 `ros2_control` 的 `HardwareInterface`？它如何连接仿真和真机？ | 02_C++基础与进阶/ROS2 基础 |
 | 4 | **RL 基础**：PPO 算法的 observation 和 action 分别是什么？什么是 reward shaping？ | RL 基础概念 |
-| 5 | **Docker 基础**：多阶段构建（multi-stage build）的目的是什么？如何减小部署镜像体积？ | 02_基础/Docker 容器化部署 |
+| 5 | **Docker 基础**：多阶段构建（multi-stage build）的目的是什么？如何减小部署镜像体积？ | 02_C++基础与进阶/Docker 容器化部署 |
 
 ---
 

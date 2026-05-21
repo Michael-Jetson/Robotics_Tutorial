@@ -6,7 +6,7 @@
 >
 > **共享属性**：✅ **规控方向共享**——机械臂 1 kHz 伺服、四足 500 Hz-1 kHz WBC、人形 WBC 全部需要实时 C++ 工程能力。
 >
-> **前置依赖**：`02_基础/20_并发与系统编程/10_线程管理与互斥同步` + `20_原子操作与内存模型`（并发基础——std::thread / std::mutex / std::atomic）、`02_基础/20_并发与系统编程/50_内存分配策略与pmr`（pmr 内存资源）、`02_基础/10_C++语言核心/40_RAII与智能指针`（RAII）
+> **前置依赖**：`02_C++基础与进阶/20_并发与系统编程/10_线程管理与互斥同步` + `20_原子操作与内存模型`（并发基础——std::thread / std::mutex / std::atomic）、`02_C++基础与进阶/20_并发与系统编程/50_内存分配策略与pmr`（pmr 内存资源）、`02_C++基础与进阶/10_C++语言核心/40_RAII与智能指针`（RAII）
 >
 > **下游章节**：M12（ros2_control 硬件接口）、M14（MoveIt2 系统集成）
 >
@@ -20,10 +20,10 @@
 
 | 编号 | 问题 | 答不出时回顾 |
 |:----:|------|------------|
-| 1 | **线程同步**：`std::mutex` 的 `lock()` 和 `unlock()` 如何保护共享数据？如果线程 A 持有 mutex 而线程 B 试图获取，B 会怎样？ | `02_基础/20_并发/10_线程管理` |
-| 2 | **原子操作**：`std::atomic<int>` 的 `store` 和 `load` 操作为什么不需要 mutex？`memory_order_relaxed` 和 `memory_order_seq_cst` 的区别是什么？ | `02_基础/20_并发/20_原子操作` |
-| 3 | **RAII**：写出一个 RAII 风格的文件句柄类。为什么 RAII 在实时编程中特别重要？（提示：析构函数中的资源释放是确定性的） | `02_基础/10_C++/40_RAII与智能指针` |
-| 4 | **Eigen 内存**：为什么 `Eigen::Matrix3d` 是栈分配的而 `Eigen::MatrixXd` 是堆分配的？`EIGEN_MAKE_ALIGNED_OPERATOR_NEW` 解决什么问题？ | `02_基础/40_通用库/20_Eigen深入` |
+| 1 | **线程同步**：`std::mutex` 的 `lock()` 和 `unlock()` 如何保护共享数据？如果线程 A 持有 mutex 而线程 B 试图获取，B 会怎样？ | `02_C++基础与进阶/20_并发/10_线程管理` |
+| 2 | **原子操作**：`std::atomic<int>` 的 `store` 和 `load` 操作为什么不需要 mutex？`memory_order_relaxed` 和 `memory_order_seq_cst` 的区别是什么？ | `02_C++基础与进阶/20_并发/20_原子操作` |
+| 3 | **RAII**：写出一个 RAII 风格的文件句柄类。为什么 RAII 在实时编程中特别重要？（提示：析构函数中的资源释放是确定性的） | `02_C++基础与进阶/10_C++/40_RAII与智能指针` |
+| 4 | **Eigen 内存**：为什么 `Eigen::Matrix3d` 是栈分配的而 `Eigen::MatrixXd` 是堆分配的？`EIGEN_MAKE_ALIGNED_OPERATOR_NEW` 解决什么问题？ | `02_C++基础与进阶/40_通用库/20_Eigen深入` |
 | 5 | **进程调度**：Linux 的 `SCHED_FIFO` 和 `SCHED_OTHER` 有什么区别？为什么实时任务需要 `SCHED_FIFO`？ | 操作系统基础 |
 
 ---

@@ -6,7 +6,7 @@
 >
 > **适用范围**：本章以 **固定基座机械臂** 为主线（vs 足式/30_Pinocchio深度精读 浮动基座腿足），但所有 API 和算法对腿足同样适用——浮动基座只是多了一个 `JointModelFreeFlyer` 根关节。
 >
-> **前置依赖**：P01（URDF/Xacro 建模）、02_基础/C++ 高级（CRTP 与设计模式）、02_基础/Eigen 线性代数（对齐与内存布局）
+> **前置依赖**：P01（URDF/Xacro 建模）、02_C++基础与进阶/C++ 高级（CRTP 与设计模式）、02_C++基础与进阶/Eigen 线性代数（对齐与内存布局）
 >
 > **下游章节**：M02（动力学库对比）、M03（IK 求解器深度）、M06（自动微分与代码生成）、M14（MoveIt2 / MTC 集成）
 >
@@ -23,7 +23,7 @@
 | 1 | **刚体动力学方程**：写出拉格朗日形式 $M(q)\ddot{q} + C(q,\dot{q})\dot{q} + g(q) = \tau$，解释每一项的物理含义（惯量、科里奥利/离心力、重力）。$M(q)$ 的对称正定性从何而来？ | 经典力学 / 机器人学导论 |
 | 2 | **SE(3) 齐次变换**：给定 $R \in SO(3)$、$t \in \mathbb{R}^3$，写出 $T \in SE(3)$ 及其逆 $T^{-1} = \begin{bmatrix} R^\top & -R^\top t \\ 0 & 1 \end{bmatrix}$。为什么不是简单的矩阵转置？ | 李群基础 / Sophus 章节 |
 | 3 | **URDF 关节类型**：`revolute` / `continuous` / `prismatic` / `fixed` / `floating` / `planar` 各自的自由度是多少？`revolute` 和 `continuous` 的区别是什么？ | P01 URDF/Xacro 建模 |
-| 4 | **CRTP 模式**：写出 `template<class Derived> class Base { ... }` 的 CRTP 骨架，解释它如何在编译期实现"静态多态"并消除虚函数开销。 | 02_基础/C++ 高级（CRTP 与设计模式） |
+| 4 | **CRTP 模式**：写出 `template<class Derived> class Base { ... }` 的 CRTP 骨架，解释它如何在编译期实现"静态多态"并消除虚函数开销。 | 02_C++基础与进阶/C++ 高级（CRTP 与设计模式） |
 | 5 | **线程安全**：什么是 data race？为什么 `const` 引用 + 不可变对象能避免 data race？在 MPC 求解器中，为什么需要"一个 Model 多个 Data"？ | C++ 并发基础 |
 
 ---
