@@ -2,7 +2,7 @@
 
 [![License: CC BY 4.0](https://img.shields.io/badge/License-CC%20BY%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by/4.0/)
 
-面向机器人学研究者与工程师的系统化教学文档，覆盖从数学基础到具身智能的完整知识体系。
+面向机器人与人工智能交叉方向的系统化教学文档，覆盖从数学基础到具身智能的完整知识体系。
 
 **Author:** Pengfei Guo  
 **Affiliation:** 达妙科技 (DAMIAO Technology)  
@@ -15,30 +15,30 @@
 
 ```
 Robotics_Tutorial/
-├── 01_数学/                 # 数学基础（流形、李群、凸优化）
-├── 02_C++基础与进阶/        # C++ 基础与进阶（语言核心、并发、工程化、核心库）
+├── 01_数学/                 # 数学基础（微分几何、李群、优化、控制、概率、刚体动力学、RL数学）
+├── 02_C++基础与进阶/        # C++ 工程（语言核心、并发、软件工程、通用库、ROS2、规控工程基础）
 ├── 03_SLAM/                 # 同时定位与建图
-├── 04_移动机器人规控/        # 移动机器人规划与控制
+├── 04_移动机器人规控/        # 移动机器人规划与控制（无人机、横切专题）
 ├── 05_运动控制/              # 运动控制（公共基础/足式/机械臂/复合/仿真）
 │   ├── 00_公共基础/          #   运动控制公共能力层
-│   ├── 10_足式/              #   足式机器人
+│   ├── 10_足式/              #   足式机器人（24章完整教学序列）
 │   ├── 20_机械臂/            #   机械臂
 │   ├── 30_复合/              #   复合方向（移动操作）
 │   └── 40_仿真/              #   仿真环境与工具
-└── 06_具身智能/              # 具身智能与大模型
+└── 06_具身智能/              # 具身智能（RL运控、VLA、世界模型）
 ```
 
 ## Content Overview
 
 | Direction | Files | Lines | Status |
 |-----------|------:|------:|--------|
-| 01 数学基础 | 93 | 55,374 | In Progress |
-| 02 C++基础与进阶 | 52 | 14,209 | In Progress |
-| 03 SLAM | 25 | 35,291 | In Progress |
-| 04 移动机器人规控 | 76 | 15,558 | In Progress |
+| 01 数学基础 | 90 | 124,596 | 6/10 sub-directions complete (QA'd) |
+| 02 C++基础与进阶 | 58 | 115,782 | 4/6 sub-directions complete |
+| 03 SLAM | 15 | 16,191 | In Progress |
+| 04 移动机器人规控 | 76 | 15,613 | Skeleton |
 | 05 运动控制 | 134 | 190,726 | **Complete** |
-| 06 具身智能 | 5 | 2,444 | Early Stage |
-| **Total** | **385** | **313,602** | |
+| 06 具身智能 | 33 | 70,892 | In Progress |
+| **Total** | **406** | **533,800** | |
 
 ### 05 运动控制 Breakdown
 
@@ -67,14 +67,14 @@ Complete 24-chapter teaching sequence covering:
 
 ## Quality Standards
 
-All teaching chapters follow [v3.2 spec](00_项目导航/教学文档编写规范.md):
+All teaching chapters follow a v5.0 internal spec with four document types (theory / algorithm-engineering / paper-reading / engineering-practice):
 
-- Minimum 1,000 lines, target 1,500-2,000 per chapter
-- Cognitive tools: ≥3 analogies, ≥3 counterfactuals, ≥2 essence insights
-- Fault diagnosis tables for common pitfalls
-- Cross-chapter forward/backward bridges
-- 6:4 text-to-code ratio with full derivations
-- Reviewed via Codex gpt-5.5 + internet-verified fixes
+- Minimum 2,000 lines per chapter (1,500 for engineering-practice)
+- 15 rules across 3 layers (content / expression / cognition)
+- 5-gate quality system (G1 structure → G2 accuracy → G3 consistency → G4 completeness → G5 polish)
+- Cognitive tools: ≥3 analogies, ≥3 counterfactuals, ≥2 essence insights per chapter
+- Full derivations with step-by-step reasoning, no "obvious" or "trivially"
+- Fault diagnosis tables, cross-chapter bridges, cumulative projects
 
 ## Usage
 
