@@ -83,6 +83,8 @@ jobs:
             rsync -av --delete \
               --exclude='_archive/***' \
               --exclude='*/_archive/***' \
+              --exclude='workflow/***' \
+              --exclude='编写规范/***' \
               --exclude='*.bak' \
               --exclude='*复制版本*' \
               --include='*/' \
