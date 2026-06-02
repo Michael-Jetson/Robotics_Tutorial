@@ -1,0 +1,10 @@
+# 损坏的旧 .git 备份（21M，Nutstore 同步损坏后留存，勿提交）
+.git_corrupt_bak/
+
+# 归档：个人笔记（docx/pdf）+ 下载的论文 PDF，不进入公开仓库
+_archive/
+
+# 明显草稿 / 失败归档
+_failed_archive/
+tmp_*.md
+*_failed.md

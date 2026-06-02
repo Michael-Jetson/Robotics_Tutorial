@@ -283,8 +283,12 @@ $$
 完整的梯度计算链：
 
 $$
-\frac{\partial J_{ee}}{\partial \mathbf{q}} = \boldsymbol{\xi}_{err}^\top \mathbf{W} \cdot \underbrace{\mathbf{J}_{log}(\mathbf{T}_{err})}_{\text{Jlog6}} \cdot \underbrace{\text{Ad}(\mathbf{T}_{ref}^{-1})}_{\text{坐标变换}} \cdot \underbrace{\mathbf{J}_{ee}(\mathbf{q})}_{\text{FK Jacobian}}
+\frac{\partial C}{\partial \mathbf{q}} = \boldsymbol{\xi}_{err}^\top \mathbf{W} \cdot \underbrace{\frac{\partial \boldsymbol{\xi}_{err}}{\partial \mathbf{q}}}_{J_{err}},
+\qquad
+J_{err} = -\,\underbrace{\mathbf{J}_{log}(\mathbf{T}_{err}^{-1})}_{\text{Jlog6, 取 } \mathbf{T}_{err}^{-1}} \cdot \underbrace{\mathbf{J}_{ee}^{\text{LOCAL}}(\mathbf{q})}_{\text{FK Jacobian (LOCAL)}}
 $$
+
+其中 $C = \tfrac{1}{2}\boldsymbol{\xi}_{err}^\top \mathbf{W}\,\boldsymbol{\xi}_{err}$ 是末端位姿跟踪代价，$\boldsymbol{\xi}_{err} = \mathrm{Log}(\mathbf{T}_{err})$，$\mathbf{T}_{err} = \mathbf{T}_{ee}^{-1}\mathbf{T}_{ref}$。**关键细节**：`Jlog6` 必须以 $\mathbf{T}_{err}^{-1}$ 为参数（这与 Pinocchio 官方 CLIK 例程 `Jlog6(iMd.inverse(), Jlog); J = -Jlog * J;` 完全一致）；负号源于 $\mathbf{T}_{err}$ 对 $\mathbf{q}$ 的左扰动方向，而伴随变换 $\mathrm{Ad}$ 已被 $\mathbf{T}_{err}^{-1}$ 处的 `Jlog6` 吸收，无需再单独乘出。$\mathbf{J}_{ee}^{\text{LOCAL}}$ 是 `LOCAL` 帧下的物体 Jacobian。
 
 ### Pinocchio API 实现
 
@@ -318,9 +322,9 @@ void computeEETrackingError(
     // Step 3: 对数映射 -> 6维误差向量
     error = pinocchio::log6(T_err).toVector();  // [omega(3), v(3)]
 
-    // Step 4: 对数映射的 Jacobian (Jlog6)
+    // Step 4: 对数映射的 Jacobian (Jlog6)——注意以 T_err 的逆为参数
     Eigen::Matrix<double, 6, 6> J_log;
-    pinocchio::Jlog6(T_err, J_log);  // d_log(T_err)/d_T_err
+    pinocchio::Jlog6(T_err.inverse(), J_log);  // 与官方 CLIK 例程一致：Jlog6(iMd.inverse(), ...)
 
     // Step 5: FK Jacobian（body frame）
     Eigen::Matrix<double, 6, Eigen::Dynamic> J_fk(6, model.nv);
@@ -328,8 +332,8 @@ void computeEETrackingError(
     pinocchio::computeFrameJacobian(model, data, q, eeFrameId,
                                      pinocchio::LOCAL, J_fk);
 
-    // Step 6: 链式法则 = Jlog * (-J_fk)
-    // 注意负号：误差定义为 T_ee^{-1} * T_ref，T_ee 增大时误差减小
+    // Step 6: 链式法则 J_error = -Jlog6(T_err^{-1}) * J_fk(LOCAL)
+    // 负号来自 T_err 对 q 的左扰动方向；伴随变换已被 T_err^{-1} 处的 Jlog6 吸收
     J_error = -J_log * J_fk;
 }
 ```
