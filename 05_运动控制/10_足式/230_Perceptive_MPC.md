@@ -980,9 +980,47 @@ auto [distance, grad_xy] =
 
 这个设计有一个微妙后果：当查询点移动越过格子边界时，梯度可能跳变（因为参与插值的四个角点变了）。工程上依赖三件事来降低影响：较细的地图分辨率、良好的 warm start，以及对 SDF/惩罚函数的适度平滑。不能把它理解成全局光滑函数。
 
+### 真实接口 2.5：`DistanceTransformInterface` 与 `ComputeDistanceTransform`（源码核实）
+
+在写 `TeachingSignedDistanceTransform` 教学模块之前，必须先把真实接口讲清楚——否则会形成一个根深蒂固的误解："OCS2 的距离场是 2D 的"。核对 `main` 分支源码后，真实的抽象接口签名是：
+
+```cpp
+// 来源：ocs2_perceptive/.../distance_transform/DistanceTransformInterface.h（源码原文）
+class DistanceTransformInterface {
+ public:
+  using vector3_t = Eigen::Matrix<scalar_t, 3, 1>;
+
+  // 给定 3D 点 p，返回有符号距离值
+  virtual scalar_t getValue(const vector3_t& p) const = 0;
+
+  // 给定 3D 点 p，返回其在零等值面（障碍表面）上的投影点
+  virtual vector3_t getProjectedPoint(const vector3_t& p) const = 0;
+
+  // 给定 3D 点 p，返回 {距离值, 距离对 p 的 3D 梯度}
+  virtual std::pair<scalar_t, vector3_t> getLinearApproximation(const vector3_t& p) const = 0;
+};
+```
+
+> 📄 **论文-代码差异（CONFLICT，源码核实）**：本章 67.4 出于教学简化，把 SDF 讲成"2D EDT + 高程图垂直检查"。这在**直觉层面**没错（水平避障是主要矛盾），但在**接口层面**与真实代码不一致——`DistanceTransformInterface` 的三个方法全部接收 `vector3_t`，返回 3D 梯度。Grandia 2023 的 ANYmal 示例（`SegmentedPlanesSignedDistanceField`）从分割平面构建的是**3D 体素 SDF**，沿高度方向也有距离信息。约束侧的 `EndEffectorDistanceConstraintCppAd` 拿到的 `grad` 是完整的 3D 向量，与末端运动学雅可比 `middleRows<3>` 相乘。
+> **判断**：本章前文的 2D 叙述是**降维教学近似**，适合先建立直觉；但读者读源码时会看到 3D 接口，二者必须能对上。正确理解是：*距离场的数学定义和 OCS2 接口都是 3D 的；2D EDT 只是某些轻量实现（或本教学简化）选择的具体计算方式，不是接口契约。*
+
+底层的距离变换由 `ComputeDistanceTransform.h` 提供，它不是一个类，而是一对模板函数——关键设计是**用 lambda 解耦"数据怎么存"**：
+
+```cpp
+// 来源：ocs2_perceptive/.../distance_transform/ComputeDistanceTransform.h（源码原文，简化注释）
+// GetValFunc: Scalar(size_t index)        —— 取第 index 个采样点的当前值
+// SetValFunc: void(size_t index, Scalar)  —— 把结果写回第 index 个采样点
+template <typename GetValFunc, typename SetValFunc, typename Scalar = float>
+void computeDistanceTransform(size_t numSamples, GetValFunc&& getValue, SetValFunc&& setValue,
+                              size_t start, size_t end,
+                              std::vector<size_t>& vBuffer, std::vector<Scalar>& zBuffer);
+```
+
+> 💡 **论文没告诉你的（工程 trick，来源：`ComputeDistanceTransform.h`）**：这个模板函数实现的就是 67.4 讲的 Felzenszwalb & Huttenlocher 一维抛物线下包络算法（`vBuffer` 存抛物线的分界横标、`zBuffer` 存交点）。它故意不接收任何具体的栅格/图像类型，而是用 `getValue`/`setValue` 两个 lambda 抽象"第 $i$ 个采样点怎么读写"。这样同一份 1D 变换代码既能在 $x$ 方向扫，也能在 $y$、$z$ 方向扫（多维 EDT = 沿各维顺序做 1D EDT），还能适配 `grid_map`、稠密 `Eigen::Matrix` 或自定义体素容器——这是论文完全不会提、但工程上极其关键的可复用性设计。
+
 ### 教学简化模块 2：`TeachingSignedDistanceTransform`
 
-这个教学模块解释从二值可踩性图到 2D SDF 的计算链路。当前 OCS2 main 分支没有 `TeachingSignedDistanceTransform` 这个文件，也没有把下面这些步骤封装成同名类；真实代码中请查看 `ComputeDistanceTransform.h`、`DistanceTransformInterface.h`，以及 perceptive ANYmal 示例中的 `SegmentedPlanesSignedDistanceField` / `grid_map_sdf` 相关链路。下面代码是概念伪代码，用来表达数据流，不是可直接编译的源码。
+这个教学模块解释从二值可踩性图到 SDF 的计算链路。当前 OCS2 main 分支没有 `TeachingSignedDistanceTransform` 这个文件，也没有把下面这些步骤封装成同名类；真实代码中请查看 `ComputeDistanceTransform.h`、`DistanceTransformInterface.h`，以及 perceptive ANYmal 示例中的 `SegmentedPlanesSignedDistanceField` / `grid_map_sdf` 相关链路。下面代码是概念伪代码（按 2D 简化叙述），用来表达数据流，不是可直接编译的源码；真实链路按上面的 3D 接口工作。
 
 ```cpp
 // 概念伪代码：说明 SDF 计算流程，不对应 OCS2 中的真实类名。
@@ -1029,14 +1067,37 @@ private:
 
 ### 真实接口 3：`EndEffectorDistanceConstraint(CppAd)`
 
-`EndEffectorDistanceConstraint.h` 和 `EndEffectorDistanceConstraintCppAd.h` 把距离场查询包装成 OCS2 约束接口。非 CppAD 版本使用普通运动学线性化；CppAD 版本用 `CppAdInterface` 生成末端位置关于状态的雅可比。两者共同点是：距离场本身通过 `set(clearance, distanceTransform)` 在运行时注入。
+`EndEffectorDistanceConstraint.h` 和 `EndEffectorDistanceConstraintCppAd.h` 把距离场查询包装成 OCS2 约束接口。读源码时第一个要注意的差异是**两者的基类不同**——这直接决定了约束依赖哪些 OCP 变量：
+
+| 类 | 基类 | 约束依赖 | 雅可比来源 |
+|----|------|---------|-----------|
+| `EndEffectorDistanceConstraint` | `StateConstraint` | 仅状态 $x$ | `EndEffectorKinematics::getPositionLinearApproximation` 普通运动学线性化 |
+| `EndEffectorDistanceConstraintCppAd` | `StateInputConstraint` | 状态 $x$ 与输入 $u$ | `CppAdInterface` 生成的末端位置雅可比 |
+
+> 📄 **论文-代码差异（源码核实）**：很多二手资料笼统地说"OCS2 用 CppAD 对距离约束求导"。核对 `main` 分支源码后更准确的说法是：**距离场本身不进 AD tape**。CppAd 版本只用 `CppAdInterface` 对"末端正运动学 $p(x)$"求导，距离值 $\phi$ 和空间梯度 $\nabla_p\phi$ 由 `DistanceTransformInterface` 在运行时显式提供，最后两者相乘。非 CppAd 版本连 AD 都不用，直接拿运动学的解析线性化。两个版本共享同一个 `set()` 注入接口。
+
+真实的 `set()` 有多个重载，覆盖"不带 clearance""统一 clearance""逐末端 clearance"三种用法（`EndEffectorDistanceConstraintCppAd` 没有第一个重载，因为它要求显式给出 clearance）：
 
 ```cpp
-// 当前 OCS2 结构的简化版
-class EndEffectorDistanceConstraintCppAd : public StateInputConstraint {
-public:
-  void set(vector_t clearances,
-           const DistanceTransformInterface& distanceTransform) {
+// 来源：ocs2_perceptive/.../EndEffectorDistanceConstraint.h（源码原文）
+void set(const DistanceTransformInterface& distanceTransform);                       // clearance 全 0
+void set(scalar_t clearance, const DistanceTransformInterface& distanceTransform);   // 统一 clearance
+void set(const scalar_array_t& clearances, const DistanceTransformInterface&);       // 逐末端 clearance
+```
+
+下面是对齐 `main` 分支结构的 CppAd 版本骨架。相比早期教学稿，这里补上了真实存在的 `Config`（权重 + 是否生成模型 + 是否打印日志）和 `getQuadraticApproximation`：
+
+```cpp
+// 教学简化（结构对齐 main 分支，省略构造细节）
+class EndEffectorDistanceConstraintCppAd final : public ocs2::StateInputConstraint {
+ public:
+  struct Config {                       // 源码原文：默认 weight=1, generateModel=true, verbose=true
+    scalar_t weight;
+    bool generateModel;
+    bool verbose;
+  };
+
+  void set(vector_t clearances, const DistanceTransformInterface& distanceTransform) {
     clearances_ = std::move(clearances);
     distanceTransformPtr_ = &distanceTransform;
   }
@@ -1044,23 +1105,27 @@ public:
   VectorFunctionLinearApproximation getLinearApproximation(
       scalar_t t, const vector_t& state, const vector_t& input,
       const PreComputation& preComp) const override {
+    // 末端位置与其对 (x) 的雅可比：CppAD 生成的部分仅限这一步
     auto eePositions = kinematicsModelPtr_->getFunctionValue(state);
     auto eeJacobians = kinematicsModelPtr_->getJacobian(state);
 
+    const size_t numEEs = clearances_.size();
     VectorFunctionLinearApproximation approx =
         VectorFunctionLinearApproximation::Zero(numEEs, stateDim_, inputDim_);
     for (size_t i = 0; i < numEEs; ++i) {
+      // 距离值 + 3D 空间梯度：运行时由距离场提供，不在 AD tape 内
       auto [distance, grad] =
           distanceTransformPtr_->getLinearApproximation(
               eePositions.segment<3>(3 * i));
-      approx.f(i) = weight * (distance - clearances_(i));
-      approx.dfdx.row(i) = weight * grad.transpose()
-                          * eeJacobians.middleRows<3>(3 * i);
+      approx.f(i) = config_.weight * (distance - clearances_(i));
+      approx.dfdx.row(i) = config_.weight * grad.transpose()
+                          * eeJacobians.middleRows<3>(3 * i);   // 链式法则的显式相乘
     }
     return approx;
   }
 
-private:
+ private:
+  Config config_;
   std::unique_ptr<CppAdInterface> kinematicsModelPtr_;
   const DistanceTransformInterface* distanceTransformPtr_ = nullptr;
   vector_t clearances_;
