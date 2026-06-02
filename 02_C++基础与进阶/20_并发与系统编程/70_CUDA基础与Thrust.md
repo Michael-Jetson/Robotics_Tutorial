@@ -1849,7 +1849,7 @@ SLAM 系统关心端到端。
 
 ---
 
-## 37.20 练习与跨章综合题
+## 37.19 练习与跨章综合题
 
 1. 用 Thrust 实现一个点云强度缩放函数，要求输入输出分离，并写 CPU 版本对照测试。
 2. 为 GPU 计时写两个 benchmark：一个只测 kernel，一个测 upload+kernel+download，解释两者差异。
@@ -1861,7 +1861,7 @@ SLAM 系统关心端到端。
 
 ---
 
-## 37.21 本章小结
+## 37.20 本章小结
 
 CUDA 的核心不是语法，而是数据并行心智模型。
 GPU 适合大规模、规则、可批处理的数据任务。
@@ -1893,7 +1893,7 @@ Thrust 让许多标准模式可以像 STL 一样表达：transform、filter、so
 
 ---
 
-## 37.22 Unified Memory 与零拷贝传输 ⭐⭐⭐
+## 37.21 Unified Memory 与零拷贝传输 ⭐⭐⭐
 
 ### 工程问题：CPU-GPU 数据传输是最常见的性能瓶颈
 
@@ -1953,7 +1953,7 @@ transformKernel<<<blocks, threads>>>(d_points, n);
 
 ---
 
-## 37.23 CUDA 与 C++ 标准并行算法的对比 ⭐⭐
+## 37.22 CUDA 与 C++ 标准并行算法的对比 ⭐⭐
 
 C++17 引入了标准并行算法（如 `std::transform` 的 parallel 执行策略），C++20/23 进一步扩展了 `std::execution` 框架。一个自然的问题是：什么时候用 C++ 标准并行，什么时候用 CUDA/Thrust？
 
@@ -2010,7 +2010,7 @@ std::unique_ptr<VoxelDownsampler> makeDownsampler() {
 
 ---
 
-## 37.24 CUDA Graphs 与计算图优化 ⭐⭐⭐
+## 37.23 CUDA Graphs 与计算图优化 ⭐⭐⭐
 
 CUDA 12.x 引入的 CUDA Graphs 机制允许将一系列 kernel 启动和内存操作预先录制为一个"计算图"，然后一次性提交执行。这减少了每次 kernel 启动的 CPU 端开销（launch overhead）。
 

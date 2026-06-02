@@ -75,7 +75,9 @@ Gauss-Newton 的问题在于：当线性化不够精确时（远离最优解）�
 
 $$(J^T J + \lambda I) \Delta x = -J^T f$$
 
-$\lambda$ 是阻尼因子：$\lambda$ 大时退化为梯度下降（保守、小步长），$\lambda$ 小时接近 Gauss-Newton（激进、大步长）。LM 在每次迭代中自适应调整 $\lambda$——如果这次迭代降低了目标函数就减小 $\lambda$（更信任线性化），否则增大 $\lambda$（更保守）。
+> 此处展示的是 Levenberg (1944) 的简化形式 $D=I$；完整的 Marquardt (1963) 形式将 $I$ 替换为 $D = \text{diag}(\sqrt{\text{diag}(J^TJ)})$，使步长在各参数方向上自适应缩放——参数梯度大的方向步长更保守，梯度小的方向步长更积极。两种形式的推导与对比详见 `01_数学/30_优化理论/50_非线性优化.md`。
+
+无论采用哪种形式，$\lambda$ 都是阻尼因子：$\lambda$ 大时退化为梯度下降（保守、小步长），$\lambda$ 小时接近 Gauss-Newton（激进、大步长）。LM 在每次迭代中自适应调整 $\lambda$——如果这次迭代降低了目标函数就减小 $\lambda$（更信任线性化），否则增大 $\lambda$（更保守）。
 
 **Ceres 默认使用 LM**，它在 SLAM 的各种场景下都有良好的收敛行为。
 
@@ -605,7 +607,7 @@ $$\frac{\partial \rho(s)}{\partial x} = \rho'(s) \cdot \frac{\partial s}{\partia
 
 **Huber 核函数推导**
 
-Huber 核函数的定义（注意 Ceres 中 $s = \|f\|^2$，是残差的**平方**）：
+Huber 核函数的定义（注意 Ceres 中 $s = \|f\|^2$，是残差的**平方**；下式中的 $\delta$ 即代码里 `HuberLoss(delta)` 的构造参数，判别阈值是 $\sqrt{s}=\delta$，对应 $s=\delta^2$）：
 
 $$\rho_{\text{Huber}}(s) = \begin{cases} s & \text{if } s \leq \delta^2 \\ 2\delta\sqrt{s} - \delta^2 & \text{if } s > \delta^2 \end{cases}$$
 
@@ -1568,7 +1570,7 @@ SLAM 后端优化有两个主流框架：Ceres 和 GTSAM。它们的设计哲学
 
 > 🧠 **思维陷阱：认为必须在 Ceres 和 GTSAM 之间二选一**
 >
-> **实际上**：许多系统混合使用。LIO-SAM 的后端用 GTSAM，但标定和某些离线优化用 Ceres。两者可以在同一个项目中共存——只要注意李群约定的一致性（GTSAM 默认左扰动，manif/Ceres 通常右扰动）。
+> **实际上**：许多系统混合使用。LIO-SAM 的后端用 GTSAM，但标定和某些离线优化用 Ceres。两者可以在同一个项目中共存——只要注意李群约定的一致性（GTSAM 默认右扰动，manif/Ceres 通常也采用右扰动，因此约定上天然兼容）。
 
 ### SLAM 后端的实际部署考量 ⭐⭐⭐
 
@@ -1711,7 +1713,7 @@ Ceres 从 1.x 到 2.x 有一些需要注意的 API 变化：
 | slambook2 第 6 章（高翔） | Ceres 和 g2o 入门对比 | ⭐⭐ |
 | VINS-Mono `factor/` 目录 | 工业级 Ceres 代价函数 | ⭐⭐⭐⭐ |
 | [Ceres Jet 源码](https://github.com/ceres-solver/ceres-solver/blob/master/include/ceres/jet.h) | Jet 双数完整实现 | ⭐⭐⭐ |
-| Nocedal & Wright, *Numerical Optimization* Ch4, C++语言进阶/Lambda与STL算法 | Trust Region 和 LM 数学推导 | ⭐⭐⭐⭐ |
+| Nocedal & Wright, *Numerical Optimization* Ch4, C++语言核心/Lambda与STL算法 | Trust Region 和 LM 数学推导 | ⭐⭐⭐⭐ |
 | [COLMAP GitHub](https://github.com/colmap/colmap) | 大规模 SfM 源码 | ⭐⭐⭐ |
 | [Cartographer GitHub](https://github.com/cartographer-project/cartographer) | Google 激光 SLAM 源码 | ⭐⭐⭐ |
 | Dellaert & Kaess, "Factor Graphs for Robot Perception", Foundations and Trends in Robotics, 2017 | GTSAM 理论基础，因子图推理与 Ceres 最小二乘的对比 | ⭐⭐⭐ |

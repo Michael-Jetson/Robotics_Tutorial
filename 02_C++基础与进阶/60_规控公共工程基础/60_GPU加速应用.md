@@ -169,10 +169,14 @@ public:
     CudaStreamOwner() {
         // 非阻塞 stream 避免默认 stream 带来的隐式同步。
         checkCuda(cudaStreamCreateWithFlags(&stream_, cudaStreamNonBlocking));
+        owned_ = true;
     }
 
     ~CudaStreamOwner() {
-        if (stream_ != nullptr) {
+        // 用显式 owned_ 标志判断所有权，而不是 stream_ != nullptr：
+        // cudaStream_t 的 0（默认流/cudaStreamLegacy）是合法句柄，
+        // 用 nullptr 判断会把“持有默认流”误判为“未持有”，进而漏销毁或误销毁。
+        if (owned_) {
             cudaStreamDestroy(stream_);
         }
     }
@@ -181,6 +185,7 @@ public:
 
 private:
     cudaStream_t stream_{nullptr};
+    bool owned_{false};
 };
 ```
 
@@ -293,12 +298,21 @@ Unified Memory 简化编程，但页面迁移可能在第一次访问时发生�
 
 class GraphRunner {
 public:
+    GraphRunner() = default;
+
+    // 持有 cudaGraph_t / cudaGraphExec_t 两个裸资源，拷贝会导致双重销毁，
+    // 因此禁用拷贝构造与拷贝赋值（需要转移所有权时另行实现移动语义）。
+    GraphRunner(const GraphRunner&) = delete;
+    GraphRunner& operator=(const GraphRunner&) = delete;
+
     void capture(cudaStream_t stream, float* data, int n) {
         checkCuda(cudaStreamBeginCapture(stream, cudaStreamCaptureModeGlobal));
         launchScale(data, n, 0.5f, stream);
         launchScale(data, n, 2.0f, stream);
         checkCuda(cudaStreamEndCapture(stream, &graph_));
-        checkCuda(cudaGraphInstantiate(&exec_, graph_, nullptr, nullptr, 0));
+        // CUDA 12.0 起，带 errorNode/logBuffer 的 5 参数重载已废弃；
+        // 使用 3 参数版本 cudaGraphInstantiate(&exec, graph, flags)，flags 传 0。
+        checkCuda(cudaGraphInstantiate(&exec_, graph_, 0));
     }
 
     void run(cudaStream_t stream) {
@@ -1517,7 +1531,8 @@ public:
         launchGradient(d_costs, d_gradients_, n_trajectories, n_timesteps, stream);
 
         checkCuda(cudaStreamEndCapture(stream, &graph_));
-        checkCuda(cudaGraphInstantiate(&exec_, graph_, nullptr, nullptr, 0));
+        // 3 参数版本（CUDA 12.0+）；旧的 5 参数重载已废弃。
+        checkCuda(cudaGraphInstantiate(&exec_, graph_, 0));
         captured_ = true;
     }
 

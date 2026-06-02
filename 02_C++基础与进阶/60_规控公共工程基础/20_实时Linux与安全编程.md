@@ -348,9 +348,16 @@ void setCurrentThreadRealtime(int priority) {
 
 timespec addNanoseconds(timespec t, int64_t ns) {
     t.tv_nsec += ns;
+    // 正向进位：tv_nsec 必须保持在 [0, 1e9)。
     while (t.tv_nsec >= 1000000000L) {
         t.tv_nsec -= 1000000000L;
         ++t.tv_sec;
+    }
+    // 负向借位：处理 ns 为负（回拨）或负增量导致 tv_nsec < 0 的情况，
+    // 否则 clock_nanosleep 会收到非法的 timespec。周期循环只用正增量时此分支不会触发。
+    while (t.tv_nsec < 0) {
+        t.tv_nsec += 1000000000L;
+        --t.tv_sec;
     }
     return t;
 }
@@ -421,13 +428,20 @@ done
 ```cpp
 #include <pthread.h>
 #include <sched.h>
+#include <stdexcept>
 
 void pinToCore(int core_id) {
     cpu_set_t cpuset;
     CPU_ZERO(&cpuset);
     CPU_SET(core_id, &cpuset);
     // 把当前线程固定到指定核心。
-    pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
+    // 与 setCurrentThreadRealtime 保持一致：检查返回的错误码（0 表示成功），
+    // 失败时在启动阶段抛异常，而不是静默忽略（例如 core_id 超出在线 CPU 数）。
+    const int ret =
+        pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
+    if (ret != 0) {
+        throw std::runtime_error("failed to set thread affinity");
+    }
 }
 ```
 

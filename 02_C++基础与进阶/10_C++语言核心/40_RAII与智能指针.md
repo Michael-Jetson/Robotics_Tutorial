@@ -1,6 +1,6 @@
 # RAII、智能指针与资源管理
 
-> **难度**：⭐～⭐⭐⭐ | **建议用时**：2周 | **前置要求**：现代类设计与特殊成员函数 现代类设计与特殊成员函数
+> **难度**：⭐～⭐⭐⭐ | **建议用时**：2周 | **前置要求**：现代类设计与特殊成员函数
 
 ---
 
@@ -248,7 +248,7 @@ RAII 并非凭空出现。它的诞生与 C++ 异常处理机制的引入密切�
    }
    ```
 
-2. **思考题**：为什么 C++ 标准库到 C++23 才引入通用的 `std::scope_exit`？提示：考虑 `std::unique_ptr` + 自定义删除器是否已经覆盖了大部分需求，以及为什么委员会对"在析构函数中执行任意代码"这件事持谨慎态度。实际工具链的 `<scope>` 支持可能滞后，工程中要按编译器版本确认。
+2. **思考题**：`std::scope_exit` 源自 Library Fundamentals TS v3，直到 C++26 才正式纳入标准——为什么这么晚？提示：考虑 `std::unique_ptr` + 自定义删除器是否已经覆盖了大部分需求，以及委员会为什么对"在析构函数中执行任意代码"持谨慎态度。（截至 2026 年，主流编译器对 `<scope>` 的支持仍在推进中，工程中需按编译器版本确认可用性。）
 
 3. **实践题**：在你的系统上运行一个循环 `new int[1000]` 不 `delete` 的程序，用 `htop` 或 `top` 观察内存增长速度。计算泄漏 1GB 需要多长时间。然后用 `std::vector<int>(1000)` 替换，确认内存稳定。
 
@@ -1126,9 +1126,9 @@ void Tracking::processFrame(const Frame& frame) {
 
 与 VINS-Fusion 的手动 `TicToc` 相比，RAII 计时器的优势在于**不可遗忘**——析构函数保证在作用域结束时触发，无论执行路径如何。
 
-### C++23 `<scope>` 标准作用域守卫 ⭐⭐⭐
+### C++26 `<scope>` 标准作用域守卫 ⭐⭐⭐
 
-C++23 通过 Library Fundamentals TS v3 引入了 `<scope>` 头文件，提供了三种标准化的作用域守卫：
+`<scope>` 头文件中的 `scope_exit`、`scope_success`、`scope_fail` 源自 Library Fundamentals TS v3，已被投票纳入 **C++26** 标准，提供了三种标准化的作用域守卫：
 
 | 类型 | 执行条件 | 典型用途 |
 |------|---------|---------|
@@ -1137,7 +1137,7 @@ C++23 通过 Library Fundamentals TS v3 引入了 `<scope>` 头文件，提供�
 | `std::scope_fail` | 仅在异常退出时执行 | 回滚事务 |
 
 ```cpp
-#include <scope>  // C++23（实际工具链支持可能滞后）
+#include <scope>  // C++26（实际工具链支持可能滞后于标准发布）
 
 void transferFunds(Account& from, Account& to, double amount) {
     from.debit(amount);
