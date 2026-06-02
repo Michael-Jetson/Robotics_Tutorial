@@ -742,12 +742,27 @@ f = Y * a               # Inertia × Motion → Force，即空间牛顿-欧拉�
 # 这正是 RNEA 反向递归 f_i = I_i a_i + (惯性力项) 的第一项
 ```
 
+### 小结：空间代数如何"撑起"整个算法层 ⭐⭐
+
+把这一节的四个类型和三类运算放在一起看，就能理解 47.1 节那句"数学结构驱动软件架构"的本质洞察具体落在哪里。RNEA、ABA、CRBA、CCRBA 这些算法的递推公式，逐项都能翻译成空间代数的方法调用：
+
+| 递推公式中的符号 | 空间代数 API | 出现在 |
+|----------------|------------|--------|
+| ${}^i X_{\lambda(i)}\, v_{\lambda(i)}$（父速度变到子系） | `iMli.actInv(v_parent)` | RNEA/ABA 正向递归 |
+| $v_i \times S_i \dot q_i$（科氏耦合） | `v.cross(S_dq)` | RNEA 加速度递归 |
+| $I_i a_i$（牛顿-欧拉） | `Y * a` | RNEA 力递归 |
+| $v_i \times^* (I_i v_i)$（陀螺项） | `v.cross(Y * v)` | RNEA 力递归 |
+| ${}^{\lambda(i)} X_i^*\, f_i$（子力汇聚到父） | `iMli.act(f_child)` | RNEA 反向递归 |
+| $I_i^c = I_i + \sum {}^iX_j^* I_j^c {}^jX_i$（复合惯量） | `Y_i + iMlj.act(Y_j)` | CRBA 后向递归 |
+
+> **本质洞察**：Pinocchio 的算法层之所以能用区区几十行模板代码实现，是因为它把"6 维打包 + 群作用 + 李括号"这三件事固化成了 `Motion`/`Force`/`Inertia` 上的 `act`/`actInv`/`cross`/`operator*`。一旦这层代数原语就位，RNEA 的两趟递归几乎就是把 Featherstone 书里的公式**逐行誊抄**成 C++——没有任何手写的 $3\times3$ 块拼接、没有任何线/角分量的显式拆分。这就是"好的抽象消灭样板代码"的教科书案例：数学家发现 6 维是自然维度（数学结构），工程师把 6 维对象做成一等公民类型（软件架构），于是算法实现退化为公式的直译。回头看 47.2 的 CRTP 和 47.3 的 Model/Data，它们解决的是"如何高效组织和派发"；本节的空间代数解决的是"用什么数据类型计算"——前者是骨架，后者是血肉，合起来才是完整的 Pinocchio。
+
 ### 与单个 SE(3)（Sophus/manif）的边界 ⭐⭐
 
 回到本节开头的桥接：Sophus/manif 和 Pinocchio 的空间代数**像在哪、不像在哪**？
 
-- **像**：两者都实现了 $SE(3)$ 的 `compose`/`inverse`，都有 6 维李代数（manif 的 `SE3Tangent` ≈ Pinocchio 的 `Motion`），都提供 `log`/`exp`。
-- **不像（边界）**：① manif 的核心是**位姿估计**（协方差传播、雅可比 $J_l/J_r$），它的 `Tangent` 默认 `[平移; 旋转]` 布局且强调"在流形上做梯度优化"；Pinocchio 的核心是**动力学**，`Motion`/`Force` 是物理速度/力，强调 `Inertia` 作用和空间叉乘——manif **没有** `Inertia` 和空间叉乘 `ad`。② Pinocchio 的 6D 布局是 `[线性; 角度]`，manif 的 `SE3Tangent` 是 `[平移ρ; 旋转θ]`——两者顺序看似都是"平移在前"，但 manif 的旋转部分是李代数 $\theta$（用于 `exp`），Pinocchio 的角部分是物理角速度 $\omega$，**不要把 `Motion.vector` 直接喂给 manif 的 `exp`**。③ 不要用 Pinocchio 的 `Motion` 做位姿估计的不确定性传播，也不要用 manif 的 `Tangent` 做 RNEA——它们服务不同问题。
+- **像**：两者都实现了 $SE(3)$ 的 `compose`/`inverse`，都有 6 维李代数（manif 的 `SE3Tangent` 类比于 Pinocchio 的 `Motion`），都提供 `log`/`exp`。
+- **不像（边界）**：① manif 的核心是**位姿估计**（协方差传播、雅可比 $J_l/J_r$），它的 `Tangent` 默认 $[\text{平移}; \text{旋转}]$ 布局且强调"在流形上做梯度优化"；Pinocchio 的核心是**动力学**，`Motion`/`Force` 是物理速度/力，强调 `Inertia` 作用和空间叉乘——manif **没有** `Inertia` 和空间叉乘 $\mathrm{ad}$。② Pinocchio 的 6D 布局是 $[\text{线性}; \text{角度}]$，manif 的 `SE3Tangent` 是 $[\rho; \theta]$（平移 $\rho$ 在前、旋转 $\theta$ 在后）——两者顺序看似都是"平移在前"，但 manif 的旋转部分是李代数 $\theta$（用于 `exp`），Pinocchio 的角部分是物理角速度 $\omega$，**不要把 `Motion.vector` 直接喂给 manif 的 `exp`**。③ 不要用 Pinocchio 的 `Motion` 做位姿估计的不确定性传播，也不要用 manif 的 `Tangent` 做 RNEA——它们服务不同问题。
 
 > **⚠️ 概念误区：把 `Motion` 当成"位姿的微小增量 $\log(T)$"**
 >
@@ -1106,6 +1121,154 @@ $$\tau_i = S_i^T \, f_i$$
 > **⚠️ 陷阱：首次调用延迟与预热**
 >
 > Python 绑定首次调用 `rnea()` 时会触发动态链接和缓存初始化，耗时可达 100-500 μs。做性能测试时，务必先"预热"几百次调用，再用 `timeit` 统计稳态性能。C++ 侧没有这个问题，但 `Data` 的首次构造涉及内存分配，同样应排除在计时之外。
+
+---
+
+### CRBA 递推拆解——惯量矩阵 $M(q)$ 是怎么算出来的 ⭐⭐⭐
+
+47.5 前文拆解了 RNEA 的两趟递归，但 `crba`（计算惯量矩阵 $M(q)$）的内部机制还没讲。理解 CRBA 对调试 WBC 至关重要——QP 的 KKT 矩阵里 $M$ 出现在最显眼的位置，一旦 $M$ 算错（最常见是忘了补全下三角，见后文陷阱），整个控制器就崩。
+
+**Composite Rigid Body Algorithm（复合刚体算法）** 的核心思想是：惯量矩阵的元素 $M_{ij}$ 表示"关节 $j$ 的单位加速度在关节 $i$ 处引起的广义力"。直接按定义算需要 $O(N^2)$ 次 RNEA（每个关节单独施加单位加速度），但 CRBA 利用了一个关键观察——**关节 $i$ 处感受到的惯量，是它的整个子树（所有后代 body）刚化为一个复合刚体后的惯量**。
+
+CRBA 的递推结构是"自叶向根聚合复合惯量 + 沿支撑路径填表"：
+
+**第一步：后向递归聚合复合刚体惯量（$i = N, \dots, 1$）**
+
+$$I_i^c = I_i + \sum_{j \in \text{children}(i)} {}^i X_j^* \, I_j^c \, {}^j X_i$$
+
+其中 $I_i^c$ 是以关节 $i$ 为根的子树"刚化"后的复合空间惯量（composite rigid body inertia）。Pinocchio 把这个量存在 `data.Ycrb[i]` 中——`Ycrb` 即 "Y composite rigid body" 的缩写，是一个 `std::vector<Inertia>`。这一步用的正是 47.3.6 讲的 `Inertia` 的 `act`（坐标变换）和加法。
+
+**第二步：用复合惯量填充 $M$ 的元素**
+
+$$F = I_i^c \, S_i \quad(\text{关节 } i \text{ 运动子空间承受的复合力})$$
+$$M_{ii} = S_i^T F$$
+
+然后沿关节 $i$ 到根的**支撑路径**（support path）向上回填：对路径上每个祖先 $j$，
+
+$$F \leftarrow {}^{\lambda(j)} X_j^* \, F, \qquad M_{ij} = M_{ji} = S_j^T F$$
+
+**为什么是 $O(N^2)$ 而非 $O(N^3)$**：第一步后向递归是 $O(N)$。第二步对每个关节 $i$ 沿支撑路径回填，路径长度最坏 $O(N)$，共 $N$ 个关节，故 $O(N^2)$。对串联链（如机械臂）支撑路径就是整条链，是 $O(N^2)$ 的最坏情况；但对分叉的树（如四足，每条腿只有 3 节），路径很短，实际接近 $O(N)$。这就是为什么 47.5 性能表里 Go2（18-DOF 但分 4 叉）的 `crba` 只要 1.5 μs，而 Talos（37-DOF 长链多）要 5.0 μs——CRBA 的实际开销强烈依赖树的**形状**而非单纯自由度数。
+
+> **跨领域类比**：CRBA 的"子树刚化"思想与有限元里的**子结构凝聚（substructuring / Guyan reduction）**异曲同工——把一个复杂子结构的内部自由度凝聚掉，只保留它对边界的等效刚度/质量。CRBA 把子树的所有关节"凝聚"成根关节感受到的一个等效复合惯量 $I_i^c$。相似之处仅在于"局部聚合成等效量"；不同之处是 FEM 凝聚的是刚度矩阵、CRBA 聚合的是空间惯量，且 CRBA 利用了树拓扑使聚合严格 $O(N)$。
+
+> **⚠️ 编程陷阱：`crba` 只填充 $M$ 的上三角**
+>
+> 错误描述：调用 `pin.crba(model, data, q)` 后直接把 `data.M` 当完整对称矩阵用（如 `np.linalg.solve(data.M, b)`）。
+> 现象/后果：求解结果错误。`data.M` 的下三角全是 0（或上一次调用的脏数据），它根本不是对称矩阵。诡异的是小自由度下有时"看起来差不多对"，掩盖了 bug。
+> 根本原因：出于性能，CRBA 利用 $M$ 的对称性**只计算并写入上三角**，下三角留空。这是 Pinocchio（和大多数高性能动力学库）的刻意约定，文档有写但极易被忽略。
+> 正确做法：用前补全下三角——`M = data.M; M = M + M.T - np.diag(M.diagonal())`（前文 Worked Example 第 6 步正是这么做的）。或者，如果只需要解 $M x = b$，用 Pinocchio 的 Cholesky 接口 `pin.cholesky.decompose(model, data, q)` + `pin.cholesky.solve(...)`，它内部正确处理对称性，比"补全 + 通用求解"更快。
+
+### 47.5.5 质心动力学与 CCRBA——SRBD MPC 的地基 ⭐⭐⭐
+
+#### 动机：腿足 MPC 为什么盯着"质心动量"？ ⭐⭐
+
+前面所有算法都在关节空间（$q, v, \tau$）里打转。但腿足运动控制有一个独特视角——**质心动量（centroidal momentum）**。原因来自一条物理铁律：机器人受的外力只有重力（已知）和地面接触力。由牛顿-欧拉定律，整个系统的**线动量变化率 = 合外力**、**绕质心的角动量变化率 = 合外力矩**。也就是说，不管机器人内部 18 个关节怎么动，它的质心动量只能被脚底的接触力改变。这把"高维全身运动"和"低维质心行为"解耦开——单刚体动力学 MPC（SRBD MPC，见 05_运动控制/10_足式/70_SRBD_MPC 与凸MPC）正是建立在这个解耦之上。
+
+> **本质洞察**：质心动量是腿足控制的"沙漏腰"——上面是几十个关节的高维运动，下面是几个接触力的低维输入，中间被 6 维质心动量 $h_G = (\text{线动量}, \text{角动量})$ 卡住。MPC 在这个 6 维瓶颈上做优化，复杂度与关节数无关，这是腿足 MPC 能实时的关键。CRBA 给的是关节空间惯量 $M$，CCRBA 给的是质心空间的"惯量映射"——两者是同一棵树在不同空间的投影。
+
+回顾 02_机器人本体/复合动力学（复合/20）讲过的复合刚体思想：把多个刚体聚合成等效刚体。质心动力学把这个思想推到极致——把**整个机器人**聚合成一个绕质心的 6×6 复合惯量。
+
+#### 质心动量矩阵 $A_g$ 与 CCRBA ⭐⭐⭐
+
+质心动量 $h_G \in \mathbb{R}^6$（前 3 维线动量、后 3 维绕质心角动量）与关节速度的关系是线性的：
+
+$$h_G = A_g(q)\, \dot q$$
+
+矩阵 $A_g(q) \in \mathbb{R}^{6 \times n_v}$ 称为**质心动量矩阵（Centroidal Momentum Matrix, CMM）**。计算它的算法叫 **CCRBA（Centroidal Composite Rigid Body Algorithm）**——它是 CRBA 的"质心版"，由 Orin & Goswami（2008）、Wensing & Orin 提出，Pinocchio 用 `ccrba` 实现：
+
+```python
+import pinocchio as pin
+import numpy as np
+from example_robot_data import load as erd_load
+
+robot = erd_load("go2")
+model, data = robot.model, robot.model.createData()
+q = pin.randomConfiguration(model)
+v = np.random.randn(model.nv) * 0.1
+
+# ---- ccrba：计算质心动量矩阵 Ag、质心动量 hg、质心复合惯量 Ig ----
+Ag = pin.ccrba(model, data, q, v)   # 返回 6 x nv 的 CMM，并填充 data
+# 等价地，data 里也有：
+#   data.Ag  -> 质心动量矩阵 (6, nv)
+#   data.hg  -> 质心动量 (Force 对象, hg = Ag @ v)
+#   data.Ig  -> 质心复合刚体惯量 (6x6 Inertia，整机绕质心的等效惯量)
+
+print(f"Ag shape: {Ag.shape}")            # (6, 18)
+print(f"质心动量 hg: {data.hg.vector}")    # 6D：前3线动量，后3角动量
+print(f"线动量 = 总质量 × 质心速度? ")
+m_total = pin.computeTotalMass(model)
+pin.centerOfMass(model, data, q, v)
+print(np.allclose(data.hg.linear, m_total * data.vcom[0]))  # True
+
+# ---- 验证 hg = Ag @ v ----
+hg_check = Ag @ v
+print(np.allclose(data.hg.vector, hg_check))   # True
+```
+
+`data.hg` 的**线动量部分恒等于"总质量 × 质心速度"**（这是上面断言为 `True` 的原因）——这是质心动量定义的直接结果，也是一个绝佳的自检：如果你的 `data.hg.linear` 不等于 $m\, v_{\text{com}}$，说明 `ccrba` 的输入 $q, v$ 与 `centerOfMass` 不一致。
+
+#### 质心动量的时间导数与 $\dot A_g$ ⭐⭐⭐
+
+MPC 不仅要质心动量，还要它的**变化率**（因为动力学约束是 $\dot h_G = \sum (\text{接触力旋量}) + m g$）。链式法则给出：
+
+$$\dot h_G = A_g(q)\, \ddot q + \dot A_g(q, \dot q)\, \dot q$$
+
+Pinocchio 用两个函数提供这些量：
+
+```python
+# 方式 1：computeCentroidalMomentum——只要 hg（动量本身）
+pin.computeCentroidalMomentum(model, data, q, v)
+hg = data.hg                      # Force 对象
+
+# 方式 2：computeCentroidalMomentumTimeVariation——同时要 hg 和 dhg
+pin.computeCentroidalMomentumTimeVariation(model, data, q, v, a)
+hg  = data.hg                     # 质心动量
+dhg = data.dhg                    # 质心动量变化率 (Force 对象)
+
+# 方式 3：dccrba——要矩阵 Ag 和它的时间导数 dAg（MPC 线性化需要）
+Ag  = pin.ccrba(model, data, q, v)
+dAg = pin.dccrba(model, data, q, v)   # 6 x nv，CMM 的时间导数 data.dAg
+# 验证链式法则：dhg = Ag @ a + dAg @ v
+pin.computeCentroidalMomentumTimeVariation(model, data, q, v, a)
+dhg_check = Ag @ a + dAg @ v
+print(np.allclose(data.dhg.vector, dhg_check))   # True
+```
+
+> **⚠️ 思维陷阱：把质心角动量误当作"绕世界原点的角动量"**
+>
+> 错误描述：以为 `data.hg` 的角动量部分是机器人绕世界坐标系原点的角动量。
+> 现象/后果：在写质心 MPC 的角动量约束时用错了力臂参考点，得到的姿态控制律有一个随质心位置漂移的系统误差，机器人走着走着姿态就偏。
+> 根本原因：centroidal 的字面意思就是"绕质心的"——$h_G$ 的角动量是**绕瞬时质心**计算的，不是绕世界原点。质心在运动，所以这个参考点是时变的。Pinocchio 内部用 `data.oMc`（世界系到质心系、姿态与世界对齐）处理这个时变参考。
+> 正确做法：明确 $h_G$ 是 "centroidal" 量——表达在一个原点位于质心、姿态与世界系对齐的坐标系。接触力旋量要换算到同一个质心参考系再代入 $\dot h_G = \sum \text{wrench}$。SRBD MPC 推导（足式/70）会专门处理这个参考系换算。
+
+#### 与 `computeAllTerms` 的关系 ⭐⭐
+
+注意一个工程细节：`computeAllTerms`（47.3 介绍的"一键计算"）**会顺带填充 `data.Ag` 和 `data.hg`**（它内部调用了 ccrba 的计算路径），但**不计算 `data.dAg`**（时间导数较贵，按需才算）。所以 WBC 里如果只需要质心动量本身，`computeAllTerms` 已经够；如果是质心 MPC 需要线性化矩阵 $\dot A_g$，必须额外调 `dccrba`。这与 47.3 节"`computeAllTerms` 不含 RNEA 导数"的取舍逻辑一致——贵的导数类计算一律按需。
+
+#### 理论-工程桥接：从 `data.hg` 到 SRBD MPC 的状态方程 ⭐⭐⭐
+
+把上面的 API 接到下游控制器，才能看出它们的分量。05_运动控制/10_足式/70_SRBD_MPC 与凸MPC 的单刚体 MPC 用一个 6 维（或 13 维含姿态）质心状态描述整机：质心位置 $c$、线动量（或质心速度 $\dot c$）、绕质心角动量 $k_G$、基座姿态 $\theta$。它的连续时间状态方程正是把上面公式逐项落地：
+
+$$\dot c = \frac{1}{m}\, h_{G,\text{lin}}, \qquad \dot k_G = h_{G,\text{ang}} \text{ 的变化率} = \sum_{i=1}^{n_c} \left[ (p_i - c) \times f_i \right] , \qquad \dot h_{G,\text{lin}} = \sum_{i=1}^{n_c} f_i + m g$$
+
+其中 $f_i$ 是第 $i$ 个接触点的地面反力、$p_i$ 是接触点位置、$n_c$ 是接触数。对照这组方程，Pinocchio 的三个量各就各位：
+
+| MPC 需要的量 | Pinocchio 提供 | 调用 |
+|-------------|---------------|------|
+| 当前质心位置 $c$ | `data.com[0]` | `centerOfMass(model, data, q)` |
+| 当前质心动量 $h_G$（线 + 角） | `data.hg` | `computeCentroidalMomentum` / `ccrba` |
+| 整机绕质心转动惯量 $\bar I_G$（角动量约束用） | `data.Ig`（6×6 的右下 3×3 块） | `ccrba` |
+| 全身运动到质心动量的映射 $A_g$ | `data.Ag` | `ccrba` |
+
+> **理论-工程桥接的要害**：SRBD MPC 把机器人**近似**成"一个绕质心的刚体 + 无质量的腿"，于是只需要 `data.Ig` 这一个 6×6 惯量就能写出角动量动力学——这正是 SRBD 名字（Single Rigid Body Dynamics）的由来。但真实机器人腿有质量、摆动时角动量会变，所以高保真的质心 MPC（centroidal MPC）改用完整的 $A_g(q)$ 而非常数 $\bar I_G$：用 `data.Ag @ ddq` 表达 $\dot h_G$ 的运动学部分。**从 `data.Ig` 升级到 `data.Ag` 的这一步，就是从 SRBD MPC 走向全质心 MPC 的分水岭**——前者快但近似、后者准但需要每步重算 $A_g, \dot A_g$。
+
+> **反事实推理**：如果 SRBD MPC 不用 Pinocchio 的 `ccrba` 而是手工维护一个常数惯量 $\bar I_G$（许多早期 MIT Cheetah 风格控制器就这么做）会怎样？在原地踏步、缓慢行走时近似很好，省掉了每步 `ccrba` 的开销；但在大幅摆腿、跳跃、空翻时，腿的角动量贡献不可忽略，常数 $\bar I_G$ 会让 MPC 预测的姿态严重失真。这就是为什么动态动作（如 ANYmal/Go2 的跳跃）倾向用 `data.Ag` 的全质心模型，而准静态步态可以用常数惯量近似——**用哪个量，取决于动作的剧烈程度**，这是一个典型的"模型保真度 vs 计算成本"工程权衡。
+
+#### 练习 ⭐⭐
+
+**练习 47.5.5.1**（⭐⭐）：对 Go2 模型，构造一个"自由落体"测试——令 $q$ 为任意构型、$v$ 任意、所有接触力为零、只有重力。用 `computeCentroidalMomentumTimeVariation` 计算 `data.dhg`，验证它的线动量变化率等于 $m_{\text{total}} \cdot g$（$g = [0,0,-9.81]$）、角动量变化率约为 0（无外力矩）。这道题验证"质心动量只被外力改变"的物理铁律。
+
+**练习 47.5.5.2**（⭐⭐⭐）：验证质心动量矩阵 $A_g$ 与关节空间惯量 $M$ 的关系。已知 $A_g = {}^{c}X_0^* \, P \, M$ 形式的投影关系（$P$ 取前 6 行的浮动基座块）。更简单的数值验证：对浮动基座机器人，$A_g$ 的前 6 列（对应基座 6 个自由度）应当等于整机复合惯量 `data.Ig` 经坐标变换后的结果。用 `ccrba` 同时拿到 `Ag` 和 `data.Ig`，验证 `Ag[:, :6]` 与 `data.Ig.matrix()`（适当变换后）一致。
 
 ---
 
@@ -1632,6 +1795,139 @@ print(f"tau_max: {model.effortLimit}")
 | ProximalSolver | 不存在 | `ProximalSettings` + 近端约束求解 |
 | 命名空间 | `pinocchio::` | `pinocchio::` (不变) |
 | Python 包名 | `import pinocchio` | `import pinocchio` (不变) |
+
+---
+
+## 47.7.5 Frames 体系深入——Joint 之外的"参考点"系统 ⭐⭐⭐
+
+### 动机：为什么 Joint 不够，还需要 Frame？ ⭐⭐
+
+47.5 节用 `getFrameJacobian` 取足端雅可比、用 `model.getFrameId("FL_foot")` 找足端，并在多处陷阱里反复提醒"`forwardKinematics` 只更新 `data.oMi`（关节），要读 `data.oMf`（frame）必须先 `updateFramePlacements`"。但我们一直没有正面回答：**Frame 到底是什么？它和 Joint 是什么关系？** 这个缺口在 WBC 里会致命——任务空间几乎全部定义在 frame 上（足端、手端、IMU、相机），搞不清 frame 体系，连"末端在哪"都取不对。
+
+考虑一个具体问题：Go2 的足端 `FL_foot` 在哪个 Joint 上？答案是它**不在任何 Joint 上**——足端是小腿 link 末端的一个固定点，没有自由度。如果 Pinocchio 只有 Joint 概念，你就没法引用这个点。再想机械臂的 TCP（工具中心点）、IMU 安装位置、相机光心——它们全都是刚体上的**固定参考点**，不是关节。
+
+> **反事实推理**：如果 Pinocchio 不提供 Frame，只能用 Joint 来表达末端会怎样？你要么被迫在 URDF 里给每个关心的点加一个"假关节"（`nq=0` 的固定关节，污染关节树、虚增 `njoints`），要么每次都手动维护"从某个 Joint 到目标点的固定偏移 SE3"并自己做坐标变换——后者正是初学者的常见做法，但它把本应由库管理的拓扑信息散落到用户代码里，极易出错。Frame 系统就是把"刚体上的命名参考点"提升为一等公民，让 `getFrameJacobian`/`getFrameVelocity` 直接对它工作。
+
+### Frame 的数据结构与五种类型 ⭐⭐⭐
+
+一个 `Frame` 是"挂在某个 Joint 上、相对该 Joint 有固定偏移的命名参考点"。它的字段（已与官方 API 核实）：
+
+| 字段 | 类型 | 含义 |
+|------|------|------|
+| `name` | `str` | frame 名称（如 `"FL_foot"`、`"panda_hand"`） |
+| `parentJoint` | `int` | **支撑该 frame 的关节索引**——frame 刚性附着在这个关节的 body 上 |
+| `parentFrame` | `int` | 父 frame 索引（仅用于记录 frame 树的层级，**计算时不用它**） |
+| `placement` | `SE3` | frame 相对 `parentJoint` 局部坐标系的**固定**偏移 ${}^{\text{joint}} M_{\text{frame}}$ |
+| `type` | `FrameType` | frame 类型（见下表） |
+| `inertia` | `Inertia` | 附加在该 frame 上的惯量（如末端负载） |
+
+> **⚠️ 概念误区：`parentFrame` vs `parentJoint`**
+>
+> 错误描述：以为 frame 的位姿是"沿 `parentFrame` 链一级级算出来的"，于是去操心 frame 树的层级。
+> 现象/后果：在自定义 frame、或调试 `oMf` 时把精力浪费在 `parentFrame` 上，却找不到位姿算错的真正原因。
+> 根本原因：Pinocchio 计算 frame 世界位姿用的是 `data.oMf[f] = data.oMi[parentJoint] * frame.placement`——**只依赖 `parentJoint` 和 `placement`，完全不经过 `parentFrame`**。`parentFrame` 仅仅是为了记录"这个 frame 是从哪个 frame 派生来的"这一族谱信息，对运动学计算无影响。官方文档明确：`parentJoint` 才是你该关心的量。
+> 正确做法：定位 frame 位姿问题时，检查 `frame.parentJoint`（对不对）和 `frame.placement`（偏移对不对），不要管 `parentFrame`。
+
+`FrameType` 枚举有五个值，对应 frame 的不同来源：
+
+| `FrameType` | 来源 | 典型例子 |
+|-------------|------|---------|
+| `JOINT` | 与某个真实关节同位的 frame | 每个关节自动生成一个同名 frame |
+| `FIXED_JOINT` | URDF 中被 Pinocchio "吸收"的固定关节 | URDF 里 `type="fixed"` 的关节不会成为 Joint，而是降级为 FIXED_JOINT 类型的 frame |
+| `BODY` | link（连杆）的参考 frame | URDF 中每个 `<link>` 对应一个 BODY frame |
+| `OP_FRAME` | 操作 frame（Operational Frame），用户定义的虚拟点 | 手动 `addFrame` 加的 TCP、足端控制点、传感器位置 |
+| `SENSOR` | 传感器 frame | IMU、力/力矩传感器的安装位置 |
+
+> **本质洞察**：URDF 里的"固定关节"在 Pinocchio 里**消失**了——它不占 `nq`/`nv`，被合并进父 body 的惯量，只留下一个 FIXED_JOINT 类型的 frame 记录它原来的位置。这是 Pinocchio 的一个关键优化：固定关节没有自由度，保留它只会让关节树虚胖、让 RNEA 多遍历无意义的节点。把它降级为 frame，既保留了"这个位置可被引用"的能力，又不付出动力学计算的代价。这解释了一个常见困惑——"我 URDF 里明明有 20 个关节，为什么 `model.njoints` 只有 14？"：因为 6 个是固定关节，被吸收成 frame 了。
+
+### 自定义 Frame：`addFrame` ⭐⭐
+
+实践中你常需要给机器人加一个 URDF 里没有的控制点——比如在足端再往下偏移 2cm 到接触面、或在末端工具尖端定义 TCP：
+
+```python
+import pinocchio as pin
+import numpy as np
+
+robot = erd_load("panda")
+model, data = robot.model, robot.model.createData()
+
+# 在 panda_hand 末端往前偏移 0.1m 处定义一个 TCP（工具中心点）
+hand_frame_id = model.getFrameId("panda_hand")
+hand_frame    = model.frames[hand_frame_id]
+
+# 新 frame 挂在与 panda_hand 相同的 parentJoint 上，
+# placement 是 panda_hand 的偏移再叠加 0.1m 的 z 向偏移
+tcp_placement = hand_frame.placement * pin.SE3(np.eye(3), np.array([0, 0, 0.1]))
+tcp_frame = pin.Frame("tcp",
+                      hand_frame.parentJoint,   # 同一个支撑关节
+                      hand_frame_id,             # parentFrame（仅记录）
+                      tcp_placement,             # 相对 parentJoint 的固定偏移
+                      pin.FrameType.OP_FRAME)    # 操作 frame
+tcp_id = model.addFrame(tcp_frame)
+
+# 注意：addFrame 改了 model，必须重新 createData（Data 的 oMf 长度变了）
+data = model.createData()
+
+q = pin.neutral(model)
+pin.forwardKinematics(model, data, q)
+pin.updateFramePlacements(model, data)
+print(f"TCP 位姿:\n{data.oMf[tcp_id]}")
+```
+
+> **⚠️ 编程陷阱：`addFrame` 之后必须重建 Data**
+>
+> 错误描述：调用 `model.addFrame(...)` 后继续用旧的 `data` 对象。
+> 现象/后果：访问新 frame 的 `data.oMf[new_id]` 越界崩溃，或读到垃圾——因为旧 `data.oMf` 是按旧 `model.nframes` 预分配的，没有新 frame 的槽位。
+> 根本原因：Data 在构造时根据 Model 的维度**一次性预分配**所有缓冲（47.3 的核心设计）。`addFrame` 增加了 `model.nframes`，旧 Data 的 `oMf` 数组长度跟不上。
+> 正确做法：任何修改 Model 结构的操作（`addFrame`、`addJoint`、`appendModel`）之后，必须 `data = model.createData()` 重建。这也是为什么 Model 的结构修改应当**全部在初始化阶段完成**、运行时绝不碰 Model——与 47.3 "Model 加载后只读"的原则一脉相承。
+
+### Frame 的速度与加速度——spatial vs classical ⭐⭐⭐
+
+47.5 只讲了 frame 的**位姿**（`oMf`）和**雅可比**（`getFrameJacobian`）。但接触控制、阻抗控制还需要 frame 的**速度和加速度**。Pinocchio 提供（均已与官方 API 核实，返回 `Motion` 对象）：
+
+```python
+# 必须先 forwardKinematics（带 v、a 才能取速度、加速度）
+q = pin.randomConfiguration(model)
+v = np.random.randn(model.nv)
+a = np.random.randn(model.nv)
+pin.forwardKinematics(model, data, q, v, a)   # 同时传 q,v,a
+pin.updateFramePlacements(model, data)
+
+fid = model.getFrameId("panda_hand")
+
+# 空间速度（6D twist），可选参考坐标系
+vel = pin.getFrameVelocity(model, data, fid, pin.LOCAL_WORLD_ALIGNED)
+print(vel.linear, vel.angular)
+
+# 空间加速度（spatial acceleration）——注意这不是"看得见的"加速度
+acc_spatial = pin.getFrameAcceleration(model, data, fid, pin.LOCAL_WORLD_ALIGNED)
+
+# 经典加速度（classical acceleration）——这才是质点真实的 d²p/dt²
+acc_classic = pin.getFrameClassicalAcceleration(model, data, fid, pin.LOCAL_WORLD_ALIGNED)
+```
+
+这里藏着一个**极其重要、极其容易错**的区分：**空间加速度（spatial acceleration）** 与 **经典加速度（classical acceleration）** 不是一回事。
+
+空间加速度是空间速度的纯时间导数 $\dot{V} = (\dot v, \dot\omega)$（在运动旋量意义下）。但一个固连在刚体上的物理点 $p$，它"看得见的"线加速度 $\ddot p$ 还要加上一个**向心/科氏耦合项** $\omega \times v$：
+
+$$a_{\text{classical, linear}} = a_{\text{spatial, linear}} + \omega \times v_{\text{linear}}$$
+
+角加速度部分两者相同（$\dot\omega$）。
+
+> **⚠️ 思维陷阱：用空间加速度当物理加速度做接触/碰撞约束**
+>
+> 错误描述：在写"足端落地瞬间垂直加速度为零"或"末端跟踪期望笛卡尔加速度"的约束时，直接用 `getFrameAcceleration`（空间加速度）。
+> 现象/后果：当 frame 同时有较大平移速度和角速度时（如快速摆动腿），少了 $\omega\times v$ 项，约束方程有系统偏差——足端落地有冲击、笛卡尔跟踪有稳态误差，且速度越大误差越大，低速测试时还发现不了。
+> 根本原因：空间加速度 $\dot V$ 是旋量的导数，**不等于**刚体上某点的真实二阶位移导数 $\ddot p$。两者差一个 $\omega \times v$ 的向心项。任务空间控制律里的"加速度"几乎总是指经典加速度（$\ddot p$），因为期望轨迹是用笛卡尔位置二阶导描述的。
+> 正确做法：任务空间（笛卡尔）加速度约束一律用 `getFrameClassicalAcceleration`。只有当你在空间向量（旋量）框架内做纯代数推导、且全程保持旋量一致性时，才用 `getFrameAcceleration`。这个区分也是 WBC（足式/90）里任务加速度 $\ddot x = J\ddot q + \dot J \dot q$ 中 $\dot J\dot q$ 项（drift 项）必须用经典约定的根源。
+
+### 练习 ⭐⭐
+
+**练习 47.7.5.1**（⭐⭐）：遍历 Go2 模型的所有 frame（`for f in model.frames`），统计每种 `FrameType` 的数量。验证 BODY 类型 frame 的数量等于 `model.nbodies`、JOINT 类型 frame 数量与 `model.njoints` 的关系。然后找出所有 OP_FRAME 和 SENSOR 类型的 frame，理解它们分别对应机器人的什么物理部件。
+
+**练习 47.7.5.2**（⭐⭐⭐）：数值验证 spatial 与 classical 加速度的关系。取一个有较大速度的随机状态 $(q, v, a)$，用 `getFrameVelocity` 取 $\omega, v_{\text{lin}}$，用 `getFrameAcceleration` 取空间加速度，手动加上 $\omega \times v_{\text{lin}}$，验证结果等于 `getFrameClassicalAcceleration` 的线性部分。这道题让你彻底记住"任务空间用 classical"——以后写 WBC 不会再用错。
+
+**练习 47.7.5.3**（⭐⭐，跨节综合）：综合 47.5 和本节——给 Panda 加一个 TCP frame（`addFrame`），重建 Data，然后同时取 TCP 的 `getFrameJacobian`（`LOCAL_WORLD_ALIGNED`）和 `getFrameVelocity`，验证 `J @ v` 等于 `getFrameVelocity` 返回的 6D twist。这把"雅可比是速度到关节速度的线性映射"这个定义在自定义 frame 上闭环验证一遍。
 
 ---
 

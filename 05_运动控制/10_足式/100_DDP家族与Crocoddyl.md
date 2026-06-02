@@ -336,7 +336,7 @@ $\mu$ 的调节策略:
 
 ### 54.2.8B 两种正则化模式:control-reg vs state-reg ⭐⭐⭐
 
-上面给的 $Q_{\mathbf{uu}} + \mu\mathbf{I}$ 只是**最基础**的一种正则化(control regularization,控制正则)。Crocoddyl/box-FDDP 实际实现了**两种**正则化模式,它们加在不同的地方,几何含义也不同。理解这个区别,是读懂 `solver.reg_min`、`solver.ureg`、`solver.xreg` 这些字段的前提。
+上面给的 $Q_{\mathbf{uu}} + \mu\mathbf{I}$ 只是**最基础**的一种正则化(control regularization,控制正则)。Crocoddyl/Box-FDDP 实际实现了**两种**正则化模式,它们加在不同的地方,几何含义也不同。理解这个区别,是读懂 `solver.reg_min`、`solver.ureg`、`solver.xreg` 这些字段的前提。
 
 **模式一:control regularization(ureg)。** 直接在控制 Hessian 上加偏移:
 
@@ -1259,7 +1259,7 @@ mimalloc (>=2.1) ──→ Aligator (高效内存分配)
 **问题**:经典 DDP/FDDP 处理约束(如关节限位、摩擦锥)很困难。通常的做法是:
 
 1. 把约束写成惩罚项加到代价里(不精确)
-2. 用投影方法(如 BOX-FDDP 对控制限位做投影)
+2. 用投影方法(如 Box-FDDP 对控制限位做投影)
 3. 放弃 DDP,改用 SQP(OCS2 的选择)
 
 ProxDDP 提供第四条路:**增广拉格朗日方法(ALM)嵌入 DDP**。
@@ -1314,7 +1314,7 @@ $$\mathcal{L}_{\mu}(\mathbf{x}, \mathbf{u}, \boldsymbol{\lambda}) = l(\mathbf{x}
 | 特性 | FDDP | ProxDDP |
 |------|------|---------|
 | 等式约束(接触不滑) | 嵌入动力学 | ALM 显式处理 |
-| 不等式约束(关节限位) | 不直接支持(需 BOX-FDDP) | **ALM 原生支持** |
+| 不等式约束(关节限位) | 不直接支持(需 Box-FDDP) | **ALM 原生支持** |
 | 摩擦锥约束 | 不直接支持 | **ALM 原生支持** |
 | 收敛速度(无约束） | 快 | 略慢(ALM 外层开销) |
 | 初始猜测鲁棒性 | FDDP 比 DDP 好 | **更好**(ALM 平滑化) |
@@ -1458,11 +1458,12 @@ N = N_phase * len(trot_phases)  # total steps
 # ========================================================
 running_models = []
 
+q_standing = model.referenceConfigurations["standing"]
 for phase in trot_phases:
-    # 从零位形计算各脚的标称位置
-    pin.forwardKinematics(rmodel, rdata, q0)
-    pin.updateFramePlacements(rmodel, rdata)
-    nominal_foot_pos = {idx: rdata.oMf[foot_ids[idx]].translation.copy() for idx in range(4)}
+    # 从站立位形计算各脚的标称接触位置
+    pinocchio.forwardKinematics(model, robot.data, q_standing)
+    pinocchio.updateFramePlacements(model, robot.data)
+    nominal_foot_pos = {idx: robot.data.oMf[foot_ids[idx]].translation.copy() for idx in range(4)}
 
     for step in range(N_phase):
         # Create contact model
@@ -1694,7 +1695,7 @@ DDP 流派 (Crocoddyl, MuJoCo)       SQP 流派 (OCS2, ALTRO)
 | `calcDiff()` 耗时远超预期(>5ms) | 每次调用重新 `createData()` 触发堆分配;或误用 RK4 | 1. 确认用 `problem.createData()` 一次性预分配 2. 用 `EIGEN_RUNTIME_NO_MALLOC` 检测运行时 malloc 3. 分别测 `calc()`/`calcDiff()` 耗时定位瓶颈 | §54.5.3, §54.6.5 |
 | `calcDiff()` 段错误(segfault) | Model 与 Data 不匹配,或 Data 未由对应 Model 的 `createData()` 生成 | 1. 确认每个 `running_models_[t]` 配对正确的 `running_datas_[t]` 2. 自定义 ActionModel 时检查 `createData()` 返回类型 3. 用 AddressSanitizer 定位越界 | §54.5.4 |
 | OpenMP 并行结果与串行不一致 | 多线程共享同一 Data,或 Eigen 临时对象 data race | 1. 确认每时间步独立 Data 2. 用 ThreadSanitizer 检测竞态 3. 检查 Eigen 16 字节对齐(`EIGEN_MAKE_ALIGNED_OPERATOR_NEW`) | §54.5.4, §54.8 |
-| FDDP 的 gap 范数不下降反而振荡 | Armijo line search 参数不当,或正则化模式选错 | 1. 打印每次迭代 `max‖fs‖` 观察单调性 2. 检查 line search 接受准则 3. 尝试切换 Crocoddyl 的 `xreg`/`ureg` 两种正则模式 | §54.4.6, §54.2.8 |
+| FDDP 的 gap 范数不下降反而振荡 | Armijo line search 参数不当,或正则化模式选错 | 1. 打印每次迭代 `max‖fs‖` 观察单调性 2. 检查 line search 接受准则 3. 尝试切换 Crocoddyl 的 `xreg`/`ureg` 两种正则模式 | §54.4.6, §54.2.8B |
 
 ---
 
@@ -2000,7 +2001,7 @@ DDP 流派 (Crocoddyl, MuJoCo)       SQP 流派 (OCS2, ALTRO)
 
 **DDP 核心**: Bellman Equation, Value Function $V_k$, Q-Function, Backward Pass, Forward Pass, Feedback Gain $\mathbf{K}_k$, Feedforward $\mathbf{k}_k$, Line Search (Armijo), Regularization (Levenberg-Marquardt)
 
-**算法变体**: iLQR (Gauss-Newton DDP), FDDP (Feasibility-Driven DDP), BOX-FDDP, ProxDDP (Proximal DDP), SQP
+**算法变体**: iLQR (Gauss-Newton DDP), FDDP (Feasibility-Driven DDP), Box-FDDP, box-DDP (Control-Limited DDP), ProxDDP (Proximal DDP), SQP
 
 **Crocoddyl 架构**: ActionModelAbstract, ActionDataAbstract, ShootingProblem, DifferentialActionModel, IntegratedActionModel, ContactModelMultiple, CostModelResidual, ResidualModel, ActivationModel, SolverFDDP
 

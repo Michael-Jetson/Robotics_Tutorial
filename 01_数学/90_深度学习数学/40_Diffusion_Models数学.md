@@ -576,7 +576,7 @@ $$
 
 ### 一个还没解决的问题：score 从哪来？
 
-Anderson 定理把生成化归为"知道 score $\nabla\log p_t$"。但 $p_t$ 是数据分布加噪后的边际，我们并不知道它的解析式(它涉及对未知 $p_\text{data}$ 的卷积)，自然也不知道它的对数梯度。**这正是 §8.4.3(DDPM)和 §8.4.4(Score Matching)要解决的全部内容：如何用神经网络 $s_\theta(x,t)$ 估计这个未知的 score。** 本节是"为什么估计 score 就够了"的答案，下两节是"如何估计"的答案。这是一个标准的"先动机后理论"接力：本节制造了对 score 估计的需求，下节满足它。
+Anderson 定理把生成化归为"知道 score $\nabla\log p_t$"。但 $p_t$ 是数据分布加噪后的边际，我们并不知道它的解析式(它涉及对未知 $p_\text{data}$ 的卷积)，自然也不知道它的对数梯度。**这正是 §8.4.3(DDPM)和 §8.4.4(Score Matching)要解决的全部内容：如何用神经网络 $s_\theta(x,t)$ 估计这个未知的 score。** 本节是"为什么估计 score 就够了"的答案，下两节是"如何估计"的答案：本节制造了对 score 估计的需求，下两节正好满足它。
 
 ### ⚠️ 常见陷阱
 
@@ -1798,7 +1798,7 @@ $w=0$ 退化为普通条件生成；$w>0$ 把动作往"更符合观测 $c$"的�
 
 | 子模块 | 验证什么 | 对应节 | 验证方式 |
 |--------|---------|--------|---------|
-| `verify_transition_kernel` | VP 转移核 $x_t=\sqrt{\alpha_t}x_0+\sqrt{1-\alpha_t}\varepsilon$ 的均值/方差 | §8.4.1 | 蒙特卡洛模拟前向 SDE(Euler-Maruyama 细步)，统计 $\mathbb E[x_t]$、$\mathrm{Var}[x_t]$，对照闭式 $x_0 e^{-\bar\beta/2}$、$1-e^{-\bar\beta}$ |
+| `verify_transition_kernel` | VP 转移核 $x_t=\sqrt{\bar\alpha_t}x_0+\sqrt{1-\bar\alpha_t}\varepsilon$ 的均值/方差 | §8.4.1 | 蒙特卡洛模拟前向 SDE(Euler-Maruyama 细步)，统计 $\mathbb E[x_t]$、$\mathrm{Var}[x_t]$，对照闭式 $x_0 e^{-\bar\beta/2}$、$1-e^{-\bar\beta}$ |
 | `verify_tweedie` | Tweedie $\mathbb E[x\mid\tilde x]=\tilde x+\sigma^2\nabla\log p_\sigma$ | §8.4.4 | 取一个已知混合高斯 $p$(score 可解析)，加噪后数值算后验均值，对照 Tweedie 右端 |
 | `verify_dsm_equals_esm` | DSM 与 ESM(on $p_\sigma$)同最优解 | §8.4.4 | 在 1D 混合高斯上，分别用两目标拟合一个小 MLP score 网络，对照二者收敛到同一 $\nabla\log p_\sigma$ |
 
