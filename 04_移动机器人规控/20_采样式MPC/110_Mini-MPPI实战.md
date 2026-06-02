@@ -78,6 +78,175 @@
 
 ---
 
+## 环境配置指南
+
+本章是**工程实践**章，不配好环境一行代码都跑不起来。与 Python 训练管线（pip install 即可）不同，CUDA + C++ + Eigen + MuJoCo 这套原生工具链的版本耦合更紧、踩坑更隐蔽——一个 CUDA 与驱动的小版本错配就能让你卡一下午。本节把"装什么、装哪个版本、怎么验证装对了"一次说清。
+
+### 系统要求
+
+| 项目 | 要求 | 说明 |
+|------|------|------|
+| 操作系统 | Ubuntu 20.04 / 22.04（推荐）或 Windows 10/11 + WSL2 | 本章命令以 Ubuntu 为准；MuJoCo 的 GPU 渲染在原生 Linux 上最省心 |
+| GPU | NVIDIA，计算能力 $\geq 6.0$（Pascal 及以后） | $\geq 7.0$（Volta/Turing 及以后）才有完整的独立线程调度（independent thread scheduling），warp 内同步语义更安全 |
+| 显存 | $\geq 4$ GB | $K=8192, T=64, m=4$ 的噪声数组约 8 MB，本身不大；显存主要被 MuJoCo 模型与渲染占用 |
+| NVIDIA 驱动 | $\geq 525$（对应 CUDA 12.x） | 驱动版本决定可用的**最高** CUDA 运行时版本，反之不约束——这是新手最常错配的一环（见下文本质洞察） |
+| CPU | $\geq 4$ 核（MuJoCo OpenMP batch rollout 用） | §10.5 的 CPU batch rollout 吃多核；核越多 MuJoCo rollout 越快 |
+
+> **本质洞察：驱动版本与 CUDA Toolkit 版本是"地基与楼层"的关系，不是"必须相等"的关系。** 很多新手以为"CUDA 12.4 的代码必须装 CUDA 12.4 的驱动"，于是疯狂折腾驱动。真相是：NVIDIA 驱动向后兼容（backward compatible）——一个支持 CUDA 12.6 的新驱动，可以跑用 CUDA 11.8、12.0、12.4 编译的任何程序。所以正确策略是**装尽可能新的驱动，然后 Toolkit 版本只要 $\leq$ 驱动支持的上限即可**。`nvidia-smi` 右上角显示的 "CUDA Version: 12.6" 是**驱动支持的上限**，不是你装的 Toolkit 版本——这个误解是 90% 的"CUDA 版本对不上"困惑的根源。
+
+### 版本兼容表
+
+| 组件 | 推荐版本 | 最低版本 | 最高测试版本 | 备注 |
+|------|---------|---------|------------|------|
+| NVIDIA 驱动 | 535 | 525 | 555 | 决定 CUDA 运行时上限；装最新稳定版即可 |
+| CUDA Toolkit | 12.4 | 11.8 | 12.6 | nvcc 编译器 + cuRAND 随之安装；$\leq$ 驱动上限 |
+| CMake | 3.27 | 3.18 | 3.30 | 3.18 才有成熟的 `enable_language(CUDA)` 一等支持 |
+| GCC / G++ | 11 | 9 | 12 | 必须与 CUDA 版本兼容；CUDA 12.4 不支持 GCC 13+ |
+| Eigen | 3.4.0 | 3.4.0 | 3.4.0 | 3.4 才正式标注 CUDA 设备代码支持；3.3 有坑 |
+| MuJoCo | 3.1.x | 2.3.0 | 3.2.x | 3.0+ 起官方开源、C API 稳定（§10.5） |
+| Python（可视化） | 3.10 | 3.8 | 3.12 | 仅 `python/visualize.py` 用，与 C++ 主程序解耦 |
+| matplotlib / numpy | 3.8 / 1.26 | 3.5 / 1.21 | 3.9 / 2.0 | 可视化依赖；numpy 2.0 已测试通过 |
+
+> **版本锁定建议**：CUDA 和 GCC 在**大版本**粒度锁定（如固定 CUDA 12.x + GCC 11），因为它们的 ABI（应用二进制接口）跨大版本不保证兼容；Eigen 在**精确版本**锁定（3.4.0），因为它是 header-only，换版本就是换源码，3.3→3.4 在 CUDA 设备代码上有 breaking change（3.4 之前 `Eigen::Matrix` 在 `__device__` 函数里需要额外补丁）；MuJoCo 在**小版本**粒度锁定（3.1.x），3.0 是 C API 的分水岭（2.x 闭源、API 不同）。
+
+### GCC 与 CUDA 的版本耦合陷阱
+
+这是原生 CUDA 工具链**最容易卡住新手**的一环，值得单独展开。nvcc 编译 `.cu` 文件时，会把主机端（host）代码交给系统的 host 编译器（Linux 上是 g++）。但 nvcc 对 host 编译器的版本有**严格上限**——每个 CUDA 版本只支持到某个 GCC 版本，超过就直接报错：
+
+```
+#error -- unsupported GNU version! gcc versions later than 12 are not supported!
+```
+
+| CUDA Toolkit | 支持的最高 GCC | 常见错配场景 |
+|--------------|---------------|-------------|
+| 11.8 | GCC 11 | Ubuntu 22.04 默认 GCC 11，恰好兼容 |
+| 12.0–12.3 | GCC 12 | 系统升级到 GCC 13 后 nvcc 直接拒绝编译 |
+| 12.4–12.6 | GCC 13 | Ubuntu 24.04 默认 GCC 13，需 CUDA $\geq$ 12.4 |
+
+**反事实：如果忽略这个耦合会怎样。** 你在 Ubuntu 24.04（默认 GCC 13）上装了 CUDA 12.0（最高支持 GCC 12），`cmake` 配置阶段不会报错（CMake 只检查 nvcc 存在），但一 `make` 就撞上 `unsupported GNU version`。新手往往以为是 CUDA 没装好，重装三遍 CUDA 仍然失败——根因是 GCC 太新。**正确做法**有两条路：(1) 升级 CUDA 到支持当前 GCC 的版本；(2) 装一个旧版 GCC 并显式告诉 CMake 用它：
+
+```bash
+# 路径 2：安装并指定旧版 GCC（以 GCC 11 为例）
+sudo apt install gcc-11 g++-11
+# CMake 配置时显式指定 CUDA 的 host 编译器
+cmake -DCMAKE_CUDA_HOST_COMPILER=/usr/bin/g++-11 ..
+```
+
+### 安装步骤（Ubuntu 22.04）
+
+```bash
+# ---- 1. 安装 NVIDIA 驱动（如果尚未安装）----
+# 用 ubuntu-drivers 自动选择推荐版本，避免手动下错
+sudo ubuntu-drivers autoinstall
+sudo reboot
+# 重启后验证：应看到 GPU 型号和 "CUDA Version: 12.x"（驱动上限）
+nvidia-smi
+
+# ---- 2. 安装 CUDA Toolkit 12.4 ----
+# 从 NVIDIA 官网下载对应 .deb（这里用 network 安装方式）
+wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
+sudo dpkg -i cuda-keyring_1.1-1_all.deb
+sudo apt update
+sudo apt install cuda-toolkit-12-4
+# 把 nvcc 加入 PATH（写进 ~/.bashrc 永久生效）
+export PATH=/usr/local/cuda-12.4/bin:$PATH
+export LD_LIBRARY_PATH=/usr/local/cuda-12.4/lib64:$LD_LIBRARY_PATH
+# 验证：应输出 "Cuda compilation tools, release 12.4"
+nvcc --version
+
+# ---- 3. 安装 CMake、Eigen、构建工具 ----
+sudo apt install cmake build-essential libeigen3-dev
+# 验证 Eigen 版本（应 >= 3.4）
+pkg-config --modversion eigen3
+
+# ---- 4.（可选，§10.5 需要）安装 MuJoCo ----
+# MuJoCo 3.x 提供预编译动态库，解压即用
+wget https://github.com/google-deepmind/mujoco/releases/download/3.1.6/mujoco-3.1.6-linux-x86_64.tar.gz
+tar -xzf mujoco-3.1.6-linux-x86_64.tar.gz -C ~/.local/
+
+# ---- 5.（可选）可视化环境 ----
+pip install numpy matplotlib
+```
+
+**为什么用 network 安装方式而非 runfile。** CUDA 有两种安装包：`.deb`（network/local）和 `.run`（runfile）。runfile 会试图同时装驱动和 Toolkit——如果你已经用 `ubuntu-drivers` 装好了驱动，runfile 可能覆盖它导致冲突。`.deb` network 方式只装 Toolkit、不碰驱动，更安全。这正是上面"驱动与 Toolkit 解耦"原则的实践。
+
+### Quick Start（5 分钟跑通最小示例）
+
+下面给出一个**最小可编译**的 Mini-MPPI 骨架——不含完整的 CartPole 控制逻辑，只验证"CUDA + Eigen + cuRAND 这套工具链在你的机器上能编译、能启动 kernel、能拿回结果"。跑通它，说明环境配好了；跑不通，对照上文版本表排查。
+
+```bash
+# ---- 1. 建立最小项目 ----
+mkdir -p ~/mini-mppi-hello/{src,build} && cd ~/mini-mppi-hello
+```
+
+最小 `src/hello_mppi.cu`（一个把 Eigen 状态搬进 kernel、用 cuRAND 生成噪声、跑一步 Euler 积分并回传的"冒烟测试"）：
+
+```cpp
+// src/hello_mppi.cu —— 工具链冒烟测试
+#include <cstdio>
+#include <Eigen/Dense>
+#include <curand.h>
+#include <cuda_runtime.h>
+
+// 最小 rollout kernel：每线程对一个标量状态做一步加噪积分
+__global__ void smoke_kernel(const float* noise, float* out, int K) {
+  int k = blockIdx.x * blockDim.x + threadIdx.x;
+  if (k >= K) return;                       // 越界保护——CUDA 铁律
+  Eigen::Matrix<float, 2, 1> x;             // 固定大小 Eigen，栈/寄存器分配
+  x << 1.0f, 0.0f;                          // 初始状态
+  float u = noise[k];                       // 取本线程的噪声当控制
+  x(1) = x(1) + u * 0.01f;                  // 一步 Euler（sinf 等同理用 f 后缀）
+  out[k] = x(1);                            // 回写
+}
+
+int main() {
+  const int K = 1024;
+  float *noise_d, *out_d;
+  cudaMalloc(&noise_d, K * sizeof(float));
+  cudaMalloc(&out_d,   K * sizeof(float));
+
+  // cuRAND 在 GPU 上直接生成 K 个标准正态噪声
+  curandGenerator_t gen;
+  curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_DEFAULT);
+  curandSetPseudoRandomGeneratorSeed(gen, 42);
+  curandGenerateNormal(gen, noise_d, K, 0.0f, 1.0f);
+
+  smoke_kernel<<<(K + 255) / 256, 256>>>(noise_d, out_d, K);
+  cudaError_t err = cudaDeviceSynchronize();  // 同步并捕获 kernel 执行期错误
+  if (err != cudaSuccess) {
+    printf("CUDA error: %s\n", cudaGetErrorString(err));
+    return 1;
+  }
+
+  float out_h[8];
+  cudaMemcpy(out_h, out_d, 8 * sizeof(float), cudaMemcpyDeviceToHost);
+  printf("OK. first 3 outputs: %.4f %.4f %.4f\n", out_h[0], out_h[1], out_h[2]);
+
+  curandDestroyGenerator(gen);
+  cudaFree(noise_d); cudaFree(out_d);
+  return 0;
+}
+```
+
+```bash
+# ---- 2. 一行编译（不写 CMake，先验证工具链）----
+# -arch=sm_XX 改成你 GPU 的计算能力（nvidia-smi 查型号后查表）
+nvcc -arch=sm_75 --expt-relaxed-constexpr \
+     -I/usr/include/eigen3 \
+     src/hello_mppi.cu -lcurand -o build/hello_mppi
+
+# ---- 3. 运行 ----
+./build/hello_mppi
+# 预期输出（具体数值因随机种子而定，但应是三个有限的小数）：
+# OK. first 3 outputs: 0.0148 -0.0061 0.0233
+```
+
+**成功标志**：打印出 `OK.` 加三个有限小数。这一行输出同时验证了五件事：nvcc 能编译、Eigen 头文件能被 nvcc 解析（`--expt-relaxed-constexpr` 生效）、kernel 能启动（`-arch` 匹配硬件）、cuRAND 能生成噪声（链接到 `-lcurand`）、GPU→CPU 回传正常。**失败排查**：编译期报 `constexpr` 错 → 漏了 `--expt-relaxed-constexpr`；报 `unsupported GNU version` → GCC 太新（见上文）；运行期报 `no kernel image is available` → `-arch` 与 GPU 不匹配（章末故障排查手册场景 6）；报 `cannot find -lcurand` → CUDA 库路径没进 `LD_LIBRARY_PATH`。
+
+跑通这个 30 行的冒烟测试后，你就可以放心进入 §10.1，把它扩展成有目录结构、有 CMake、有模板化动力学的完整 Mini-MPPI 项目。
+
+---
+
 ## §10.1 项目架构与设计决策 ⭐⭐
 
 ### 动机：为什么需要想清楚目录结构
@@ -609,6 +778,148 @@ rollout_kernel_smem<CartPoleDynamics<>, CartPoleCost>
     <<<blocks, 256, smem_bytes>>>(x0_d, u_mean_d, noise_d, costs_d, K, T, dt);
 ```
 
+### 代价函数模板：rollout kernel 的另一半
+
+**为什么现在才讲代价函数。** 上面的 kernel 反复调用 `cost_fn.running(x, u)` 和 `cost_fn.terminal(x)`，但 `CostFunc` 究竟长什么样一直没展开——因为它的接口设计要等 kernel 结构定下来才说得清。代价函数和动力学是 rollout kernel 的两块拼图：动力学决定"状态怎么演化"，代价决定"这条轨迹好不好"。两者都用模板参数注入，kernel 结构对它们一无所知——这正是 §10.1 模板化设计哲学的兑现。
+
+**接口约定。** 一个合法的 `CostFunc` 只需提供两个 `__host__ __device__` 方法：`running(x, u)` 返回单步运行代价 $q(x_t, u_t)$，`terminal(x)` 返回终端代价 $\phi(x_T)$。回顾 Ch2 §2.1 的代价结构 $S_k = \phi(x_T) + \sum_{t} q(x_t, u_t)$——kernel 里 `total_cost += running(...)` 累加运行项、最后 `+= terminal(...)` 加终端项，正是这个求和的逐字实现。
+
+```cpp
+// include/cost/cartpole_cost.hpp
+#pragma once
+#include <Eigen/Dense>
+#include <cmath>
+
+// CartPole swing-up 代价：目标是把摆杆从下垂（θ=π）摆到竖直（θ=0）
+struct CartPoleCost {
+  using State   = Eigen::Matrix<float, 4, 1>;
+  using Control = Eigen::Matrix<float, 1, 1>;
+
+  // ---- 运行代价：每个时步都累加 ----
+  __host__ __device__
+  float running(const State& x, const Control& u) const {
+    // 用 (1 - cosθ) 而非 θ² 度量"离竖直有多远"——它在 θ=0 处为 0、
+    // θ=π 处取最大值 2，且对 θ 的 2π 周期性天然兼容（θ 和 θ+2π 等价）。
+    // 若改用 θ²，则 θ=2π（同样是竖直）会被错判为高代价——这是新手常踩的坑。
+    float angle_cost = 1.0f - cosf(x(2));        // 角度偏差 ∈ [0, 2]
+    float pos_cost   = x(0) * x(0);              // 小车别跑太远
+    float vel_cost   = 0.1f * x(3) * x(3);       // 抑制角速度（鼓励停在顶点）
+    float ctrl_cost  = 0.001f * u(0) * u(0);     // 控制能量正则
+    return w_angle * angle_cost + w_pos * pos_cost
+         + w_vel * vel_cost + ctrl_cost;
+  }
+
+  // ---- 终端代价：只在轨迹末端加一次，权重更大以"锁定"目标 ----
+  __host__ __device__
+  float terminal(const State& x) const {
+    float angle_cost = 1.0f - cosf(x(2));
+    return w_terminal * angle_cost
+         + w_vel_term * (x(1) * x(1) + x(3) * x(3));   // 末端速度归零
+  }
+
+  // ---- 权重（struct 成员，便于按任务调）----
+  float w_angle    = 1.0f;
+  float w_pos      = 0.5f;
+  float w_vel      = 1.0f;
+  float w_terminal = 50.0f;    // 终端权重远大于运行权重——见下文解读
+  float w_vel_term = 5.0f;
+};
+```
+
+**代码后的解读。** 三个设计决策值得展开。
+
+其一，**为什么用 $1-\cos\theta$ 而不是 $\theta^2$**。这是 R6B"不是 X 而是 Y"的典型场景。$\theta^2$ 看似直观（偏差越大代价越大），但它把角度当成了无界的实数——而角度是周期的（$\theta$ 与 $\theta+2\pi$ 是同一姿态）。如果 swing-up 过程中摆杆转了一整圈到 $\theta=2\pi$（物理上等于竖直、代价应为 0），$\theta^2=4\pi^2\approx 39$ 却给出巨大的虚假代价，误导优化器去"解开"这一圈。而 $1-\cos\theta$ 自带 $2\pi$ 周期，$\theta=0$ 与 $\theta=2\pi$ 都取 0——它度量的是真正的"姿态差"，不是"数值差"。
+
+其二，**为什么终端权重 $w_\text{terminal}=50$ 远大于运行权重**。回顾 Ch2 §2.1：运行代价累加 $T$ 次、终端代价只加 1 次。如果两者权重相同，终端项会被 $T$ 倍的运行项淹没，优化器只顾"路上每步都还行"而不在乎"最终停没停在顶点"。放大终端权重，等于告诉优化器"过程可以差一点，但结局必须站住"——这对 swing-up 这种"目标态导向"任务至关重要。
+
+其三，**$\sin\theta$、$\cos\theta$ 在代价里同样要用 `cosf`**。和动力学一节同理——代价函数也在 kernel 里被 $K\times T$ 次调用，用双精度 `cos` 会拖慢整个 kernel。
+
+> **本质洞察：代价函数是 MPPI 唯一的"任务规约"——它替代了传统最优控制里需要手工推导的一切。** LQR 要你给出 $Q$、$R$ 矩阵并求解 Riccati 方程；MPC 要你写出约束的解析形式。MPPI 把这一切压缩成一个标量函数 `running + terminal`——你只需要回答"这条轨迹有多好"，剩下的交给采样。这是 MPPI"无梯度、无模型可微性要求"的根源：代价函数甚至可以是不可导的（如"撞墙 +1000 否则 0"），因为采样只需要比较代价的**大小**，不需要它的**梯度**。
+
+### 线程映射方案 B：每 warp 一条轨迹
+
+**为什么需要第二种映射。** 前面所有 kernel 用的都是"每 thread 一条轨迹"（方案 A），Ch2 §2.2 和本节的 warp divergence 分析多次提到"方案 B（每 warp 一条）能从根本上避免分歧"——但一直没给实现。现在补上，让你能亲手对比两种映射的性能差异。
+
+**核心思想。** 方案 A 让一个线程独扛一整条 rollout，导致状态向量全压在该线程的寄存器里（高维状态 → 寄存器溢出）。方案 B 反过来：让一个 **warp（32 线程）协同处理同一条** rollout——状态向量的各分量分摊到 warp 的不同 lane 上，每个线程只持有状态的一部分。这样单线程寄存器需求大降，且同一 warp 处理同一条轨迹，永远走同一条代价分支——**warp divergence 从结构上被消除**。
+
+```cpp
+// ---- 方案 B：每 warp 一条轨迹（warp-per-rollout）----
+// 适合高维状态（如 Quadrotor SD=12）——状态分摊到 warp 的 32 个 lane，
+// 降低单线程寄存器压力，且同一条 rollout 永不发生 warp 内分歧。
+template<class Dynamics, class CostFunc>
+__global__ void rollout_kernel_warp(
+    const float* __restrict__ x0,
+    const float* __restrict__ u_mean,
+    const float* __restrict__ noise,
+    float* __restrict__ costs,
+    int K, int T, float dt)
+{
+  constexpr int SD = Dynamics::state_dim;
+  constexpr int CD = Dynamics::ctrl_dim;
+
+  // ---- 线程到 warp 的映射 ----
+  int global_tid = blockIdx.x * blockDim.x + threadIdx.x;
+  int warp_id    = global_tid / 32;     // 第几个 warp = 第几条 rollout
+  int lane       = global_tid % 32;     // warp 内的 lane 编号 [0,31]
+  int k = warp_id;
+  if (k >= K) return;
+
+  Dynamics dyn;
+  CostFunc cost_fn;
+
+  // ---- 状态放 shared memory，整个 warp 协作读写 ----
+  // 每个 warp 在 shared memory 里有一份 state（SD 个 float）
+  extern __shared__ float s_state[];
+  int warps_per_block = blockDim.x / 32;
+  int local_warp = threadIdx.x / 32;
+  float* x = &s_state[local_warp * SD];   // 本 warp 的状态切片
+
+  // lane 0..SD-1 各负责加载一个状态分量（其余 lane 空闲）
+  if (lane < SD) x[lane] = x0[lane];
+  __syncwarp();                           // warp 内同步（比 __syncthreads 轻）
+
+  float total_cost = 0.0f;
+  for (int t = 0; t < T; ++t) {
+    // 整条 rollout 的 step 由 lane 0 串行算（动力学是强耦合的递推，
+    // 难以在 lane 间细粒度并行——这是方案 B 的固有局限，见下文权衡）
+    if (lane == 0) {
+      typename Dynamics::State xv, xn;
+      for (int i = 0; i < SD; ++i) xv(i) = x[i];
+      typename Dynamics::Control u;
+      for (int d = 0; d < CD; ++d)
+        u(d) = u_mean[t * CD + d] + noise[k * T * CD + t * CD + d];
+      xn = dyn.step(xv, u, dt);
+      for (int i = 0; i < SD; ++i) x[i] = xn(i);
+      total_cost += cost_fn.running(xn, u);
+    }
+    __syncwarp();      // 等 lane 0 写完 shared state，其余 lane 才能继续
+  }
+  if (lane == 0) {
+    typename Dynamics::State xv;
+    for (int i = 0; i < SD; ++i) xv(i) = x[i];
+    total_cost += cost_fn.terminal(xv);
+    costs[k] = total_cost;     // 每条 rollout 由 lane 0 写一次
+  }
+}
+```
+
+**代码后的诚实权衡。** 这个方案 B 实现刻意保留了一个"教学诚实"的细节：动力学 `step` 由 lane 0 串行算，其余 31 个 lane 在 `__syncwarp()` 处等待。**这是因为 CartPole/Quadrotor 这类低维动力学的 `step` 是强耦合的递推**——$x_{t+1}$ 的每个分量都依赖 $x_t$ 的多个分量，难以干净地在 lane 间切分。换句话说，对**低维**系统，方案 B 的"warp 协作"收益有限，甚至可能因为 31 个 lane 空转而比方案 A 更慢。
+
+那方案 B 什么时候真正划算？答案是**高维、可向量化**的动力学——比如状态有几十上百维、`step` 里有大段可并行的矩阵-向量乘（如神经网络世界模型的前向，Ch7 TD-MPC 的场景）。这时把矩阵乘的各行分到 32 个 lane 上并行，warp 协作的收益才显现。
+
+> **本质洞察：线程映射没有"更优"，只有"更匹配"。** 方案 A（每线程一条）匹配低维、廉价的动力学——简单、寄存器够用、并行度直接等于 K。方案 B（每 warp 一条）匹配高维、可向量化的动力学——单线程寄存器压力小、无 warp 分歧，但要求 `step` 内部有可挖掘的并行性。MPPI-Generic 的做法是**两者都支持**，让用户按动力学复杂度选——这正是 Ch2 §2.3 "Sampler/Controller 维度正交"设计能容纳不同映射的价值。本章先用方案 A 跑通，理解方案 B 的存在是为了在高维场景下有牌可打。
+
+**方案 A vs 方案 B 对比表。**
+
+| 维度 | 方案 A（每线程一条） | 方案 B（每 warp 一条） |
+|------|---------------------|----------------------|
+| 并行度 | $K$ 条 = $K$ 个线程 | $K$ 条 = $K$ 个 warp = $32K$ 个线程 |
+| 单线程寄存器压力 | 高（整条状态压在一个线程） | 低（状态摊到 shared memory） |
+| Warp divergence | 有（32 条不同 rollout 走不同分支） | 无（同 warp 同 rollout） |
+| 实现复杂度 | 低（最直观） | 高（lane 映射 + `__syncwarp`） |
+| 适用动力学 | 低维、廉价 `step`（CartPole） | 高维、可向量化 `step`（神经网络模型） |
+| shared memory 用量 | 仅 `u_mean`（可选） | 每 warp 一份 state（必需） |
+
 ### Register Pressure 与 Warp Divergence 分析
 
 **Register Pressure（寄存器压力）。** 每个 CUDA 线程有有限的寄存器资源（由编译器分配）。当 `step` 函数中的中间变量太多时，编译器会被迫把一部分寄存器**溢出到局部内存（local memory）**——而局部内存实际上是在 global memory 上的，速度慢 100 倍以上。
@@ -857,6 +1168,180 @@ private:
 **warm-start 的 `std::rotate` 实现。** `std::rotate` 是 C++ 标准库的原地旋转函数，它把 `[first, middle)` 和 `[middle, last)` 两段交换位置——效果就是"左移 CD 个元素、末尾 CD 个元素挪到前面"。紧接着的 `std::fill` 把末尾 CD 个元素置零（中性填充）。这两步合起来就是 Ch2 §2.1 的 warm-start shift。
 
 > **反事实：如果每周期从零冷启动。** 把 `std::rotate` 和 `std::fill` 注释掉，改成 `std::fill(u_mean_.begin(), u_mean_.end(), 0.0f)`——每周期从零控制序列开始优化。在 CartPole swing-up 任务中，K=2048、T=30 的配置下，warm-start 版约 3 秒内摆起来；冷启动版在 10 秒内未能成功。差距的根因就是 Ch2 §2.1 的本质洞察：warm-start 改善的是提议分布的**位置**，比增加 K（改善**数量**）重要得多。
+
+### 数值稳定性深挖：$\rho$ 减法、log-sum-exp 与下溢/上溢
+
+前置自测第 1 题问"不减 $\rho$ 会怎样"——这一节把它从"会 NaN"的口头结论，落实成**浮点位级别的机理**，并给出比朴素 $\rho$ 减法更稳健的 log-sum-exp 实现。
+
+**朴素权重计算为什么会炸。** 权重公式 $w_k = \exp(-S_k/\lambda)$。假设代价尺度 $S_k\approx 1200$、温度 $\lambda=1$，则 $w_k=e^{-1200}$。IEEE 754 单精度 `float` 的最小正规数约 $1.18\times 10^{-38}$，对应指数下限约 $e^{-87}$——$e^{-1200}$ 远在其下，**直接下溢为 0**。于是所有 $w_k=0$，归一化时 $\eta=\sum w_k=0$，最后 $w_k/\eta=0/0=$ NaN。这就是章首前置自测第 1 题答案的浮点机理：不是"数太小算不准"，而是"小到被截断成精确的 0，再除以 0 得 NaN"。
+
+**$\rho$ 减法为什么救场。** 取 $\rho=\min_k S_k$，改算 $w_k=\exp(-(S_k-\rho)/\lambda)$。因为 $S_k-\rho\geq 0$ 且最小值恰为 0，所以指数 $-(S_k-\rho)/\lambda\in(-\infty, 0]$，$w_k\in(0,1]$——**代价最低的那条 rollout 权重恰好等于 1**，其余在 $(0,1)$ 间。$\eta=\sum w_k\geq 1$ 永远非零，除法安全。注意 $\rho$ 减法**不改变归一化后的权重**：$\frac{e^{-(S_k-\rho)/\lambda}}{\sum_j e^{-(S_j-\rho)/\lambda}}=\frac{e^{-S_k/\lambda}e^{\rho/\lambda}}{e^{\rho/\lambda}\sum_j e^{-S_j/\lambda}}=\frac{e^{-S_k/\lambda}}{\sum_j e^{-S_j/\lambda}}$——分子分母的公共因子 $e^{\rho/\lambda}$ 约掉了。这正是它的精妙：**只挪动了未归一化权重的尺度，不动最终概率**。
+
+> **本质洞察：$\rho$ 减法就是 softmax 数值稳定化的"减最大值"技巧，只是符号反了一下。** 机器学习里算 softmax $\frac{e^{z_k}}{\sum e^{z_j}}$，标准做法是减去 $\max_j z_j$ 防上溢。MPPI 里 $z_k=-S_k/\lambda$，"减最大 $z$"等价于"减最小 $S$"——也就是减 $\rho$。理解了这个对应，你就明白 MPPI 的权重计算本质上是一个 **temperature 为 $\lambda$ 的 softmax over 负代价**——它和深度学习里见过无数次的那个 softmax 是同一个东西。这也解释了 Ch5 把 MPPI 和 CEM 统一在"采样-加权"框架下的合理性：CEM 用硬阈值（精英/非精英 0-1 权重），MPPI 用软的 softmax 权重，二者是同一谱系的两端。
+
+**更稳健的写法：log-sum-exp。** $\rho$ 减法解决了下溢，但还有一个隐患——如果你需要的不是权重本身，而是归一化常数 $\eta$ 的**对数**（例如做模型证据估计、或自适应 $\lambda$ 时要比较不同 $\lambda$ 下的 $\log\eta$），直接 $\log(\sum e^{\cdot})$ 仍可能在求和阶段溢出。通用的数值稳定原语是 **log-sum-exp（LSE）**：
+
+$$\operatorname{LSE}(a_1,\dots,a_K) = \log\sum_{k} e^{a_k} = a^* + \log\sum_k e^{a_k - a^*}, \quad a^* = \max_k a_k.$$
+
+在 MPPI 里 $a_k=-S_k/\lambda$，$a^*=-\rho/\lambda$（因为 $\rho=\min S_k$ 对应最大的 $a_k$）。把 $a^*$ 提到对数外面，括号内每项 $e^{a_k-a^*}\in(0,1]$，求和不溢出。下面给出 LSE 版的权重计算，它在数学上与 $\rho$ 减法等价，但额外提供了稳定的 $\log\eta$：
+
+```cpp
+// ---- log-sum-exp 版权重计算（比朴素 ρ 减法更通用）----
+// 输入：costs_h_[K]，温度 lambda_
+// 输出：weights_[K]（归一化），以及 log_eta（归一化常数的对数）
+float compute_weights_lse(float lambda) {
+  // a_k = -S_k / lambda；a* = max_k a_k = -rho / lambda
+  float a_max = -std::numeric_limits<float>::infinity();
+  for (int k = 0; k < K_; ++k) {
+    float a = -costs_h_[k] / lambda;
+    a_max = std::max(a_max, a);          // 等价于找 rho = min S_k
+  }
+  // sum_exp = Σ exp(a_k - a*)；每项 ∈ (0,1]，不会上溢
+  double sum_exp = 0.0;                  // 用 double 累加，进一步防误差累积
+  for (int k = 0; k < K_; ++k) {
+    float a = -costs_h_[k] / lambda;
+    weights_[k] = expf(a - a_max);       // 未归一化权重 ∈ (0,1]
+    sum_exp += weights_[k];
+  }
+  float log_eta = a_max + logf((float)sum_exp);   // log Σ exp(a_k)，稳定
+  // 归一化：w_k /= Σ
+  float inv = 1.0f / (float)sum_exp;
+  for (int k = 0; k < K_; ++k) weights_[k] *= inv;
+  return log_eta;
+}
+```
+
+**为什么 `sum_exp` 用 `double` 累加。** 这是一个容易忽略但真实存在的精度问题：$K$ 可达 8192，把 8192 个 `float` 累加，后期的小项加到已经很大的部分和上会因尾数位不够而被"吃掉"（catastrophic cancellation 的近亲——加法吸收）。用 `double` 中间累加，再转回 `float`，几乎零成本地消除这一误差。这也是为什么生产级 MPPI 库（如 MPPI-Generic）的归约普遍用更宽的累加类型。
+
+### 把加权更新搬上 GPU：reduction kernel 与 ESS
+
+§10.4 开头分析过：CPU 版的最大瓶颈是 Step 3 把 $K\times T\times m\approx 4$ MB 噪声回传 CPU。现在兑现"写一个 `update_control_kernel` 在设备端完成加权求和"的承诺——这样每周期只回传 $T\times m<1$ KB 的更新后控制序列，传输量降约 4000 倍。
+
+**设计要点：两阶段归约。** GPU 上的加权求和 $\Delta u_t=\sum_k \hat w_k\,\epsilon_k(t)$ 是一个**按 $(t,d)$ 分组、沿 $k$ 求和**的归约。最直接的并行方案：让每个 $(t,d)$ 对由一个 block 负责，block 内 256 个线程协作沿 $k$ 累加，用 shared memory 做 block 内归约。
+
+```cpp
+// ---- GPU 端加权更新 kernel ----
+// grid = T * CD 个 block（每个 block 算一个 (t,d) 的 Δu），block = 256 线程
+// 输出 delta_u[T*CD]，控制器拿回后做 u_mean += delta_u
+__global__ void update_control_kernel(
+    const float* __restrict__ weights,  // [K] 归一化权重（已在 GPU 上）
+    const float* __restrict__ noise,    // [K * T * CD]（rollout 时已在 GPU）
+    float* __restrict__ delta_u,        // [T * CD] 输出
+    int K, int T, int CD)
+{
+  int td = blockIdx.x;                  // 第几个 (t,d) 对 ∈ [0, T*CD)
+  int t  = td / CD;
+  int d  = td % CD;
+  int tid = threadIdx.x;
+
+  // ---- 每个线程沿 k 方向做跨步累加（grid-stride over K）----
+  float partial = 0.0f;
+  for (int k = tid; k < K; k += blockDim.x) {
+    partial += weights[k] * noise[k * T * CD + t * CD + d];
+  }
+
+  // ---- block 内 shared memory 归约 ----
+  extern __shared__ float sdata[];
+  sdata[tid] = partial;
+  __syncthreads();
+  // 树形归约：256 → 128 → ... → 1
+  for (int s = blockDim.x / 2; s > 0; s >>= 1) {
+    if (tid < s) sdata[tid] += sdata[tid + s];
+    __syncthreads();
+  }
+  // lane 0 写出本 (t,d) 的加权和
+  if (tid == 0) delta_u[td] = sdata[0];
+}
+```
+
+**代码后的解读。** 三处工程细节。其一，**grid-stride 累加**（`k += blockDim.x`）让 256 个线程覆盖任意大的 $K$——$K=8192$ 时每个线程累加 32 项。其二，**树形归约**把 256 个部分和在 $\log_2 256=8$ 步内合成一个，每步线程数减半。注意每步后的 `__syncthreads()` 不可省（§10.3 陷阱已警告：shared memory 写后读必须同步）。其三，**为什么不用一个 `atomicAdd` 直接累加到 `delta_u[td]`**——几千个线程对同一地址做原子加会严重串行化（争抢同一把锁），树形归约把争抢限制在 block 内的 shared memory，快得多。
+
+**启动与回传。** 配合这个 kernel，控制器的 Step 3 改写为：
+
+```cpp
+// ==== Step 3（GPU 版）：设备端加权更新，只回传 delta_u ====
+// 前提：weights_ 已拷到 weights_d_，noise_d_ 还在 GPU 上（rollout 时生成）
+CUDA_CHECK(cudaMemcpy(weights_d_, weights_.data(),
+           K_ * sizeof(float), cudaMemcpyHostToDevice));
+int smem = 256 * sizeof(float);
+update_control_kernel<<<T_ * CD, 256, smem>>>(
+    weights_d_, noise_d_, delta_u_d_, K_, T_, CD);
+CUDA_CHECK(cudaDeviceSynchronize());
+// 只回传 T*CD 个 float（<1 KB），而非 4 MB 噪声
+CUDA_CHECK(cudaMemcpy(delta_u_h_.data(), delta_u_d_,
+           T_ * CD * sizeof(float), cudaMemcpyDeviceToHost));
+for (int i = 0; i < T_ * CD; ++i) u_mean_[i] += delta_u_h_[i];
+```
+
+> **本质洞察：MPPI 的全部计算都"尴尬并行"，但归约是唯一需要线程协作的环节——它决定了你对 GPU 编程的理解深度。** rollout 是纯并行（线程互不通信），新手都能写对；但加权求和需要"把 K 个线程的结果合并成一个"，这里才真正考验对 shared memory、`__syncthreads`、原子操作的掌握。一个工程师会不会写 MPPI，看 rollout 看不出来，看他怎么写这个归约就知道了。这也是为什么本节把它单独拎出来讲——它是从"会调 API"到"懂 GPU"的分水岭。
+
+**ESS（有效样本数）监控。** 权重算出来后，最重要的健康探针是 ESS（Effective Sample Size, 有效样本数）：
+
+$$\text{ESS} = \frac{1}{\sum_{k=1}^{K} \hat w_k^2}, \qquad \text{ESS}\in[1, K].$$
+
+它的含义：$K$ 个加权样本"相当于"多少个等权样本。两个极端——若某条 rollout 独占全部权重（$\hat w_1=1$，其余 0），$\text{ESS}=1$（提议分布只有一条样本起作用，等于没采样）；若权重完全均匀（$\hat w_k=1/K$），$\text{ESS}=K$（所有样本平等贡献，但这意味着代价没区分度、$\lambda$ 太大）。健康区间是 $\text{ESS}/K\in[5\%, 50\%]$（章末速查表的调参依据正源于此）。
+
+```cpp
+// ---- ESS 监控：在 compute_weights 后调用 ----
+float compute_ess() const {
+  double sum_sq = 0.0;
+  for (int k = 0; k < K_; ++k) sum_sq += (double)weights_[k] * weights_[k];
+  return (float)(1.0 / sum_sq);     // weights_ 已归一化，∑w=1
+}
+```
+
+**ESS 怎么用：它是 $\lambda$ 的"活体探针"。** ESS 不只是事后诊断，更可驱动**自适应温度**。如果某周期 ESS 突然跌到 $K$ 的 1%（权重塌缩到极少数 rollout），说明 $\lambda$ 相对当前代价尺度太小——可临时调大 $\lambda$ 恢复权重多样性。反过来 ESS 贴近 $K$（权重太平），说明 $\lambda$ 太大、采样在"和稀泥"，可调小 $\lambda$ 加大区分度。一个简单的自适应规则：
+
+```cpp
+// ---- 基于 ESS 的自适应温度（每周期可选执行）----
+void adapt_lambda() {
+  float ess = compute_ess();
+  float ratio = ess / K_;
+  if      (ratio < 0.05f) lambda_ *= 1.2f;   // 权重太尖 → 升温（更软）
+  else if (ratio > 0.50f) lambda_ *= 0.9f;   // 权重太平 → 降温（更尖）
+  // 夹紧到合理范围，防止失控漂移
+  lambda_ = std::clamp(lambda_, lambda_min_, lambda_max_);
+}
+```
+
+**为什么不直接固定一个"完美"的 $\lambda$。** 因为代价尺度在一次任务里会变。CartPole swing-up 初期摆杆下垂，代价 $\sim 2T$（角度项满额）；摆起来后代价 $\sim 0$。同一个 $\lambda$ 在初期可能让权重塌缩、在末期可能让权重太平——固定 $\lambda$ 是"刻舟求剑"。ESS 自适应让温度随代价尺度自动伸缩，这正是 Ch3 提到的"让提议分布更聪明"在温度维度上的体现。
+
+### 协方差自适应：让噪声幅度随收敛自动收缩
+
+固定噪声标准差 $\sigma$（章首速查表建议"执行器范围 10%-50%"）也有同样的"刻舟求剑"问题：swing-up 初期需要**大** $\sigma$ 充分探索（找到摆起来的剧烈动作），收敛后需要**小** $\sigma$ 精细微调（大 $\sigma$ 会让控制在最优点附近抖动）。协方差自适应（covariance adaptation）让 $\sigma$ 随收敛程度自动收缩。
+
+**与 CEM 的联系与区别（R6A 双重解读）。** Ch5 讲过 CEM 用精英样本的**样本协方差**直接拟合下一轮的采样分布——这是"硬"自适应。MPPI 没有精英集，但可以用**加权样本协方差**做"软"自适应：用归一化权重 $\hat w_k$ 对噪声 $\epsilon_k$ 加权，估计当前控制序列周围"好样本"的散布，据此更新 $\sigma$。
+
+$$\hat\sigma_d^2 \;=\; \sum_{k=1}^{K} \hat w_k\,\big(\epsilon_k(d)\big)^2 \quad\text{(每个控制维度 } d \text{ 独立估计)}.$$
+
+```cpp
+// ---- 加权协方差自适应（对角、逐控制维度）----
+// 用归一化权重对噪声平方加权，估计"高权重样本"的散布
+void adapt_sigma() {
+  std::vector<double> var(CD, 0.0);
+  for (int k = 0; k < K_; ++k) {
+    float w = weights_[k];
+    for (int t = 0; t < T_; ++t)
+      for (int d = 0; d < CD; ++d) {
+        float e = noise_h_[k * T_ * CD + t * CD + d];
+        var[d] += (double)w * e * e;     // 加权平方，∑_t 上摊到全时域
+      }
+  }
+  for (int d = 0; d < CD; ++d) {
+    float new_sigma = sqrtf((float)(var[d] / T_));   // 时域平均
+    // 指数滑动平均，避免单周期噪声估计的剧烈跳变
+    sigma_vec_[d] = (1.0f - beta_) * sigma_vec_[d] + beta_ * new_sigma;
+    // 下限保护：σ 不能塌到 0（否则彻底停止探索，陷在局部最优）
+    sigma_vec_[d] = std::max(sigma_vec_[d], sigma_floor_);
+  }
+}
+```
+
+**代码后的两个关键决策。** 其一，**指数滑动平均（EMA, $\beta\approx 0.1$）而非直接替换**——单周期的加权协方差估计噪声很大（毕竟只有 $K$ 个样本），直接拿它当新 $\sigma$ 会让噪声幅度剧烈跳变、控制不稳。EMA 让 $\sigma$ 平滑演化。其二，**$\sigma$ 下限保护（`sigma_floor_`）至关重要**——这是 R6B 反事实的经典场景：
+
+> **反事实：如果不设 $\sigma$ 下限会怎样。** 协方差自适应一旦收敛，加权协方差会持续缩小，$\sigma\to 0$。一旦 $\sigma=0$，所有 rollout 的噪声 $\epsilon_k=0$，K 条轨迹**退化成同一条**——提议分布坍缩成一个点，MPPI 彻底失去探索能力。此后哪怕环境突变（如 CartPole 被外力推一下）需要重新探索，$\sigma=0$ 也再也"长不回来"，控制器卡死在过时的解上。下限保护 `sigma_floor_` 保证永远留一点探索余量——这与强化学习里熵正则（entropy bonus）防止策略过早收敛是同一种智慧：**永远不要让探索归零**。
+
+**自适应的开关哲学。** 和 SGF 一样，ESS 自适应温度和协方差自适应都是**可选增强**，不是必需。本章的基础实现先用固定 $\lambda$、固定 $\sigma$ 跑通——确认算法正确后，再按需开启自适应。过早引入自适应会让调试复杂化（一个 bug 你分不清是 rollout 错、权重错、还是自适应规则把 $\lambda/\sigma$ 带跑偏了）。这再次呼应 §10.1 的"先跑通再优化"。
 
 ### Savitzky-Golay 平滑集成的设计决策
 
@@ -1469,6 +1954,31 @@ def plot_mppi_debug(data_file):
 | 3 | `mj_loadXML` 是否成功（检查返回值和 error 字符串） |
 | 4 | XML 模型中的执行器数量（`m->nu`）是否与 CONTROL_DIM 匹配 |
 
+### 场景 6：编译/运行报架构或编译器版本错误
+
+环境配置阶段最高频的两类拦路虎，集中排查（详细机理见章首"环境配置指南"）：
+
+| 症状 | 可能原因 | 排查步骤 | 相关位置 |
+|------|---------|---------|---------|
+| `nvcc fatal: Unsupported gpu architecture 'compute_XX'` | `-arch` 写了 nvcc 不认识的计算能力 | 升级 CUDA Toolkit，或把 `-arch` 改成当前 Toolkit 支持的值 | 环境配置指南、§10.1 |
+| 运行期 `no kernel image is available for execution on the device` | `-arch` 低于实际 GPU 或不匹配 | `nvidia-smi` 查 GPU 型号 → 查表得计算能力 → 填对 `-arch`；或用 `-gencode` 做 fat binary | §10.1 陷阱 |
+| `#error -- unsupported GNU version! gcc versions later than N are not supported` | 系统 GCC 比 CUDA 支持的上限新 | 升级 CUDA，或装旧 GCC 并 `-DCMAKE_CUDA_HOST_COMPILER=g++-11` | 环境配置指南（GCC-CUDA 耦合） |
+| `cannot find -lcurand` | CUDA 库路径未进 `LD_LIBRARY_PATH` | `export LD_LIBRARY_PATH=/usr/local/cuda-12.4/lib64:$LD_LIBRARY_PATH` | 环境配置指南安装步骤 |
+| `constexpr __host__ function ... not allowed` in Eigen | 漏了 `--expt-relaxed-constexpr` | CMake 的 `CMAKE_CUDA_FLAGS` 加上该 flag | §10.1 CMake 配置 |
+
+**最常见根因**：CUDA Toolkit 与系统 GCC 大版本错配（占环境类故障的 50%+），根源是误以为"装最新的就行"——而 nvcc 对 host 编译器有严格上限。
+
+### 场景 7：自适应让 $\lambda$ 或 $\sigma$ 漂移失控
+
+开启 §10.4 的 ESS 自适应温度 / 协方差自适应后出现的新故障：
+
+| 症状 | 可能原因 | 排查步骤 |
+|------|---------|---------|
+| 控制越来越"软"、响应迟钝 | $\lambda$ 单调上升未夹紧 | 检查 `std::clamp(lambda_, lambda_min_, lambda_max_)` 是否生效 |
+| K 条轨迹塌缩成一条、失去探索 | $\sigma\to 0$ 无下限保护 | 检查 `sigma_floor_` 是否设置且 `std::max` 生效 |
+| $\sigma$ 单周期剧烈跳变 | 直接替换而非 EMA | 加权协方差用指数滑动平均（$\beta\approx 0.1$）平滑 |
+| ESS 始终 $\approx K$ 或 $\approx 1$ | 自适应步长太小/代价尺度异常 | 先关自适应、固定 $\lambda$ 跑通，确认基础算法正确 |
+
 ---
 
 ## 延伸阅读
@@ -1501,6 +2011,31 @@ def plot_mppi_debug(data_file):
 | 任务性能 | 30% | CartPole swing-up 和 Quadrotor/Go2 hover 的成功率和最终代价 |
 | 基准测试 | 20% | K/T 扫参曲线完整、GPU vs CPU 对比有统计量、nsys/ncu 分析有发现 |
 | 文档 | 10% | README 含关键设计决策、如何复现、已知局限 |
+
+---
+
+## 版本信息速查
+
+本章代码与命令在以下版本组合下验证通过。复现遇到问题时，先核对此表（版本错配是工程实践最高频的"伪 bug"来源）。
+
+| 工具 / 库 | 验证版本 | 作用 | 备注 |
+|----------|---------|------|------|
+| NVIDIA 驱动 | 535.x | 决定 CUDA 运行时上限 | `nvidia-smi` 右上角的 CUDA 版本是驱动上限，非 Toolkit 版本 |
+| CUDA Toolkit | 12.4 | nvcc 编译器、cuRAND | 须 $\leq$ 驱动上限；与 GCC 大版本耦合 |
+| cuRAND | 随 CUDA 12.4 | 设备端噪声生成 | `CURAND_RNG_PSEUDO_DEFAULT`（XORWOW）；批量正态可换 Philox（$4\times32\times10$）提效 |
+| GCC / G++ | 11.4 | nvcc 的 host 编译器 | CUDA 12.4 支持上限 GCC 13；本章用 11 求稳 |
+| CMake | 3.27 | 构建系统 | $\geq 3.18$ 才有一等 CUDA 支持 |
+| Eigen | 3.4.0 | 固定大小矩阵容器 | 精确锁定；3.3 在设备代码有坑 |
+| MuJoCo | 3.1.6 | 接触动力学引擎（§10.5） | 3.0+ 起开源、C API 稳定 |
+| Python | 3.10 | 可视化脚本（`visualize.py`） | 与 C++ 主程序解耦，版本宽松 |
+| numpy / matplotlib | 1.26 / 3.8 | 调试可视化 | numpy 2.0 亦已验证 |
+
+**一行环境自检命令**（跑通即说明工具链齐备）：
+
+```bash
+nvidia-smi | grep "CUDA Version" && nvcc --version | grep release && \
+  pkg-config --modversion eigen3 && cmake --version | head -1
+```
 
 ---
 
