@@ -65,7 +65,7 @@
     §D5.7 MINCO vs B 样条：系统对比与选型
 ```
 
-**本章方法谱系**：四旋翼轨迹优化从 2011 年 Mellinger-Kumar 的 minimum snap QP 起步（24M 个决策变量的约束 QP），2016 年由 Richter-Bry-Roy 改进为闭式端点导数参数化（降到 12(M+1) 变量），2020 年由 Wang Zhepei 的 `large_scale_traj_optimizer` 发现带状矩阵结构（降到 4M-3 变量 + O(M) 求解），2022 年由 GCOPTER/MINCO 论文完成完整理论框架（一般 s 阶 + diffeomorphic 全无约束化 + L-BFGS）。安全走廊从 2014 年 IRIS 的 SDP 方法起步，经 2017 年 DecompUtil 的椭球膨胀工程化，到 2025 年 FIRI 用 SOCP 替代 SDP 实现 100 倍加速并保证种子包含，再到 SUPER 的 CIRI 将走廊推广到构型空间。
+**本章方法谱系**：四旋翼轨迹优化从 2011 年 Mellinger-Kumar 的 minimum snap QP 起步（24M 个决策变量的约束 QP），2016 年由 Richter-Bry-Roy 改进为闭式端点导数参数化（降到 12(M+1) 变量），2021 年由 Wang Zhepei 的 `large_scale_traj_optimizer` 发现带状矩阵结构（降到 4M-3 变量 + O(M) 求解），2022 年由 GCOPTER/MINCO 论文完成完整理论框架（一般 s 阶 + diffeomorphic 全无约束化 + L-BFGS）。安全走廊从 2014 年 IRIS 的 SDP 方法起步，经 2017 年 DecompUtil 的椭球膨胀工程化，到 2025 年 FIRI 用 SOCP 替代 SDP 实现 100 倍加速并保证种子包含，再到 SUPER 的 CIRI 将走廊推广到构型空间。
 
 | 小节 | 主题 | 难度 | 预计阅读 |
 |------|------|------|---------|
@@ -123,7 +123,7 @@
 | 2014 | Deits, Tedrake (IRIS) | WAFR | ~800 | SDP 最大体积内切椭球 → 凸走廊 | SDP 慢、不保证种子包含 |
 | 2016 | Richter, Bry, Roy | ISRR | ~1200 | 闭式 QP：端点导数参数化 | 仍 O(sM) 变量、$A^{-1}$ 非带状 |
 | 2017 | Liu 等 (DecompUtil) | RA-L | ~500 | **SFC 工程化**：椭球膨胀 → 凸多面体 | 不保证种子包含、体积非最大 |
-| 2020 | Wang 等 (large\_scale) | RA-L | ~200 | **MINCO 前身**：发现带状结构、O(M) 梯度 | 仅 s=4 特例、无完整理论 |
+| 2021 | Wang 等 (large\_scale) | ICRA | ~200 | **MINCO 前身**：发现带状结构、O(M) 梯度 | 仅 s=4 特例、无完整理论 |
 | 2022 | Wang, Zhou, Xu, Gao (GCOPTER) | TRO | ~400 | **MINCO 完整理论**：一般 s 阶 + L-BFGS 全无约束化 | header-only 代码 |
 | 2022 | Zhou 等 (EGO-v2) | Sci. Rob. | ~500 | MINCO 用于 10 机林地群飞 | 去中心化碰撞为软约束 |
 | 2025 | Wang Q. 等 (FIRI) | TRO | ~50 | SOCP 替代 SDP、种子包含保证、100 倍加速 | — |
@@ -132,7 +132,7 @@
 **演化主线**：
 
 ```text
-Mellinger 2011 ──→ Richter 2016 ──→ large_scale 2020 ──→ GCOPTER/MINCO 2022
+Mellinger 2011 ──→ Richter 2016 ──→ large_scale 2021 ──→ GCOPTER/MINCO 2022
   (min-snap QP)    (闭式端点 QP)    (O(M) 解析梯度)      (隐式系数 + L-BFGS)
      24M 变量       12(M+1) 变量     4M-3 变量             全无约束化
                                                                 │
@@ -197,9 +197,9 @@ $$\min_d \ d^T \underbrace{[A^{-T} H A^{-1}]}_{Q(T)} d$$
 
 > **对比性思维："不是减少变量，而是选对了变量"**。Richter 的改进是换了**表示基**（系数 → 端点导数），但变量数量级没变。MINCO 的突破不是在已有变量中做更好的参数化，而是发现了一个**全新的最小变量集**——中间路点和段时间。这个变量集之所以"够用"，是因为最优性条件自动确定了所有其他信息。
 
-**第三阶段：large_scale_traj_optimizer 2020——MINCO 前身**
+**第三阶段：large_scale_traj_optimizer 2021——MINCO 前身**
 
-Wang Zhepei 在 2020 年 RA-L 论文 "Generating Minimum-Snap Quadrotor Trajectories Really Fast" 中发现了关键的数学结构：
+Wang Zhepei 在 2021 年 ICRA 论文 "Generating Minimum-Snap Quadrotor Trajectories Really Fast" 中发现了关键的数学结构：
 
 > 对于 minimum snap 问题（$s=4$），如果中间点只约束**位置**（不约束高阶导数），那么最优解的多项式系数 $c$ 可以通过一个**带状线性方程组** $M(T) \cdot c = b(q)$ 直接确定——带宽仅为 $2s = 8$。
 
@@ -2153,7 +2153,7 @@ MINCO 的 $O(M)$ 求解速度使得高频重规划成为可能。以下是常见
 | 2016 | Richter-Bry-Roy 闭式 QP | ISRR 2016 | 端点导数参数化，$12(M+1)$ 变量 |
 | 2017 | DecompUtil + SFC 管线 | Liu, RA-L 2017 | 椭球膨胀生成走廊，首次完整 SFC+QP 管线 |
 | 2018 | Bernstein basis trajectory | Gao, ICRA 2018 | 用 Bernstein 多项式简化凸包约束 |
-| 2020 | 大规模轨迹优化器 | Wang, RA-L 2020 | 发现带状结构，$O(M)$ 求解，MINCO 的前身 |
+| 2021 | 大规模轨迹优化器 | Wang, ICRA 2021 | 发现带状结构，$O(M)$ 求解，MINCO 的前身 |
 | 2020 | Teach-Repeat-Replan | Gao, TRO 2020 | 完整系统集成，示教-重复-重规划 |
 | 2022 | **GCOPTER/MINCO** | Wang, TRO 2022 | 完整理论：一般 $s$ 阶 + diffeomorphic + L-BFGS |
 | 2022 | EGO-Planner-v2 群飞 | Zhou, Sci. Rob. 2022 | MINCO 在 10 机群飞中的验证 |
@@ -2165,7 +2165,7 @@ MINCO 的 $O(M)$ 求解速度使得高频重规划成为可能。以下是常见
 
 > **对比性思维：两条主线的交汇**
 >
-> MINCO 的发展有两条主线：**轨迹表示**（Mellinger → Richter → Wang 2020 → GCOPTER）和**安全走廊**（IRIS → DecompUtil → FIRI → CIRI）。两条主线在 GCOPTER (2022) 首次完整交汇——MINCO 轨迹表示 + SFC 走廊约束 + L-BFGS 无约束优化，形成了一个**闭合的优化框架**。SUPER (2025) 在此基础上加了**安全层**（双轨迹 + 递归可行性），标志着从"规划最优"到"规划安全"的范式转移。
+> MINCO 的发展有两条主线：**轨迹表示**（Mellinger → Richter → Wang 2021 → GCOPTER）和**安全走廊**（IRIS → DecompUtil → FIRI → CIRI）。两条主线在 GCOPTER (2022) 首次完整交汇——MINCO 轨迹表示 + SFC 走廊约束 + L-BFGS 无约束优化，形成了一个**闭合的优化框架**。SUPER (2025) 在此基础上加了**安全层**（双轨迹 + 递归可行性），标志着从"规划最优"到"规划安全"的范式转移。
 
 ---
 

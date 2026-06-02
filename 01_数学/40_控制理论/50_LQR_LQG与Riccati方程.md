@@ -528,7 +528,7 @@ $$F(j\omega)^* R F(j\omega)\succeq R,\quad\forall\omega\in\mathbb R,$$
 即 $\|R^{1/2}F(j\omega)R^{-1/2}\|\ge1$。单输入时简化为 $|1+K(j\omega I-A)^{-1}B|\ge1$。
 
 **证明**：CARE 可改写为 $A_{cl}^\top P+PA_{cl}+Q+K^\top RK=0$，其中 $A_{cl}=A-BK$。将 Lyapunov 方程两边乘 $(j\omega I-A_{cl})^{-1}$ 和 $(-j\omega I-A_{cl}^\top)^{-1}$ 后求迹，利用 $F(j\omega)=I+K(j\omega I-A)^{-1}B$ 以及 $K=R^{-1}B^\top P$，经过代数操作（详见 Anderson-Moore Ch.11 或 Zhou-Doyle-Glover §14.4）得：
-$$F(j\omega)^*RF(j\omega)=R+B^\top[(−j\omega I−A^\top)^{−1}Q(j\omega I−A)^{−1}+P(j\omega I−A)^{−1}BB^\top(−j\omega I−A^\top)^{−1}P]B\succeq R.$$
+$$F(j\omega)^*RF(j\omega)=R+B^\top(−j\omega I−A^\top)^{−1}Q(j\omega I−A)^{−1}B\succeq R.$$
 
 **推论（单输入裕度）**：当 $m=1$（单输入），$R$ 为正标量 $r$，回差不等式化为 $|F(j\omega)|^2\ge1$，即 Nyquist 图上 $L(j\omega)=K(j\omega I-A)^{-1}B$ 永远不进入以 $-1$ 为圆心、半径为 1 的**单位圆**。这一几何条件立刻给出：
 - **增益裕度**：$L$ 可以乘以任何 $k\in[1/2,\infty)$ 而不穿过 $-1$，即 $\text{GM}\in[1/2,\infty)$（6 dB 下限、无上限）。

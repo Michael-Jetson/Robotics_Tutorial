@@ -107,19 +107,26 @@ ocs2_robotic_examples/
 
 核心文件职责：
 
-不同 OCS2 版本的文件名可能变化，下表按职责阅读。
+下表的文件名以 `leggedrobotics/ocs2` 仓库 `main` 分支为准。不同版本/旧 fork 命名可能略有出入，但职责划分稳定，按职责阅读即可。
 
 | 文件 | 职责 |
 |------|------|
-| `MobileManipulatorInterface.cpp` | 读取配置、加载模型、组装 OCP、创建 solver |
-| `MobileManipulatorPreComputation.cpp` | 预计算 Pinocchio 运动学和缓存 |
-| `ManipulatorModelInfo.cpp` | 解析模型类型、维度、frame 名称 |
-| 轮式底盘动力学源文件 | 差速底盘 + 臂运动学流映射 |
-| 默认机械臂动力学源文件 | 默认机械臂运动学模型 |
-| `EndEffectorCost.cpp` | 末端位姿 tracking 代价 |
-| `EndEffectorConstraint.cpp` | 末端约束或软约束包装 |
-| `JointVelocityLimits.cpp` | 关节速度限制 |
+| `MobileManipulatorInterface.cpp` | 读取配置、加载模型、组装 `OptimalControlProblem`、创建 solver |
+| `MobileManipulatorPreComputation.h/.cpp` | 预计算 Pinocchio 运动学和缓存 |
+| `ManipulatorModelInfo.h` | 模型类型枚举、维度、frame 名称、关节名列表 |
+| `FactoryFunctions.h/.cpp` | 从 URDF/配置构造 `ManipulatorModelInfo`、加载 Pinocchio 模型 |
+| `MobileManipulatorPinocchioMapping.h` | OCS2 状态向量 $x$ ↔ Pinocchio 广义坐标 $q$ 的映射 |
+| `AccessHelperFunctions.h` | 从状态/输入向量切片读取底盘位姿、臂关节等子块 |
+| `dynamics/WheelBasedMobileManipulatorDynamics.h` | 差速底盘 + 臂运动学 flow map |
+| `dynamics/DefaultManipulatorDynamics.h` | 固定/默认机械臂运动学模型 |
+| `dynamics/FloatingArmManipulatorDynamics.h` | 浮动基座臂（欠驱动）模型 |
+| `dynamics/FullyActuatedFloatingArmManipulatorDynamics.h` | 全驱动浮动基座臂模型 |
+| `cost/QuadraticInputCost.h` | 输入正则代价 $\frac12(u-u_{ref})^\top R(u-u_{ref})$ |
+| `constraint/EndEffectorConstraint.h` | 末端 $SE(3)$ 误差约束（被软约束包装成跟踪代价） |
+| `constraint/MobileManipulatorSelfCollisionConstraint.h` | 自碰撞距离约束 |
 | `task.info` | horizon、权重、约束和求解器参数 |
+
+> **注意**：真实仓库**没有** `EndEffectorCost.cpp`，也没有独立的 `JointVelocityLimits.cpp`。末端跟踪走 `EndEffectorConstraint` + 软约束包装（详见 §83.19A）；关节限位由 `MobileManipulatorInterface::getJointLimitSoftConstraint()` 统一产出。若按旧教程找这两个文件会扑空。
 
 阅读顺序建议：
 
@@ -694,6 +701,63 @@ CppAD 需要可微路径。
 
 实际实现中，最近碰撞对集合通常离线配置或在线筛选。
 
+### 83.17.1 OCS2 自碰撞的真实实现：SelfCollision 与 PinocchioGeometryInterface ⭐⭐⭐
+
+上面的公式 $\nabla_q d_{ij}=\hat n^\top(J_{p_i}-J_{p_j})$ 是教学推导。这一节看 `leggedrobotics/ocs2` 仓库 `ocs2_self_collision` 包是怎么把它落到代码的，以及为什么这里藏着移动操作 MPC 最容易踩的几个坑。
+
+**两层职责划分**。OCS2 把自碰撞拆成几何层和约束层两个职责：
+
+| 类 | 职责 | 关键方法 |
+|----|------|----------|
+| `PinocchioGeometryInterface` | 持有 Pinocchio `GeometryModel`，调用 hpp-fcl/Coal 算每个碰撞对的最近距离和最近点 | `computeDistances(pinocchioInterface)` |
+| `SelfCollision` | 把距离打包成约束值 $h=d-d_{\min}$，并算解析雅可比 | `getValue(...)`、`getLinearApproximation(...)`、`getNumCollisionPairs()` |
+| `MobileManipulatorSelfCollisionConstraint` | OCS2 状态约束接口，把上面的几何结果接进 OCP | 继承 `StateConstraint` |
+
+`SelfCollision::getLinearApproximation()` 返回的是 `std::pair<vector_t, matrix_t>`——`first` 是所有碰撞对的约束值向量 $h\in\mathbb{R}^{n_{pair}}$，`second` 是对广义坐标的雅可比 $\partial h/\partial q$，正是 $\hat n^\top(J_{p_i}-J_{p_j})$ 逐对堆叠的结果。
+
+**解析路径 vs 自动微分路径**。仓库同时提供两套实现，这是一个重要的工程选择点：
+
+| 实现 | 类 | 距离梯度怎么来 | 取舍 |
+|------|----|--------------|------|
+| 解析 | `SelfCollision` + `SelfCollisionConstraint` | 用 $\hat n^\top(J_{p_i}-J_{p_j})$ 闭式公式，雅可比由 Pinocchio frame Jacobian 给 | 快、无需代码生成；但 $\hat n$ 在距离穿过零（互相穿透）时不连续 |
+| 自动微分 | `SelfCollisionCppAd` + `SelfCollisionConstraintCppAd` | 把整条距离计算写成 CppAD 可微表达式，代码生成出梯度 | 首次编译慢、需要可微的距离实现；运行期快且导数一致 |
+
+> **不是 X 而是 Y**：自碰撞的难点**不是**"算距离的公式不会写"，**而是**"距离函数在穿透和切换最近点对时不光滑"。最近点连线方向 $\hat n$ 在两个凸体刚好接触时方向定义模糊，在最近特征从"面-面"跳到"边-边"时方向突变。这会让解析雅可比出现跳变，进而让 SQP 步长在碰撞临界处来回横跳。
+
+> **跨领域类比**：距离函数的不光滑性，类似于绝对值函数 $|x|$ 在原点的不可导。远离零点时梯度干净（$\pm 1$），但跨过零点梯度翻转。自碰撞距离在"刚好接触"这个点上就有类似的尖角。relaxed barrier（83.16.1）的二次延拓把约束推到"还没接触"就开始发力，正是为了让优化器**永远不要走到那个尖角**。相似之处仅在"都有一个导数不连续点"；不同之处是距离函数的不连续来自几何最近特征切换，而 $|x|$ 来自符号翻转——所以自碰撞还需要额外处理"最近点对集合在线变化"的问题。
+
+**碰撞对从哪来**。`PinocchioGeometryInterface` 构造时需要一份碰撞对列表。常见两种来源：
+
+1. URDF/SRDF 里声明的 collision geometry，配合 SRDF 的 `disable_collisions` 排除天然相邻、永不碰撞的连杆对（如相邻关节的连杆）。
+2. 在 `task.info` 里手工列出关心的 link pair 名字。
+
+如果不排除相邻连杆，会出现一类隐蔽 bug：相邻连杆在装配上本来就"贴着"，它们的距离恒小于 $d_{\min}$，于是自碰撞约束**永远被违反**，relaxed barrier 持续输出巨大代价，整个 OCP 被这个假约束带偏。
+
+> **常见陷阱（概念误区）**：忘记用 SRDF 排除相邻连杆的碰撞对。
+> 现象：MPC 一启动就"求解成功但行为诡异"，末端怎么都到不了，或求解代价居高不下。
+> 根本原因：相邻连杆本就接触，$d_{ij}<d_{\min}$ 恒成立，barrier 项常驻，污染梯度。
+> 正确做法：提供 SRDF 的 `disable_collisions`，或在碰撞对列表里只放真正可能相撞的远端 link pair（如夹爪 vs 底盘、肘部 vs 底盘）。
+> 自检方法：打印每个碰撞对的初始 $d_{ij}$，零位构型下任何恒小于 $d_{\min}$ 的对要么排除、要么调小 $d_{\min}$。
+
+**为什么不能放太多碰撞对**。`getNumCollisionPairs()` 直接决定约束维度。$n_{pair}$ 个对意味着每个节点要算 $n_{pair}$ 次 hpp-fcl 最近距离查询，外加 $n_{pair}\times n_q$ 的雅可比。对 20 节点 horizon、6 轴臂，把碰撞对从 5 个加到 50 个，求解时间可能翻好几倍（对应 83.32 求解时间过长）。
+
+> **反事实推理**：如果把机器人所有连杆两两组合全设成碰撞对会怎样？
+> $n$ 个连杆有 $\binom{n}{2}$ 对，6 连杆就是 15 对，加上底盘和夹爪更多。
+> 每对每节点一次 hpp-fcl 查询 + 一次雅可比，约束维度爆炸。
+> 求解时间从毫秒级涨到几十毫秒，100 Hz MPC 直接超时。
+> 实践中只保留"几何上真有可能相撞"的少数对（通常 3-10 对），这是精度和实时性的工程折中，而非懒惰。
+
+把这套实现接进 OCP 的方式，正是 §83.19A 第 (4) 步：
+
+```cpp
+// 中文注释：自碰撞 = SelfCollision 几何 + StateSoftConstraint + 单个 RelaxedBarrierPenalty。
+problem.stateSoftConstraintPtr->add(
+    "selfCollision",
+    getSelfCollisionConstraint(pinocchioInterface, taskFile, urdfFile, "selfCollision", usePreComputation, ...));
+```
+
+`getSelfCollisionConstraint` 内部：构造 `PinocchioGeometryInterface`（读碰撞对）→ 包成 `SelfCollisionConstraint`（解析）或 `SelfCollisionConstraintCppAd`（自动微分）→ 再用一个 `RelaxedBarrierPenalty` 软化 → 装进 `StateSoftConstraint`。约束维度等于碰撞对数，但所有对共享同一个 barrier 参数 $(\mu,\delta)$。
+
 ---
 
 ## 83.18 约束四：外部障碍距离
@@ -746,6 +810,159 @@ PreComputation 负责在一个状态输入点上统一计算：
 
 ---
 
+## 83.19A OCP 的真实组装结构：成本、约束、软约束三层 ⭐⭐⭐
+
+前面几节分别讲了末端代价、输入代价、关节限位和自碰撞约束的**数学形式**。但如果你打开真实仓库的 `MobileManipulatorInterface.cpp`，会发现这些项不是平铺直叙地"加到一个代价里"，而是被分门别类放进 `OptimalControlProblem` 的几个不同容器中。理解这套容器结构，是从"会读公式"过渡到"会读 OCS2 源码"的关键一步。本节完全基于 `leggedrobotics/ocs2` 仓库 `ocs2_mobile_manipulator` 包的真实接口讲解。
+
+### 动机：为什么不能把所有项塞进一个 cost
+
+设想一个朴素实现：把末端误差、输入正则、关节正则、自碰撞惩罚全部加权求和，写进一个 `getCost()` 函数返回。这样做能跑，但会立刻暴露三个工程问题。
+
+第一，**有些项只依赖状态 $x$，有些项同时依赖状态和输入 $(x,u)$**。末端位姿 $\ell_{ee}(x)$ 只看状态；输入正则 $\ell_u(u)$ 只看输入。如果混在一起，求解器无法利用"这一项的 $\partial/\partial u = 0$"这个稀疏性，白白多算一堆零块。
+
+第二，**有些项是真正的约束，有些项是真正的代价**。关节限位本质是不等式约束 $q_{\min}\le q\le q_{\max}$，而末端跟踪本质是软目标。把二者写成同一个加权和，就丢失了"这是硬性安全边界"和"这是可以妥协的偏好"的语义区分。
+
+第三，**终端项和运行项需要分开**。MPC 在 horizon 末端 $t_N$ 处的代价（final cost）和中间节点 $t_k$ 的运行代价（intermediate cost）作用不同：终端项决定"轨迹最终往哪收敛"，运行项决定"路上怎么走"。
+
+> **不是 X 而是 Y**：OCS2 的 `OptimalControlProblem` **不是一个返回标量代价的函数对象，而是一组带名字的容器**。每个容器装一类项（纯状态代价、状态-输入代价、软约束、终端软约束……），求解器分别对每个容器线性化，再按时间结构组装 KKT 系统。
+
+### `OptimalControlProblem` 的容器结构
+
+OCS2 把一个最优控制问题拆成下面几个核心成员（位于 `ocs2_oc/optimal_control_problem/OptimalControlProblem.h`）：
+
+| 成员指针 | 装什么 | 依赖变量 | 本章对应项 |
+|----------|--------|----------|-----------|
+| `dynamicsPtr` | 系统动力学 flow map | $(x,u)$ | `WheelBasedMobileManipulatorDynamics` |
+| `costPtr` | 运行期状态-输入代价集合 | $(x,u)$ | 输入正则 `QuadraticInputCost` |
+| `stateCostPtr` | 运行期纯状态代价集合 | $x$ | （本例未直接用，末端走软约束） |
+| `softConstraintPtr` | 运行期状态-输入软约束 | $(x,u)$ | 关节限位 `jointLimits` |
+| `stateSoftConstraintPtr` | 运行期纯状态软约束 | $x$ | 末端跟踪 `endEffector`、自碰撞 `selfCollision` |
+| `finalCostPtr` | 终端纯状态代价 | $x(t_N)$ | （可选） |
+| `finalSoftConstraintPtr` | 终端纯状态软约束 | $x(t_N)$ | 终端末端跟踪 `finalEndEffector` |
+| `equalityConstraintPtr` | 硬等式约束 | $(x,u)$ | （本例未用） |
+| `preComputationPtr` | 共享预计算 | $(x,u)$ | `MobileManipulatorPreComputation` |
+
+每个集合（Collection）暴露一个 `add(name, std::move(term))` 方法。`name` 是字符串句柄，调试时可以按名字打印每一项的当前值——这正是 83.21 节"日志记录每项代价"能落地的底层机制。
+
+### 真实组装代码（基于 `MobileManipulatorInterface.cpp`）
+
+下面这段是对真实接口组装逻辑的**忠实重构**（精简了文件读取细节，类名和容器名与仓库一致）：
+
+```cpp
+// 中文注释：以下类名、容器名均来自 leggedrobotics/ocs2 仓库真实接口。
+ocs2::OptimalControlProblem problem;
+
+// (1) 动力学：按模型类型选择，本章是轮式底盘。
+switch (modelInfo.manipulatorModelType) {
+  case ManipulatorModelType::WheelBasedMobileManipulator:
+    problem.dynamicsPtr.reset(
+        new WheelBasedMobileManipulatorDynamics(modelInfo, "dynamics", libraryFolder, ...));
+    break;
+  case ManipulatorModelType::DefaultManipulator:
+    problem.dynamicsPtr.reset(new DefaultManipulatorDynamics(modelInfo, ...));
+    break;
+  // FloatingArmManipulator / FullyActuatedFloatingArmManipulator 略
+}
+
+// (2) 输入正则：纯 (x,u) 代价，进 costPtr。
+problem.costPtr->add("inputCost", getQuadraticInputCost(taskFile));
+
+// (3) 末端跟踪：注意——它是一个【约束】被【软约束包装】成代价，进 stateSoftConstraintPtr。
+problem.stateSoftConstraintPtr->add(
+    "endEffector",
+    getEndEffectorConstraint(pinocchioInterface, taskFile, "endEffector", /*useCaching*/ usePreComputation, ...));
+problem.finalSoftConstraintPtr->add(
+    "finalEndEffector",
+    getEndEffectorConstraint(pinocchioInterface, taskFile, "finalEndEffector", usePreComputation, ...));
+
+// (4) 自碰撞：纯状态软约束，进 stateSoftConstraintPtr。
+problem.stateSoftConstraintPtr->add(
+    "selfCollision",
+    getSelfCollisionConstraint(pinocchioInterface, taskFile, urdfFile, "selfCollision", usePreComputation, ...));
+
+// (5) 关节限位：状态-输入软约束（位置看 x，速度看 u），进 softConstraintPtr。
+problem.softConstraintPtr->add(
+    "jointLimits", getJointLimitSoftConstraint(pinocchioInterface, taskFile));
+
+// (6) 共享预计算缓存。
+problem.preComputationPtr.reset(
+    new MobileManipulatorPreComputation(pinocchioInterface, modelInfo));
+```
+
+逐项对照一下，会发现几个和"朴素加权和"印象不同的地方，下面逐一拆开。
+
+### 关键点一：末端跟踪是"约束"而非"代价"
+
+最容易让初学者困惑的是第 (3) 步。明明 83.10 节把末端跟踪写成代价 $\ell_{ee}=\frac12 e^\top Q_{ee}e$，为什么源码里调的是 `getEndEffectorConstraint` 而不是 `getEndEffectorCost`？
+
+答案是 OCS2 的一种**通用建模惯例**：先把"末端位姿误差"建模为一个**6 维约束函数** $g(x)=e(x)\in\mathbb{R}^6$（理想情况下希望它等于零），再用一个**惩罚函数**把这个约束"软化"成代价。具体地，`getEndEffectorConstraint` 内部做两件事：
+
+1. 构造一个 `EndEffectorConstraint` 对象，它的 `getValue(x)` 返回 6 维 $SE(3)$ 误差 $e(x)$（位置 3 维 + 姿态 3 维）。
+2. 用 `ocs2::StateSoftConstraint` 把这个约束包起来，每一维配一个 `ocs2::QuadraticPenalty`：位置 3 维用位置权重，姿态 3 维用姿态权重。
+
+`QuadraticPenalty` 对单个约束分量 $h$ 的惩罚就是 $\frac12 \mu h^2$。把 6 维拼起来，正好还原成 $\frac12 e^\top Q_{ee} e$，其中 $Q_{ee}=\mathrm{diag}(\mu_1,...,\mu_6)$。
+
+> **本质洞察**：在 OCS2 里，"代价"和"软约束"在数学上可以是同一个东西——一个约束函数 $h(x)$ 加一个惩罚 $p(h)$。`QuadraticPenalty` 让软约束退化成二次代价，`RelaxedBarrierPenalty` 让软约束退化成障碍代价。这种"约束 + 惩罚"的统一抽象，让你只需写一次约束函数 $h(x)$，就能在"硬约束 / 二次软约束 / 障碍软约束"之间自由切换，而不必重写代价类。
+
+这解释了为什么 83.3 节文件表里**找不到** `EndEffectorCost.cpp`——真实仓库根本没有这个文件，末端跟踪走的是 `constraint/EndEffectorConstraint.h` + 核心库的 `StateSoftConstraint` + `QuadraticPenalty`。同理也没有独立的 `JointVelocityLimits.cpp`，关节限位统一由 `getJointLimitSoftConstraint` 产出。
+
+> **常见陷阱（概念误区）**：照着旧博客找 `EndEffectorCost` 类。
+> 现象：在仓库里 grep 不到，或找到的是早期 fork 的残留命名。
+> 根本原因：把"教学里叫它代价"误当成"源码里有个叫 Cost 的类"。OCS2 用"约束 + 惩罚"实现代价。
+> 正确做法：找末端跟踪就看 `EndEffectorConstraint` + `stateSoftConstraintPtr->add("endEffector", ...)`，权重在 `QuadraticPenalty` 的 $\mu$ 里。
+
+### 关键点二：终端项与运行项用不同容器
+
+第 (3) 步里 `endEffector` 进的是 `stateSoftConstraintPtr`（每个中间节点都算），而 `finalEndEffector` 进的是 `finalSoftConstraintPtr`（只在 horizon 末端 $t_N$ 算一次）。二者通常共享同一份 `EndEffectorConstraint` 逻辑，但**权重可以不同**。
+
+为什么要分开？因为运行项和终端项的职责不同：
+
+- 运行项的末端权重决定"路上是否一直贴着参考末端轨迹走"。权重太高会让末端在每个中间时刻都死贴参考，牺牲底盘和关节的自由度，反而抖动（对应 83.30 节末端抖动）。
+- 终端项的末端权重决定"horizon 末端必须收敛到目标"。它通常设得比运行项更高，给优化器一个明确的"终点锚"。
+
+> **反事实推理**：如果只有运行项、没有终端项会怎样？
+> 在有限 horizon 下，优化器没有"必须在末端到达目标"的强约束，可能选择"全程缓慢逼近、末端仍差一截"的轨迹，因为这样运行代价更低。
+> 加上终端项后，末端被强制锚定，整条轨迹被"拉直"向目标。
+> 这就是为什么几乎所有 OCS2 示例都同时注册 intermediate 和 final 两个末端项。
+
+### 关键点三：限位为什么进 `softConstraintPtr` 而不是 `stateSoftConstraintPtr`
+
+第 (5) 步关节限位进的是 `softConstraintPtr`（状态-输入软约束），而不是纯状态的 `stateSoftConstraintPtr`。原因在 83.15、83.16 已埋下伏笔：**关节位置限位看状态 $q_a\subset x$，关节速度限位看输入 $\dot q_a\subset u$**。`getJointLimitSoftConstraint` 返回的是一个 `StateInputSoftConstraint`，内部用 `RelaxedBarrierPenalty`（而非 `QuadraticPenalty`）——因为限位是真正的安全边界，需要在接近边界时代价急剧上升，这正是 83.16.1 节 relaxed barrier 的用武之地。
+
+把三种惩罚-容器搭配整理成一张表，是本节的核心记忆点：
+
+| 项 | 约束函数 $h$ | 惩罚类 | 容器 | 依赖 |
+|----|-------------|--------|------|------|
+| 输入正则 | 无（直接是代价） | 无（`QuadraticInputCost` 直接给代价） | `costPtr` | $(x,u)$ |
+| 末端跟踪（运行） | $SE(3)$ 误差 $e(x)$ | `QuadraticPenalty`×6 | `stateSoftConstraintPtr` | $x$ |
+| 末端跟踪（终端） | $SE(3)$ 误差 $e(x)$ | `QuadraticPenalty`×6 | `finalSoftConstraintPtr` | $x(t_N)$ |
+| 自碰撞 | $d_{ij}-d_{\min}$ | `RelaxedBarrierPenalty` | `stateSoftConstraintPtr` | $x$ |
+| 关节位置+速度限位 | $q-q_{\min}$ 等 | `RelaxedBarrierPenalty` | `softConstraintPtr` | $(x,u)$ |
+
+> **本质洞察**：选 `QuadraticPenalty` 还是 `RelaxedBarrierPenalty`，本质是回答"违反这一项是'不理想'还是'不允许'"。末端跟踪是不理想（可以暂时差一点），用二次惩罚；限位和碰撞是不允许（越界即危险），用障碍惩罚。容器（`cost`/`softConstraint`/`stateSoftConstraint`）则回答"这项依赖谁、什么时候算"。这两个正交维度组合，就覆盖了移动操作 OCP 的全部项。
+
+### 与硬约束的对比
+
+本例全部用软约束，没有用 `equalityConstraintPtr` 或硬不等式。这是 SQP-RTI 在线 MPC 的常见选择：软约束几乎总能求出解（最坏是约束被违反但有限代价），而硬约束在初值不可行时会直接判定 infeasible，导致 MPC 当周期无输出（对应 83.31 节约束不可行）。
+
+| 处理方式 | 可行性鲁棒 | 约束满足精度 | 适用 |
+|----------|-----------|-------------|------|
+| 硬约束（`equalityConstraintPtr` / IPM 不等式） | 差（不可行即失败） | 精确 | 离线轨迹优化、安全关键 |
+| 软约束 + `RelaxedBarrierPenalty` | 好 | 近似（取决于 $\mu,\delta$） | 在线 MPC（本章） |
+| 软约束 + `QuadraticPenalty` | 最好 | 最松（只是偏好） | 跟踪目标、正则项 |
+
+工程上的常见路线（呼应 83.21 调参顺序）：先全用 `QuadraticPenalty` 把跟踪调通，再把安全相关项换成 `RelaxedBarrierPenalty`，最后在必须精确的场合（如绝对不能撞的关节硬限位）才考虑硬约束或 IPM。
+
+### 练习
+
+**练习 19A-1（源码对照）**：到 `leggedrobotics/ocs2` 的 `ocs2_mobile_manipulator/src/MobileManipulatorInterface.cpp`，找出 `endEffector`、`finalEndEffector`、`selfCollision`、`jointLimits`、`inputCost` 五个 `add` 调用，写出每个分别进了哪个容器、用了哪个惩罚类。与本节表格核对。
+
+**练习 19A-2（惩罚切换实验）**：把末端跟踪的 `QuadraticPenalty` 在概念上换成 `RelaxedBarrierPenalty`，推导这会如何改变"末端离目标较远时"的梯度行为。提示：二次惩罚梯度随误差线性增长，障碍惩罚在远离边界时梯度趋近常数。哪种更适合"必须精确到达"的末端跟踪？
+
+**练习 19A-3（容器归类）**：现在要新增一项"底盘朝向正则" $\ell_b=\frac12 w_\theta\,\mathrm{wrap}(\theta-\theta_{ref})^2$（来自 83.14）。它只依赖状态，是偏好而非安全。你会把它注册到哪个容器、用哪个惩罚？写出对应的 `add` 调用。
+
+---
+
 ## 83.20 task.info 配置结构
 
 典型配置包含：
@@ -790,6 +1007,81 @@ cost
 字段名以实际版本为准。
 
 教学重点是理解配置背后的数学意义。
+
+### 83.20.1 task.info 字段与 OCP 容器的对应 ⭐⭐⭐
+
+上面的精简配置只是示意。真实 `ridgeback_ur5/task.info` 的结构和 §83.19A 的容器、惩罚是**一一对应**的——读懂这个对应，你就能从配置文件反推出 OCP 是怎么组装的，反之亦然。把关键块拆开看：
+
+```ini
+; ===== 末端跟踪（运行项）：对应 stateSoftConstraintPtr 的 "endEffector" =====
+; 6 维 SE(3) 误差，每维一个 QuadraticPenalty，mu 即权重 Q_ee 的对角元。
+endEffector
+{
+  muPosition      100.0     ; 位置 3 维的二次惩罚强度
+  muOrientation   10.0      ; 姿态 3 维的二次惩罚强度
+}
+
+; ===== 末端跟踪（终端项）：对应 finalSoftConstraintPtr 的 "finalEndEffector" =====
+; 通常比运行项更高，给 horizon 末端一个强"终点锚"（§83.19A 关键点二）。
+finalEndEffector
+{
+  muPosition      100.0
+  muOrientation   10.0
+}
+
+; ===== 输入正则：对应 costPtr 的 "inputCost"（QuadraticInputCost）=====
+; R = diag(...)，前 2 维底盘速度，后 n_a 维臂关节速度。
+inputCost
+{
+  R
+  {
+    scaling 1e-2
+    (0,0)  5.0    ; v：底盘线速度权重
+    (1,1)  5.0    ; omega：底盘角速度权重
+    (2,2)  1.0    ; 臂关节 1 速度权重
+    ; ... 其余臂关节
+  }
+}
+
+; ===== 自碰撞：对应 stateSoftConstraintPtr 的 "selfCollision" =====
+; 单个 RelaxedBarrierPenalty 作用在所有碰撞对上（§83.17.1）。
+selfCollision
+{
+  mu              1e-2      ; barrier 强度（§83.16.1）
+  delta           1e-3      ; 对数-二次切换点
+  minimumDistance 0.05      ; d_min，安全距离（米）
+  collisionObjectPairs  [ ... ]   ; 或 collisionLinkPairs，关心的 link/object 对
+}
+
+; ===== 关节限位：对应 softConstraintPtr 的 "jointLimits" =====
+; 位置看状态、速度看输入，都用 RelaxedBarrierPenalty。
+jointPositionLimits { mu 1e-2  delta 1e-3 }
+jointVelocityLimits { mu 1e-2  delta 1e-3
+  lowerBound [ ... ]   upperBound [ ... ] }   ; 含底盘 v、omega 和臂速度边界
+```
+
+逐块对照，能得到一张"配置 → 容器 → 惩罚"的总览：
+
+| task.info 块 | OCP 容器 | 惩罚类 | 数学对应 |
+|--------------|----------|--------|----------|
+| `endEffector` | `stateSoftConstraintPtr` | `QuadraticPenalty`×6 | $\frac12 e^\top Q_{ee}e$（运行） |
+| `finalEndEffector` | `finalSoftConstraintPtr` | `QuadraticPenalty`×6 | 终端末端代价 |
+| `inputCost.R` | `costPtr` | 无（直接二次代价） | $\frac12 u^\top R u$ |
+| `selfCollision` | `stateSoftConstraintPtr` | `RelaxedBarrierPenalty` | $\phi(d-d_{\min})$ |
+| `jointPositionLimits` | `softConstraintPtr` | `RelaxedBarrierPenalty` | $\phi(q-q_{\min})$ 等 |
+| `jointVelocityLimits` | `softConstraintPtr` | `RelaxedBarrierPenalty` | $\phi(\dot q-\dot q_{\min})$ 等 |
+
+> **理论-工程桥接**：`endEffector` 块里的 `muPosition`/`muOrientation` 不是凭空的工程参数，它们**就是** §83.10 里 $Q_{ee}=\mathrm{diag}(q_x,...,q_{yaw})$ 的对角元，只不过被 `QuadraticPenalty` 以 $\frac12\mu h^2$ 的形式吃进去。改 `task.info` 等价于改 $Q_{ee}$——这就是为什么本章反复强调"调权重前先理解公式"。
+
+> **常见陷阱（思维陷阱）**：把 `selfCollision.mu` 和 `endEffector.muPosition` 当成同一类参数同步调。
+> 现象：调大碰撞 `mu` 想"更安全"，结果末端跟踪也被挤偏，或求解变难。
+> 根本原因：二者惩罚类不同——`endEffector` 的 mu 是二次权重（线性梯度），`selfCollision` 的 mu 是 barrier 强度（边界附近梯度急升）。语义不可类比。
+> 正确做法：碰撞安全主要调 `minimumDistance` 和 `delta`，跟踪精度主要调 `endEffector` 的 mu；分开调、分开记录。
+
+> **常见陷阱（编程陷阱）**：`jointVelocityLimits` 的 `lowerBound`/`upperBound` 漏了底盘 $v,\omega$ 维度，只填了臂关节。
+> 现象：底盘速度不受限，优化器输出过大 $v$ 或 $\omega$，仿真里底盘"窜出去"。
+> 根本原因：输入向量是 $[v,\omega,\dot q_a]$，速度边界必须覆盖全部 $n_u$ 维，前 2 维是底盘。
+> 正确做法：边界数组长度等于 `inputDim`，前 2 个对应底盘线/角速度（§83.15）。
 
 ---
 
@@ -1472,7 +1764,7 @@ OCS2 由 ETH Zurich 的 Robotic Systems Lab 开发并开源。截至 2025 年，
 
 第三，ROS 2 适配。OCS2 最初基于 ROS 1。社区和实验室已有 ROS 2 移植尝试。如果项目使用 ROS 2，需要关注 MPC-MRT 通信方式是否已迁移到 ROS 2 的 DDS 机制。
 
-> **反事实推理**：如果直接使用一年前的教程配置而不检查当前版本的 API 变化，最常见的错误是 `EndEffectorCost` 的构造函数签名变化和 `task.info` 中配置字段的重命名。这类错误会在编译阶段暴露，但如果只改到能编译通过而不理解新参数含义，运行时行为可能与预期不同。
+> **反事实推理**：如果直接使用一年前的教程配置而不检查当前版本的 API 变化，最常见的错误是 `EndEffectorConstraint` 的构造函数签名变化、`getEndEffectorConstraint` 的参数顺序调整，以及 `task.info` 中配置字段的重命名。这类错误会在编译阶段暴露，但如果只改到能编译通过而不理解新参数含义，运行时行为可能与预期不同。
 
 ### 与 Pinocchio 3.x 的兼容
 
@@ -1492,6 +1784,206 @@ Pinocchio 从 2.x 到 3.x 有较大 API 变化。OCS2 对 Pinocchio 的依赖主
 2. 再改权重使底盘主动前移帮助臂够到更远目标。
 3. 记录两种配置下的底盘移动距离、末端误差、求解迭代次数和求解时间。
 4. 分析权重变化如何影响冗余度分配。
+
+---
+
+## 83.39A 从 mobile_manipulator 到近年 loco-manipulation 工作 ⭐⭐⭐
+
+本章的 `mobile_manipulator` 是 OCS2 里"运动学 OCP"的入门样例。它故意把动力学砍到最简，好让你专注于状态/输入/代价/约束的组织。但 OCS2 这套 `OptimalControlProblem` 容器结构（§83.19A）真正的威力，在腿足 + 机械臂的**全身 loco-manipulation** 上才完全展开。把视野往这个方向延伸，能帮你理解"为什么要学这个简单样例"。
+
+**主线一：从运动学到全身动力学。** 本章用 $\dot x=f(x,u)$ 的纯运动学 flow map，输入是速度。Sleiman 等人的 "Versatile multicontact planning and control for legged loco-manipulation"（Science Robotics, 2023，基于 OCS2）把同一套 OCP 结构用在 ANYmal + 机械臂上，状态升级到包含质心动量和接触力，动力学变成 centroidal/whole-body，约束加入摩擦锥和接触切换。但你会发现**组织方式没变**：还是 `dynamicsPtr` + 各种 cost/constraint 容器 + `PreComputation` 缓存运动学。本章学到的"约束 + 惩罚 + 容器分类"思维直接迁移。
+
+| 维度 | 本章 mobile_manipulator | loco-manipulation（如 Sleiman 2023） |
+|------|------------------------|--------------------------------------|
+| 动力学 | 运动学速度模型 | centroidal / whole-body 动力学 |
+| 输入 | $v,\omega,\dot q_a$（速度） | 接触力 + 关节速度/加速度 |
+| 接触 | 无切换 | 多接触模式序列、接触切换 |
+| 末端任务 | $SE(3)$ 跟踪（软约束） | $SE(3)$ 跟踪 + 力交互 |
+| 共用结构 | `OptimalControlProblem` 容器 + 软约束 + barrier | 完全相同 |
+
+**主线二：从已知地图到感知闭环。** 本章 §83.18 把外部障碍当成已知 ESDF。Grandia、Jenelten、Hutter 等人的 perceptive locomotion through whole-body MPC（arXiv:2305.08926）把感知直接接进 MPC：地形/障碍以 signed distance 形式实时进约束，配合 solver synchronized module 处理地图更新。这正是本章 §83.18 "地图同步比距离公式更容易出错"那句话在真实系统里的放大版。
+
+**主线三：社区生态。** 围绕 OCS2 形成了若干开源全身控制框架，例如 `qiayuanl/legged_control`（NMPC + WBC + 状态估计 + sim2real）和类似的 `quad_mpc`。它们把 OCS2 的 MPC 输出接到全身控制器（WBC）做力矩跟踪——这恰好补上了本章运动学模型"不保证力矩可行"的短板（§83.6）：MPC 给运动学/质心层的参考，WBC 在更高频做动力学一致的力矩分配。
+
+> **本质洞察**：`mobile_manipulator` 的"简单"是教学上的脚手架，不是 OCS2 的能力上限。它把 OCP 的**组织复杂度**（容器、软约束、惩罚、预计算）和**模型复杂度**（运动学 vs 全身动力学）解耦开，让你先掌握前者。一旦组织方式内化，换成 loco-manipulation 只是替换 `dynamicsPtr` 和增加几类约束。
+
+> **本质洞察**：近年 loco-manipulation 的趋势是"MPC 负责中长时域的运动与接触规划，WBC/逆动力学负责高频力矩一致性"的分层。本章的运动学 MPC + 下层速度控制器（§83.23），正是这个分层思想在低速移动操作上的最简实例——理解它，再看 ANYmal 全身控制就只是每一层都变重了而已。
+
+> **前沿延伸**：更近的工作（如 2025 年的 whole-body inverse dynamics MPC for legged loco-manipulation）尝试在 MPC 内部直接用全阶逆动力学优化关节力矩，把运动与力规划统一。这与本章"运动学 MPC + 下层控制器"是两种工程路线：前者更统一但更重，后者更轻但分层。先记住这个权衡，§83.6 的反事实推理已经预演了"把全动力学塞进 MPC"的代价。
+
+---
+
+## 83.39B 本章常见误解汇总
+
+下表汇总本章涉及的高频误解。每条给出"错误认知 → 正确理解"，是 G4 教学完整性自检的快速复盘清单。
+
+| # | 错误认知 | 正确理解 | 相关节 |
+|---|----------|----------|--------|
+| 1 | 末端跟踪由一个 `EndEffectorCost` 类实现 | 由 `EndEffectorConstraint` + `StateSoftConstraint` + `QuadraticPenalty` 实现，源码无 `EndEffectorCost` | §83.19A |
+| 2 | 所有代价/约束加权求和塞进一个 cost | 分装进 `costPtr`/`softConstraintPtr`/`stateSoftConstraintPtr`/`finalSoftConstraintPtr` 等容器 | §83.19A |
+| 3 | 运动学模型"太简单不实用" | 用低维换高频重规划，是低速移动操作的合理工程折中，且可与 WBC 分层 | §83.6, §83.39A |
+| 4 | $SE(3)$ 误差用欧拉角差就行 | 欧拉角有奇异和缠绕，必须用 $\log(T_d^{-1}T)^\vee$ 的李代数误差 | §83.10 |
+| 5 | $T_d^{-1}T$ 和 $T^{-1}T_d$ 等价 | 大姿态误差下残差和雅可比伴随项不同，全代码必须统一一种约定 | §83.10 |
+| 6 | 末端权重越高跟踪越好 | 过高会抖动，应先加输入权重而非继续加末端权重 | §83.10, §83.30 |
+| 7 | relaxed barrier 只是"对数障碍的小改" | 它保证约束被违反时仍有定义的有限代价和梯度，是 MPC 不崩溃的关键 | §83.16.1 |
+| 8 | 限位用 `QuadraticPenalty` 就够 | 安全边界用 `RelaxedBarrierPenalty`，越界代价急升；二次惩罚太软 | §83.19A |
+| 9 | 自碰撞难在距离公式 | 难在距离函数在穿透/最近特征切换处不光滑，以及碰撞对管理 | §83.17.1 |
+| 10 | 碰撞对越多越安全 | 维度爆炸拖垮实时性，只保留几何上真可能相撞的少数对 | §83.17.1 |
+| 11 | 忘了排除相邻连杆碰撞对没关系 | 相邻连杆恒接触会让 barrier 常驻、污染梯度 | §83.17.1 |
+| 12 | RTI 每周期不收敛是 bug | RTI 故意每周期只做一次迭代，误差靠多周期逐步消除 | §83.22.1 |
+| 13 | 只设运行末端项即可 | 缺终端项时优化器可能"全程缓慢逼近、末端差一截" | §83.19A |
+| 14 | PreComputation 只是性能优化 | 它还保证所有 cost/constraint 在同一点一致线性化 | §83.19 |
+| 15 | 末端到不了一定是权重问题 | 更可能是 frame 配错、坐标系错、误差约定不一致 | §83.28 |
+
+---
+
+## 83.39C API 速查表 ⭐⭐
+
+下表为本章涉及的 OCS2 核心类型与方法签名，均以 `leggedrobotics/ocs2` 仓库 `main` 分支为准（精读时以实际版本头文件为准）。分四组：模型信息、动力学、代价/约束、求解器。
+
+**模型信息与映射**（`ocs2_mobile_manipulator`）：
+
+```cpp
+// 模型类型枚举（ManipulatorModelInfo.h）
+enum class ManipulatorModelType {
+  DefaultManipulator = 0,                  // 固定/默认机械臂
+  WheelBasedMobileManipulator = 1,         // 差速底盘 + 臂（本章重点）
+  FloatingArmManipulator = 2,              // 浮动基座臂（欠驱动）
+  FullyActuatedFloatingArmManipulator = 3  // 全驱动浮动基座臂
+};
+
+// 模型信息结构体字段（ManipulatorModelInfo.h）
+struct ManipulatorModelInfo {
+  ManipulatorModelType manipulatorModelType;  // 模型类型
+  size_t stateDim;                             // 状态维度 n_x
+  size_t inputDim;                             // 输入维度 n_u
+  size_t armDim;                               // 臂关节数 n_a
+  std::string baseFrame;                       // 底盘 frame 名
+  std::string eeFrame;                         // 末端 frame 名
+  std::vector<std::string> dofNames;           // 关节名顺序（验证顺序的关键）
+};
+
+// 状态/输入子块读取（AccessHelperFunctions.h）：从 x、u 切片取底盘位姿、臂关节
+// 状态 <-> Pinocchio 广义坐标映射（MobileManipulatorPinocchioMapping.h）
+```
+
+**接口与组装**（`MobileManipulatorInterface.h`）：
+
+```cpp
+class MobileManipulatorInterface : public RobotInterface {
+ public:
+  MobileManipulatorInterface(const std::string& taskFile,
+                             const std::string& libraryFolder,
+                             const std::string& urdfFile);
+  const OptimalControlProblem& getOptimalControlProblem() const override;
+  std::shared_ptr<ReferenceManagerInterface> getReferenceManagerPtr() const override;
+  const Initializer& getInitializer() const override;
+  const RolloutBase& getRollout() const;
+  const PinocchioInterface& getPinocchioInterface() const;
+  const ManipulatorModelInfo& getManipulatorModelInfo() const;
+  ddp::Settings& ddpSettings();   // SLQ/DDP 参数
+  mpc::Settings& mpcSettings();   // MPC horizon、时间窗等
+ private:
+  // 组装各项的私有工厂方法（见 §83.19A）
+  StateInputCost::Ptr getQuadraticInputCost(const std::string& taskFile);
+  StateConstraint::Ptr getEndEffectorConstraint(const PinocchioInterface&, const std::string& taskFile,
+                                                const std::string& prefix, bool useCaching, ...);
+  StateConstraint::Ptr getSelfCollisionConstraint(const PinocchioInterface&, const std::string& taskFile,
+                                                  const std::string& urdfFile, const std::string& prefix, ...);
+  StateInputConstraint::Ptr getJointLimitSoftConstraint(const PinocchioInterface&, const std::string& taskFile);
+};
+```
+
+**动力学**（`dynamics/`，均继承 `ocs2::SystemDynamicsBaseAD`）：
+
+```cpp
+WheelBasedMobileManipulatorDynamics              // 差速底盘 flow map（本章）
+DefaultManipulatorDynamics                       // 固定臂
+FloatingArmManipulatorDynamics                   // 浮动基座臂
+FullyActuatedFloatingArmManipulatorDynamics      // 全驱动浮动基座臂
+// 核心被覆写方法：
+ad_vector_t systemFlowMap(ad_scalar_t time, const ad_vector_t& state,
+                          const ad_vector_t& input, const ad_vector_t& parameters) const override;
+```
+
+**自碰撞几何与约束**（`ocs2_self_collision`）：
+
+```cpp
+class SelfCollision {                            // 解析路径
+ public:
+  SelfCollision(PinocchioGeometryInterface geometryInterface, scalar_t minimumDistance);
+  size_t getNumCollisionPairs() const;
+  vector_t getValue(const PinocchioInterface& pinocchioInterface) const;            // h = d - d_min
+  std::pair<vector_t, matrix_t> getLinearApproximation(                              // (h, dh/dq)
+      const PinocchioInterface& pinocchioInterface) const;
+};
+// SelfCollisionCppAd / SelfCollisionConstraintCppAd：自动微分路径
+// PinocchioGeometryInterface：持有 GeometryModel，调 hpp-fcl/Coal 算最近距离
+```
+
+**OCP 容器与惩罚**（`ocs2_oc`、`ocs2_core`）：
+
+```cpp
+struct OptimalControlProblem {
+  std::unique_ptr<SystemDynamicsBase> dynamicsPtr;
+  std::unique_ptr<StateInputCostCollection> costPtr;             // add(name, term)
+  std::unique_ptr<StateCostCollection> stateCostPtr;
+  std::unique_ptr<StateInputCostCollection> softConstraintPtr;       // (x,u) 软约束（限位）
+  std::unique_ptr<StateCostCollection> stateSoftConstraintPtr;       // x 软约束（末端、自碰撞）
+  std::unique_ptr<StateCostCollection> finalSoftConstraintPtr;       // 终端 x 软约束
+  std::unique_ptr<PreComputation> preComputationPtr;
+  // 还有 finalCostPtr、equalityConstraintPtr、stateEqualityConstraintPtr 等
+};
+// 惩罚类（ocs2_core/penalties）：
+QuadraticPenalty        //  p(h) = 0.5 * mu * h^2          —— 末端跟踪
+RelaxedBarrierPenalty   //  对数障碍 + 二次延拓（§83.16.1）—— 限位、自碰撞
+// 软约束包装：StateSoftConstraint、StateInputSoftConstraint
+```
+
+**求解器**（`ocs2_sqp`、`ocs2_ddp`）：
+
+```cpp
+// SQP（多重射击，§83.22.1）：ocs2_sqp 包
+SqpSolver        // 求解器类（SqpSolver.h）
+SqpMpc           // MPC 封装（SqpMpc.h）
+SqpSettings      // 参数：sqpIteration、deltaTol、costTol、useFeedbackPolicy 等（SqpSettings.h）
+// SLQ/DDP：ocs2_ddp 包
+SLQ              // 连续时间 SLQ
+ILQR             // 离散 iLQR
+ddp::Settings    // maxNumIterations、minRelCost、constraintTolerance 等
+```
+
+> **使用提示**：`getEndEffectorConstraint` 既被 `stateSoftConstraintPtr->add("endEffector", ...)` 用作运行项，又被 `finalSoftConstraintPtr->add("finalEndEffector", ...)` 用作终端项，二者用不同的 `prefix` 读取各自的权重（§83.19A）。
+
+---
+
+## 83.39D 研究实践建议 ⭐⭐
+
+按学习/工程目标分层给出建议：
+
+**入门（先跑通再理解）**：
+
+1. 先用仓库自带的 `ridgeback_ur5` 配置直接跑，看 RViz 里末端跟踪和预测轨迹，不要一开始改代码。
+2. 改 `task.info` 里的末端位置权重和输入权重，观察底盘 vs 臂的分工变化（对应练习 C）。
+3. 打开/关闭自碰撞约束，对比求解时间，建立"约束维度 ↔ 实时性"的直觉。
+
+**进阶（读懂组织结构）**：
+
+1. 在 `MobileManipulatorInterface.cpp` 里用断点或打印，确认每个 `add(name, ...)` 进的是哪个容器（对照 §83.19A 表）。
+2. 把末端跟踪的 `QuadraticPenalty` 临时换成 `RelaxedBarrierPenalty`，观察"末端离目标远时"行为变化，理解两种惩罚的梯度差异。
+3. 自己写一个最小的 `WheelBasedMobileManipulatorDynamics` 单元测试：固定 $(x,u)$，对比 `systemFlowMap` 输出与手推的 $f(x,u)$，再用数值差分核对自动微分雅可比（对应练习 A）。
+
+**工程（适配新平台）**：
+
+1. 严格走 §83.26 的 14 步清单，**先过单关节脉冲测试和零位 FK 比较**（§83.26.1），再碰权重。
+2. 碰撞对从空集开始，逐对加入并验证零位 $d_{ij}>d_{\min}$，用 SRDF 排除相邻连杆（§83.17.1）。
+3. 锁定 Pinocchio 和编译器版本，先单独编 `ocs2_core`、`ocs2_pinocchio_interface`、`ocs2_self_collision`，确认代码生成无误（§83.39）。
+4. 在线 MPC 优先全软约束 + RTI；只在必须精确处才上硬约束或 IPM（§83.19A、§83.22）。
+
+**研究（往全身/感知方向走）**：
+
+1. 读 Sleiman 等 loco-manipulation 与 Grandia 等 perceptive WB-MPC，对照本章容器结构看"复杂性加在哪一层"（§83.39A）。
+2. 把本章运动学 MPC 接一个下层 WBC，验证"MPC 给参考、WBC 保力矩一致"的分层（§83.6、§83.39A）。
 
 ---
 
