@@ -604,6 +604,164 @@ int main()
 **练习 47.3.1**（⭐⭐）：加载你的机器人 URDF（如果没有，用 Pinocchio 自带的 `example-robot-data` 中的 `solo12` 或 `talos`），打印 `model.nq`、`model.nv`、`model.njoints`、`model.nframes`。然后遍历 `model.joints`，对每个关节打印其名称和 `nq_impl()` / `nv_impl()` 值。验证所有关节的 `nq` 之和等于 `model.nq`，所有关节的 `nv` 之和等于 `model.nv`。
 
 **练习 47.3.2**（⭐⭐⭐）：用两个线程模拟 MPC + WBC 的并行计算场景。主线程加载 URDF 构造 Model，然后启动两个线程：一个反复调用 `forwardKinematics` + `computeJointJacobians`，另一个反复调用 `rnea` + `crba`。两个线程各自持有独立的 Data，共享同一个 `const Model`。运行 10 秒，验证没有 crash、没有 data race（可用 ThreadSanitizer 编译检测）。然后尝试故意让两个线程共享同一个 Data 对象（不加锁），观察 ThreadSanitizer 报出的数据竞争警告。
+
+## 47.3.6 空间代数原语——SE3 / Motion / Force / Inertia ⭐⭐⭐
+
+### 动机：为什么不能用"普通的向量和矩阵"做动力学？ ⭐⭐
+
+到目前为止我们讲了 Pinocchio 的架构（CRTP、Model/Data），但还没有触及它**计算时操纵的基本数据类型**。在 47.5 节我们马上会写出 RNEA 的递推公式，里面充斥着 ${}^i X_{\lambda(i)}$、$v_i \times S_i \dot q_i$、$I_i a_i$ 这样的符号。如果你不知道这些符号在 Pinocchio 里对应**哪个 C++/Python 类型、用哪个方法计算**，那些公式就只是黑板上的数学，无法落到代码。这一节补上这个缺口——它是连接 01_数学/20_微分几何与李群（孤立 SE(3)）和 05_运动控制/10_足式/50_空间向量代数与旋量（空间向量理论）与 Pinocchio 工程实现的桥梁。
+
+回顾 01_数学/20_微分几何与李群：我们在那里用 Sophus/manif 处理过单个 SE(3) 变换的 `compose`、`inverse`、`log`。但那套工具处理的是"**位姿**"这一种几何对象。刚体动力学需要的对象更多——除了位姿，还有 6 维速度（线速度 + 角速度打包成一个对象）、6 维力（力 + 力矩打包）、6×6 空间惯量。考虑一个最朴素的问题：如何把一个刚体在 frame $A$ 下测得的速度，转换到 frame $B$ 下表达？
+
+如果用"普通"的方式，你会把线速度 $v$ 和角速度 $\omega$ 分开存成两个 `Vector3d`，然后手写转换公式：
+
+$$\omega_B = {}^B R_A\, \omega_A, \qquad v_B = {}^B R_A\, v_A + {}^B p_A \times ({}^B R_A\, \omega_A)$$
+
+注意线速度的转换里**混入了角速度**（因为参考点变了，平移速度要加上 $\omega \times r$ 的牵连项）。这个耦合极易写错——少一项叉乘、符号反了，程序不报错但结果错。而且这只是速度；力、加速度、惯量各有各的转换规则，全部手写就是一场灾难。
+
+> **反事实推理**：如果 Pinocchio 把 6D 速度拆成两个独立的 `Vector3d` 来传播会怎样？RNEA 的正向递归 $v_i = {}^i X_{\lambda(i)} v_{\lambda(i)} + S_i \dot q_i$ 就要拆成"角速度递推 + 线速度递推（含耦合项）"两段代码，且每个关节类型的 $S_i$ 都要分别处理线/角分量。代码量翻倍、出错点翻倍。**把线/角打包成一个 6D 对象、把坐标变换打包成一个 6×6 伴随算子**，才能让递推公式写成一行——这就是空间代数（spatial algebra）存在的根本理由。
+
+### 历史：Featherstone 的空间向量 ⭐
+
+这套"把线量和角量打包成 6 维对象"的代数体系由 Roy Featherstone 在 1980 年代系统化，写进了《Rigid Body Dynamics Algorithms》（2008）。它的核心洞察是：刚体的瞬时运动（twist）天然是 6 维的——李代数 $\mathfrak{se}(3)$ 就是 6 维向量空间；刚体受的力（wrench）也是 6 维的——它是 $\mathfrak{se}(3)$ 的对偶空间 $\mathfrak{se}(3)^*$。一旦接受"6 维是自然维度"，所有动力学量的坐标变换都统一为 6×6 矩阵乘法，所有交叉耦合都统一为 6 维叉乘算子。Pinocchio 把 Featherstone 的数学对象一一映射为 C++ 类型，这是它能用几十行模板代码实现整个动力学的根基。05_运动控制/10_足式/50_空间向量代数与旋量 专门讲这套理论的数学推导，本节只讲它在 Pinocchio 里的**类型与 API 落地**。
+
+### 四个核心类型 ⭐⭐⭐
+
+Pinocchio 的空间代数由四个带 `Scalar` 模板参数的类型构成，它们就是 47.4 节模板层级里"层级 1"的成员：
+
+| 类型 | 数学对象 | 维度 | 物理含义 | 李群/代数 |
+|------|---------|------|---------|----------|
+| `SE3` (`SE3Tpl<Scalar>`) | 刚体位姿 ${}^A M_B$ | $R \in SO(3)$ + $p \in \mathbb{R}^3$ | 坐标系变换 | 群 $SE(3)$ |
+| `Motion` (`MotionTpl<Scalar>`) | 空间速度 twist | $(v, \omega) \in \mathbb{R}^6$ | 线速度 + 角速度 | 代数 $\mathfrak{se}(3)$ |
+| `Force` (`ForceTpl<Scalar>`) | 空间力 wrench | $(f, \tau) \in \mathbb{R}^6$ | 力 + 力矩 | 对偶 $\mathfrak{se}(3)^*$ |
+| `Inertia` (`InertiaTpl<Scalar>`) | 空间惯量 | $6 \times 6$ 对称正定 | 质量 + 质心 + 转动惯量 | 映射 $\mathfrak{se}(3) \to \mathfrak{se}(3)^*$ |
+
+注意一个容易混淆的约定：Pinocchio 的 6D 向量布局是 **`[线性; 角度]`**——`Motion` 的前 3 维是线速度 $v$、后 3 维是角速度 $\omega$；`Force` 的前 3 维是力 $f$、后 3 维是力矩 $\tau$。这与某些教材（Featherstone 原书把角量放前面）相反，是初学者读 Pinocchio 源码时最常踩的坑。
+
+```python
+import pinocchio as pin
+import numpy as np
+
+# ---- SE3：刚体位姿 ----
+R = pin.utils.rotate('z', np.pi / 4)        # 绕 z 轴转 45° 的旋转矩阵
+p = np.array([1.0, 2.0, 3.0])
+M = pin.SE3(R, p)                            # 由旋转 + 平移构造
+print(M.rotation)                           # 3x3 旋转部分
+print(M.translation)                        # 3x1 平移部分
+print(M.homogeneous)                        # 4x4 齐次矩阵
+print(M.action)                             # 6x6 伴随变换矩阵 Ad(M)（作用于 Motion）
+print(M.actionInverse)                      # 6x6 Ad(M^{-1})
+
+M_inv = M.inverse()                         # SE(3) 求逆（解析公式，非矩阵求逆）
+M_id  = pin.SE3.Identity()                  # 单位变换
+M_rand = pin.SE3.Random()                   # 随机合法位姿
+
+# ---- Motion：6D 空间速度 ----
+v = pin.Motion(np.array([0.1, 0.2, 0.3,     # 线速度 (前 3 维)
+                         0.4, 0.5, 0.6]))   # 角速度 (后 3 维)
+print(v.linear)                             # 线速度部分 (Vector3)
+print(v.angular)                            # 角速度部分 (Vector3)
+print(v.vector)                             # 完整 6D 向量
+v0 = pin.Motion.Zero()
+
+# ---- Force：6D 空间力 ----
+f = pin.Force(np.array([1.0, 0.0, 0.0,      # 力 (前 3 维)
+                        0.0, 0.0, 0.5]))    # 力矩 (后 3 维)
+print(f.linear)                             # 力部分
+print(f.angular)                            # 力矩部分
+
+# ---- Inertia：6D 空间惯量 ----
+mass   = 2.5                                 # 质量 (kg)
+lever  = np.array([0.0, 0.0, 0.1])          # 质心相对 frame 原点的位置
+I_c    = np.diag([0.01, 0.01, 0.02])        # 质心处的 3x3 转动惯量
+Y = pin.Inertia(mass, lever, I_c)           # 构造 6x6 空间惯量
+print(Y.mass)                               # 标量质量
+print(Y.lever)                              # 质心位置
+print(Y.matrix())                           # 展开成 6x6 矩阵
+```
+
+### 核心运算 1：`act` / `actInv`——坐标系变换 ⭐⭐⭐
+
+`SE3` 最重要的能力是把 `Motion`、`Force`、`Inertia` 从一个坐标系搬到另一个坐标系。这正是 RNEA 递推中 ${}^i X_{\lambda(i)} v_{\lambda(i)}$ 这一项干的事——把父关节的速度变换到子关节坐标系。Pinocchio 用 `act`（正向作用）和 `actInv`（逆向作用）封装了 47 章前文反复出现的"伴随变换"：
+
+```python
+A_M_B = pin.SE3.Random()        # frame A 到 frame B 的变换
+v_B   = pin.Motion.Random()     # 在 B 下表达的速度
+
+# act：把 B 下的量变换到 A 下表达。等价于 Ad(A_M_B) @ v_B
+v_A = A_M_B.act(v_B)            # Motion 的伴随变换
+# 数值上等价于：
+v_A_check = pin.Motion(A_M_B.action @ v_B.vector)
+assert np.allclose(v_A.vector, v_A_check.vector)
+
+# actInv：反向变换，等价于 Ad(A_M_B^{-1}) @ v_A
+v_B_back = A_M_B.actInv(v_A)
+assert np.allclose(v_B_back.vector, v_B.vector)   # act 与 actInv 互逆
+
+# act 对 Force 用的是对偶伴随 Ad^{-T}（力和速度的变换互为对偶）
+f_B = pin.Force.Random()
+f_A = A_M_B.act(f_B)            # Force 的（对偶）伴随变换
+
+# act 对 Inertia：Y_A = A_M_B.act(Y_B)，对应 Ad^{-T} Y Ad^{-1}
+Y_B = pin.Inertia.Random()
+Y_A = A_M_B.act(Y_B)           # 空间惯量的坐标变换（CRBA 后向递推的核心操作）
+```
+
+> **本质洞察**：`act` 之所以能对 `Motion`、`Force`、`Inertia` 三种对象**同名重载**，是因为它们在数学上都是"被 $SE(3)$ 作用的对象"，只是作用方式不同——速度用伴随 $\mathrm{Ad}$，力用对偶伴随 $\mathrm{Ad}^{-T}$，惯量用合同变换 $\mathrm{Ad}^{-T} Y\, \mathrm{Ad}^{-1}$。Pinocchio 把"群作用"这个抽象概念落实为一个统一的 `act` 接口，让 RNEA/CRBA 的递推代码读起来像数学公式本身。这是"数学结构驱动 API 设计"的又一个范例——与 47.1 节末尾的本质洞察呼应。
+
+### 核心运算 2：`cross`——空间叉乘 ⭐⭐⭐
+
+RNEA 正向递归里的 $v_i \times S_i \dot q_i$、反向递归里的 $v_i \times^* I_i v_i$ 用的是**空间叉乘**。空间向量有两种叉乘：
+
+- $v \times m$（`Motion` 叉乘 `Motion`，记作 $\mathrm{ad}_v$）——出现在加速度递推的科氏项
+- $v \times^* f$（`Motion` 叉乘 `Force`，记作 $\mathrm{ad}_v^*$）——出现在力递归的陀螺项
+
+```python
+v = pin.Motion.Random()
+m = pin.Motion.Random()
+f = pin.Force.Random()
+
+vxm = v.cross(m)        # Motion × Motion → Motion（即 ad_v(m)）
+vxf = v.cross(f)        # Motion × Force  → Force （即 ad_v^*(f)）
+
+# 物理意义：v.cross(m) 的角部分是 ω_v × ω_m，
+# 线部分是 v_v × ω_m + ω_v × v_m（旋量叉乘的耦合结构）
+```
+
+这个 `cross` 就是把"空间速度的李括号"封装成一次方法调用。没有它，你得手写 4 个 `Vector3d.cross` 再组装——这正是 47.5 节 RNEA 递推能写得如此紧凑的底层支撑。
+
+### 核心运算 3：`Inertia` 作用于 `Motion`——牛顿-欧拉方程 ⭐⭐
+
+空间惯量 $I_i$ 乘以空间加速度 $a_i$ 得到空间力——这就是打包成 6 维形式的**牛顿-欧拉方程** $f = I a$（牛顿第二定律 $f = m\dot v$ 和欧拉方程 $\tau = I\dot\omega + \omega\times I\omega$ 的统一）：
+
+```python
+Y = pin.Inertia.Random()
+a = pin.Motion.Random()
+f = Y * a               # Inertia × Motion → Force，即空间牛顿-欧拉方程
+
+# 这正是 RNEA 反向递归 f_i = I_i a_i + (惯性力项) 的第一项
+```
+
+### 与单个 SE(3)（Sophus/manif）的边界 ⭐⭐
+
+回到本节开头的桥接：Sophus/manif 和 Pinocchio 的空间代数**像在哪、不像在哪**？
+
+- **像**：两者都实现了 $SE(3)$ 的 `compose`/`inverse`，都有 6 维李代数（manif 的 `SE3Tangent` ≈ Pinocchio 的 `Motion`），都提供 `log`/`exp`。
+- **不像（边界）**：① manif 的核心是**位姿估计**（协方差传播、雅可比 $J_l/J_r$），它的 `Tangent` 默认 `[平移; 旋转]` 布局且强调"在流形上做梯度优化"；Pinocchio 的核心是**动力学**，`Motion`/`Force` 是物理速度/力，强调 `Inertia` 作用和空间叉乘——manif **没有** `Inertia` 和空间叉乘 `ad`。② Pinocchio 的 6D 布局是 `[线性; 角度]`，manif 的 `SE3Tangent` 是 `[平移ρ; 旋转θ]`——两者顺序看似都是"平移在前"，但 manif 的旋转部分是李代数 $\theta$（用于 `exp`），Pinocchio 的角部分是物理角速度 $\omega$，**不要把 `Motion.vector` 直接喂给 manif 的 `exp`**。③ 不要用 Pinocchio 的 `Motion` 做位姿估计的不确定性传播，也不要用 manif 的 `Tangent` 做 RNEA——它们服务不同问题。
+
+> **⚠️ 概念误区：把 `Motion` 当成"位姿的微小增量 $\log(T)$"**
+>
+> 错误描述：看到 `Motion` 是 6 维、`SE3` 是位姿，初学者以为 `Motion = log6(SE3)`，把速度和"位姿增量"混为一谈。
+> 现象/后果：在做数值积分时写出 `M_next = pin.exp6(v)`（把速度当增量直接指数映射），得到的位姿在时间尺度上完全错误——量纲都不对（速度是 1/s，增量是无量纲）。
+> 根本原因：`Motion`（$\mathfrak{se}(3)$ 的元素）确实和 $\log(T)$ 同属一个 6 维空间，但物理含义不同——前者是"每秒变化多少"，后者是"一共变化多少"。二者差一个时间因子 $\mathrm{d}t$。
+> 正确做法：积分位姿时用 `M_next = M * pin.exp6(v * dt)`（右乘 body-fixed 增量，且乘上 $\mathrm{d}t$）；Pinocchio 在配置空间层面提供 `pin.integrate(model, q, v*dt)` 自动处理每个关节的流形结构，优先用它而非手写 `exp6`。
+
+### 练习 ⭐⭐
+
+**练习 47.3.6.1**（⭐⭐）：用 `pin.SE3.Random()` 生成 `A_M_B`，用 `pin.Motion.Random()` 生成 `v_B`。分别用 `A_M_B.act(v_B)` 和手写公式 $\omega_A = R\,\omega_B,\ v_A = R\,v_B + p \times (R\,\omega_B)$ 计算 `v_A`，验证两者一致。这道题让你确信 `act` 内部就是那个"容易写错的耦合公式"——以后放心用 `act` 而不必手写。
+
+**练习 47.3.6.2**（⭐⭐⭐）：验证空间叉乘与伴随的关系：对随机 `Motion v` 和 `Motion m`，验证 `v.cross(m).vector` 等于 $6\times6$ 矩阵 $\mathrm{ad}_v$ 乘以 `m.vector`，其中 $\mathrm{ad}_v = \begin{bmatrix}\hat\omega & \hat v\\ 0 & \hat\omega\end{bmatrix}$（注意 Pinocchio 的 `[线性;角度]` 布局下这个块结构的具体形式）。提示：用 `pin.skew()` 构造 $3\times3$ 反对称矩阵。
+
 ## 47.3.5 承上启下：从设计哲学到核心算法实战
 
 上半部分解决了"Pinocchio 为什么要这样设计"的问题——CRTP 消灭虚函数开销，Model/Data 分离实现零锁多线程。但设计哲学只是地基，接下来我们要在这个地基上建房子：从模板化 Scalar 类型的设计哲学到 FK/RNEA/ABA/Jacobian 的完整 Python 代码，再到 v3.x 新增的约束动力学与碰撞接口。

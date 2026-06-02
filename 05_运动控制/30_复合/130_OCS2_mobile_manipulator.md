@@ -934,8 +934,8 @@ problem.preComputationPtr.reset(
 | 项 | 约束函数 $h$ | 惩罚类 | 容器 | 依赖 |
 |----|-------------|--------|------|------|
 | 输入正则 | 无（直接是代价） | 无（`QuadraticInputCost` 直接给代价） | `costPtr` | $(x,u)$ |
-| 末端跟踪（运行） | $SE(3)$ 误差 $e(x)$ | `QuadraticPenalty`×6 | `stateSoftConstraintPtr` | $x$ |
-| 末端跟踪（终端） | $SE(3)$ 误差 $e(x)$ | `QuadraticPenalty`×6 | `finalSoftConstraintPtr` | $x(t_N)$ |
+| 末端跟踪（运行） | $SE(3)$ 误差 $e(x)$ | `QuadraticPenalty` $\times 6$ | `stateSoftConstraintPtr` | $x$ |
+| 末端跟踪（终端） | $SE(3)$ 误差 $e(x)$ | `QuadraticPenalty` $\times 6$ | `finalSoftConstraintPtr` | $x(t_N)$ |
 | 自碰撞 | $d_{ij}-d_{\min}$ | `RelaxedBarrierPenalty` | `stateSoftConstraintPtr` | $x$ |
 | 关节位置+速度限位 | $q-q_{\min}$ 等 | `RelaxedBarrierPenalty` | `softConstraintPtr` | $(x,u)$ |
 
@@ -1064,8 +1064,8 @@ jointVelocityLimits { mu 1e-2  delta 1e-3
 
 | task.info 块 | OCP 容器 | 惩罚类 | 数学对应 |
 |--------------|----------|--------|----------|
-| `endEffector` | `stateSoftConstraintPtr` | `QuadraticPenalty`×6 | $\frac12 e^\top Q_{ee}e$（运行） |
-| `finalEndEffector` | `finalSoftConstraintPtr` | `QuadraticPenalty`×6 | 终端末端代价 |
+| `endEffector` | `stateSoftConstraintPtr` | `QuadraticPenalty` $\times 6$ | $\frac12 e^\top Q_{ee}e$（运行） |
+| `finalEndEffector` | `finalSoftConstraintPtr` | `QuadraticPenalty` $\times 6$ | 终端末端代价 |
 | `inputCost.R` | `costPtr` | 无（直接二次代价） | $\frac12 u^\top R u$ |
 | `selfCollision` | `stateSoftConstraintPtr` | `RelaxedBarrierPenalty` | $\phi(d-d_{\min})$ |
 | `jointPositionLimits` | `softConstraintPtr` | `RelaxedBarrierPenalty` | $\phi(q-q_{\min})$ 等 |
@@ -1997,3 +1997,47 @@ ddp::Settings    // maxNumIterations、minRelCost、constraintTolerance 等
 | 约束不可行 | 目标在障碍内或安全距离过大 | 1. 关掉障碍约束 2. 降低安全距离 3. 硬约束改软约束 | 83.31 |
 | 求解时间过长 | collision pair 过多或 CppAD 未启用 | 1. 减少碰撞对 2. 缩短 horizon 3. 检查代码生成 | 83.32 |
 | CppAD 编译失败 | 编译器版本或 Pinocchio 版本不匹配 | 1. 检查 CMakeLists 依赖 2. 确认 C++17 支持 3. 降级或升级编译器 | 83.39 |
+| 关节顺序错位（末端位姿全错但不报错） | `dofNames` 顺序与 URDF/状态切片不一致 | 1. 打印 `ManipulatorModelInfo::dofNames` 2. 与 URDF joint 顺序逐项比对 3. 用 `AccessHelperFunctions` 复核状态切片 | 83.5, 83.26.1 |
+| RViz 里预测轨迹与真机不同步 | MRT 策略时间戳与控制周期未对齐 | 1. 检查 `updatePolicy` 的查询时间 2. 确认 MRT 插值时间基准 3. 比较 MPC 发布频率与控制频率 | 83.23 |
+| 自碰撞约束恒为激活（求解被拖死） | 零位下相邻连杆距离已小于 $d_{\min}$ | 1. 零位单独算各 pair 距离 2. 用 SRDF 排除相邻连杆 3. 调小 $d_{\min}$ 或剔除该 pair | 83.17.1 |
+
+> **如何使用本表**：故障排查表覆盖了从"配置错"（frame/关节顺序）、"权重错"（绕圈/抖动）、"约束错"（不可行/恒激活）到"系统错"（求解超时/同步/编译）四类最常遇到的失败。诊断时建议按这个由浅入深的顺序排查：先用 Pinocchio 单独验证运动学（排除配置错），再看代价权重尺度（排除权重错），最后才动求解器和约束（排除系统错）。绝大多数"机器人行为诡异但程序不崩溃"的问题，根因都落在前两类——尤其是关节顺序与 frame 约定，这两处错了不会报错，却会让一切结果安静地失真。这正是 §83.26.1 把"单关节脉冲测试 + 零位 FK 比较"列为适配第一步的原因。
+
+---
+
+## 83.41 术语速查表
+
+83.35 给的是"结论速查"（要记住的论断），本表给的是"术语速查"（名词的中英对照与一句话定义）。本章首次出现或反复使用的术语集中如下，便于回读源码时随手对照：
+
+| 术语（中文） | English | 一句话定义 |
+|------------|---------|----------|
+| 移动操作 | Mobile Manipulation | 可移动底盘搭载机械臂、需同时协调底盘与臂完成末端任务 |
+| 运动学最优控制 | Kinematic OCP | 以速度为输入、不显式建模力矩/惯量的最优控制问题 |
+| 差速底盘 | Differential-drive Base | 状态 $[x,y,\theta]$、输入线速度+角速度 $[v,\omega]$ 的非完整底盘 |
+| 末端执行器 | End-effector (EE) | 机械臂末端工具坐标系，跟踪任务的作用对象 |
+| 末端位姿误差 | SE(3) Error | 用 $SE(3)$ 对数 $\log(T_{\text{ref}}^{-1}T)$ 表示的 6 维位姿误差 |
+| 接口类 | `MobileManipulatorInterface` | 组装 OCP（动力学+代价+约束+求解设置）的总入口类 |
+| 模型信息 | `ManipulatorModelInfo` | 保存模型类型、状态/输入/臂维度与关节名顺序的结构体 |
+| 最优控制问题容器 | `OptimalControlProblem` | 聚合动力学、代价、软约束、预计算的 OCP 顶层结构 |
+| 系统流映射 | `systemFlowMap` / flow map | 返回 $\dot{\mathbf{x}}=f(\mathbf{x},\mathbf{u})$ 的连续动力学函数 |
+| 自动微分 | CppAD / AD | 用 CppAD 对 flow map、代价、约束生成解析导数并代码生成 |
+| 关节正则 | Joint Regularization | 在零空间把冗余臂拉向参考位形的二次代价 |
+| 软约束 | Soft Constraint | 以惩罚项形式进入代价、可被违反的约束（限位、末端、自碰撞） |
+| 松弛障碍惩罚 | `RelaxedBarrierPenalty` | 对数障碍 + 二次延拓的惩罚，约束接近时梯度陡增 |
+| 二次惩罚 | `QuadraticPenalty` | $p(h)=\tfrac12\mu h^2$ 形式的惩罚，用于末端跟踪 |
+| 自碰撞 | Self-collision | 机器人连杆之间的碰撞，用最近距离 $d-d_{\min}$ 约束 |
+| 几何接口 | `PinocchioGeometryInterface` | 持有几何模型、调用 hpp-fcl/Coal 计算最近距离 |
+| 预计算 | `PreComputation` | 每步缓存共享的 FK 等中间量，避免代价/约束重复计算 |
+| 多重射击 | Multiple Shooting | 把轨迹分段、各段独立积分并以连续性约束缝合的离散化 |
+| 实时迭代 | RTI (Real-Time Iteration) | 每控制周期只做一次 SQP 迭代以保证实时性的策略 |
+| 序列二次规划 | SQP | 在当前点线性化约束、二次近似代价反复求解 QP 的非线性求解法 |
+| 内点法 | IPM (Interior Point Method) | 用障碍函数处理不等式约束的求解器，硬约束鲁棒性好 |
+| 模型预测控制运行时 | MPC-MRT | MPC 求解线程与控制运行时（MRT）解耦的双线程架构 |
+| 任务配置文件 | `task.info` | 把权重、限幅、求解设置等数学参数暴露给工程使用的配置入口 |
+| 欧氏符号距离场 | ESDF | 存储到最近障碍有符号距离的体素场，供外部障碍约束查询 |
+
+> **本质洞察**：通读这张术语表会发现一条暗线——表里几乎每个"数学概念"都对应一个"OCS2 类名"：末端误差 ↔ `EndEffectorConstraint`、软约束 ↔ `StateSoftConstraint`、自碰撞 ↔ `SelfCollision`、动力学 ↔ `SystemDynamicsBaseAD`。这正是 OCS2 设计哲学的体现：它把最优控制的数学结构（动力学 / 代价 / 约束 / 求解器）一对一地映射成 C++ 的类型层次。读懂这套映射，就读懂了 OCS2——你看到一个数学项，就知道它该进哪个容器、由哪个类实现；反过来看到一个类名，也能立刻说出它在 OCP 公式里对应哪一项。这种"数学—代码同构"的能力，比记住任何单个 API 都更有迁移价值。
+
+---
+
+**—— 本章终 ——**
