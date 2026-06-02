@@ -2,7 +2,7 @@
 
 > **难度**: ⭐⭐⭐ ~ ⭐⭐⭐⭐ (本章是 TAMP 线的进阶专题，把前五章"世界完全可知"的假设撤掉，整体偏研究级)
 > **前置知识**: TAMP_T1（PDDL/FF、符号-几何鸿沟、Mini-TAMP 累积项目）、TAMP_T2（删除松弛启发式）、TAMP_T3（PDDLStream 的 Stream 采样器）；概率基础（条件概率、贝叶斯更新、期望）；强烈建议先读 U 线 `30_不确定性规划/50_POMDP与Belief规划`（运动/决策层的 POMDP 机器）
-> **核心参考**: Kaelbling & Lozano-Pérez (2013, IJRR), "Integrated Task and Motion Planning in Belief Space"; Garrett, Paxton, Lozano-Pérez, Kaelbling & Fox (2020, IROS), "Online Replanning in Belief Space for Partially Observable Task and Motion Problems"; Hoffmann & Brafman (2006, AIJ) Conformant-FF / (2005, ICAPS) Contingent-FF; Yoon, Fern & Givan (2007, ICAPS) FF-Replan; Younes & Littman (2004) PPDDL; Sanner (2010) RDDL
+> **核心参考**: Kaelbling & Lozano-Pérez (2013, IJRR), "Integrated Task and Motion Planning in Belief Space"; Garrett, Paxton, Lozano-Pérez, Kaelbling & Fox (2020, ICRA), "Online Replanning in Belief Space for Partially Observable Task and Motion Problems"; Hoffmann & Brafman (2006, AIJ) Conformant-FF / (2005, ICAPS) Contingent-FF; Yoon, Fern & Givan (2007, ICAPS) FF-Replan; Younes & Littman (2004) PPDDL; Sanner (2010) RDDL
 > **与既有章节的关系**: 本章是总论 T0 §4.4"不确定性贯穿三个根问题"那一行的系统展开。它站在 T1-T3 的"确定性 TAMP"之上，把符号层的世界从"完全可知"放宽到"只有概率估计"。它**不重复** U 线 `30_不确定性规划/` 的运动层机器（POMDP 求解器、机会约束），而是讲**任务层**如何表示、规划、执行不确定性，并在 §10 把任务层信念规划与运动层 belief-space 接起来。
 
 ---

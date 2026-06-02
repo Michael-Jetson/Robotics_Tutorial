@@ -590,7 +590,7 @@ $$r_{deepmimic} = w_p \cdot r_{pose} + w_v \cdot r_{vel} + w_e \cdot r_{end} + w
 r_total = r_task + w_amp * r_amp
 
 r_task: 任务 reward（如跟踪速度命令）
-r_amp:  判别器 reward = -log(1 - D(s, s'))
+r_amp:  判别器 reward = max[0, 1 - 0.25*(D(s, s') - 1)^2]   （LSGAN，D 为回归输出）
 w_amp:  判别器 reward 的权重（通常 0.5-1.0）
 ```
 
@@ -698,7 +698,7 @@ agent:
 
 ### AMP 判别器的工程实现
 
-AMP 的核心是一个判别器 $D(s, s')$，输入是状态转移 $(s_t, s_{t+1})$，输出是"这个转移来自参考数据的概率"。策略的额外 reward 是 $r_{amp} = -\log(1 - D(s, s'))$。
+AMP 的核心是一个判别器 $D(s, s')$，输入是状态转移 $(s_t, s_{t+1})$。注意 AMP（Peng et al., SIGGRAPH 2021）用的是 **LSGAN（最小二乘）判别器**，$D$ 输出的是一个**回归值**而非概率——训练目标让它对参考数据回归到 $+1$、对策略数据回归到 $-1$（输出端不接 sigmoid）。策略的额外 reward 取 LSGAN 风格形式 $r_{amp} = \max\!\left[0,\; 1 - 0.25\,(D(s, s') - 1)^2\right]$：当 $D(s,s') \to 1$（判别器认为"像参考"）时 reward 接近 $1$，远离时 reward 衰减并被截断到 $0$。
 
 ```python
 # AMP discriminator (概念性简化)
@@ -717,14 +717,13 @@ class AMPDiscriminator(nn.Module):
     
     def forward(self, obs, next_obs):
         x = torch.cat([obs, next_obs], dim=-1)
-        return self.net(x)  # logit
+        return self.net(x)  # LSGAN 回归输出（无 sigmoid；参考≈+1，策略≈-1）
     
     def compute_reward(self, obs, next_obs):
         with torch.no_grad():
-            logit = self.forward(obs, next_obs)
-            prob = torch.sigmoid(logit)
-            # 策略 reward: 让判别器认为是"真的"
-            reward = -torch.log(1 - prob + 1e-6)
+            d = self.forward(obs, next_obs)
+            # AMP 的 LSGAN style reward：D→+1 时 reward→1，远离则衰减并截断到 0
+            reward = torch.clamp(1.0 - 0.25 * (d - 1.0) ** 2, min=0.0)
         return reward
 ```
 
