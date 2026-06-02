@@ -2264,7 +2264,7 @@ def compare_sim_real_logs(sim_log_path, real_log_path):
 | # | 检查项 | 通过标准 | 验证方法 |
 |---|--------|---------|---------|
 | 14 | 机器人总质量与仿真差异 < 10% | 称重对比 | 电子秤 |
-| 15 | 训练 DR 的摩擦范围覆盖真实地面 | μ_real ∈ DR range | SysID 或经验估计 |
+| 15 | 训练 DR 的摩擦范围覆盖真实地面 | $\mu_{\text{real}} \in$ DR range | SysID 或经验估计 |
 | 16 | Sim2Sim 交叉验证 survival time > 90% | MuJoCo 验证通过 | sim2sim 脚本 |
 
 ### 安全层

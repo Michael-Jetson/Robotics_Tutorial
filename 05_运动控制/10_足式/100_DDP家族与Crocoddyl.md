@@ -334,6 +334,61 @@ $\mu$ 的调节策略:
 
 如果不做正则化会怎样?当 $Q_{uu}$ 有负特征值时,Riccati 回退的控制增益 $\mathbf{k} = -Q_{uu}^{-1} Q_u$ 会指向代价**增大**的方向——forward pass 不仅不降低代价,反而让轨迹发散。更糟糕的是,$Q_{uu}$ 的 Cholesky 分解会直接失败(负对角元素),整个算法崩溃。正则化 $\mu I$ 的作用就是在 $Q_{uu}$ 的特征值上加一个正偏移,把所有特征值推到正数区域,代价是步长变保守——但至少保证了算法不崩溃。
 
+### 54.2.8B 两种正则化模式:control-reg vs state-reg ⭐⭐⭐
+
+上面给的 $Q_{\mathbf{uu}} + \mu\mathbf{I}$ 只是**最基础**的一种正则化(control regularization,控制正则)。Crocoddyl/box-FDDP 实际实现了**两种**正则化模式,它们加在不同的地方,几何含义也不同。理解这个区别,是读懂 `solver.reg_min`、`solver.ureg`、`solver.xreg` 这些字段的前提。
+
+**模式一:control regularization(ureg)。** 直接在控制 Hessian 上加偏移:
+
+$$\tilde{Q}_{\mathbf{uu}} = Q_{\mathbf{uu}} + \mu\mathbf{I}_{n_u}$$
+
+这等价于在代价里隐式加了一项 $\frac{\mu}{2}\|\delta\mathbf{u}\|^2$——惩罚控制修正过大。它只改 $Q_{\mathbf{uu}}$,实现最简单,但当**动力学本身**(而非代价)导致 $Q_{\mathbf{uu}}$ 病态时,可能需要很大的 $\mu$ 才压得住。
+
+**模式二:state regularization(xreg)。** Tassa(2014)和 Crocoddyl 的默认做法是把正则化加在**下一步价值函数的 Hessian** 上,即在计算 $Q$ 系数时用 $V_{\mathbf{xx},k+1} + \mu\mathbf{I}_{n_x}$ 替换 $V_{\mathbf{xx},k+1}$:
+
+$$\tilde{Q}_{\mathbf{uu}} = l_{\mathbf{uu}} + \mathbf{f}_\mathbf{u}^T (V_{\mathbf{xx},k+1} + \mu\mathbf{I})\mathbf{f}_\mathbf{u} + V_{\mathbf{x},k+1}\cdot\mathbf{f}_{\mathbf{uu}}$$
+
+$$\tilde{Q}_{\mathbf{ux}} = l_{\mathbf{ux}} + \mathbf{f}_\mathbf{u}^T (V_{\mathbf{xx},k+1} + \mu\mathbf{I})\mathbf{f}_\mathbf{x} + V_{\mathbf{x},k+1}\cdot\mathbf{f}_{\mathbf{ux}}$$
+
+注意此时正则化**同时影响** $Q_{\mathbf{uu}}$ 和 $Q_{\mathbf{ux}}$,因此也影响反馈增益 $\mathbf{K}=-\tilde Q_{\mathbf{uu}}^{-1}\tilde Q_{\mathbf{ux}}$。
+
+> 💡 **洞察**:control-reg 只让**前馈** $\mathbf{k}$ 变保守,反馈结构 $\mathbf{K}$ 几乎不变;state-reg 同时让前馈和反馈都变保守,相当于"假装离最优解更近的轨迹也有不确定性"。Tassa 发现 state-reg 在强非线性问题上更鲁棒——因为它正则化的是"未来代价对状态的敏感度",这正是 trust-region 思想:不信任远处的二次近似,就把那里的曲率信息打个折扣。
+
+```
+两种正则化的几何对比:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+control-reg:  在控制空间画一个信任域
+   → δu 不能太大,但 δu 怎样响应 δx 不变
+   → 适合:代价 Hessian 病态
+
+state-reg:    在状态空间画一个信任域
+   → 不信任 V_xx(k+1) 的远处曲率
+   → 同时收缩前馈和反馈
+   → 适合:动力学强非线性(接触、碰撞)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+**自适应调节(基于 Cholesky 失败)。** 实际代码并不去算特征值(太贵),而是**直接尝试 Cholesky 分解 $\tilde Q_{\mathbf{uu}} = LL^T$**:若成功则 $\tilde Q_{\mathbf{uu}}$ 正定,继续;若失败(出现非正对角元),立刻按 $\mu\leftarrow\mu\cdot\nu$ 放大正则化并重试当前时间步。这是 backward pass 内部的一个小循环:
+
+```
+backward pass 内的正则化自适应(每个时间步):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+loop:
+  组装 Q_uu(含 μ 正则)
+  L = cholesky(Q_uu)
+  if L 成功:  break        # Q_uu 正定,放行
+  else:       μ *= ν       # 放大正则,重试
+              if μ > μ_max: 报错"无法正定化"
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+整次迭代结束后:
+  forward pass 成功 → μ /= ν (下次更激进)
+  forward pass 失败 → μ *= ν (下次更保守)
+```
+
+> ⚠️ **数值陷阱**:正则化下界 `reg_min` 不能设成 0。即便理论上 $Q_{\mathbf{uu}}$ 正定,浮点运算下接近奇异时 Cholesky 仍可能产生巨大的 $L^{-1}$,放大舍入误差。Crocoddyl 默认 `reg_min` $=10^{-9}$,给数值留一个"地板"。把它强行设为 0 在接触切换的尖锐时刻几乎必然触发 NaN。
+
+> ⚠️ **思维陷阱**:正则化让代价下降"变慢"不等于"变差"。新手看到加了 $\mu$ 后单步下降变小,常误以为正则化有害而把它关掉,结果在难题上直接发散。正确心态:正则化是**保险**,平时几乎不花钱($\mu$ 自适应缩到很小),关键时刻($Q_{\mathbf{uu}}$ 失正定)救命。这与 足式/60_QP_NLP建模 里 trust-region 与 line-search 互补的论述一致——正则化调"方向是否可信",line search 调"沿该方向走多远"。
+
 ### 54.2.9 数值例子:2D 小车 (手算可追踪) ⭐⭐
 
 **系统**:$\mathbf{x} = [p, v]^T$,$u$ 是加速度。
@@ -510,7 +565,7 @@ MPC warm-start 的问题:
 
 ### 54.4.2 FDDP 的核心思想:接受"Gaps" ⭐⭐⭐
 
-FDDP (Mastalli et al., Autonomous Robots 2022) 的关键创新:**允许轨迹中存在"动力学间隙"(gaps)**。如果说经典 DDP 的 forward pass 相当于一列火车——每节车厢(时间步)必须严格连接,那么 FDDP 相当于允许车厢之间有弹性连接:初始时车厢可以有间隙,随着优化迭代,间隙逐步收紧至零。这种"先宽松后收紧"的策略大幅提升了对初始猜测的容忍度。
+FDDP (Mastalli et al., Autonomous Robots 2022;论文中完整算法名为 **Box-FDDP**,包含 feasibility-driven 与 control-bounded 两种模式) 的关键创新:**允许轨迹中存在"动力学间隙"(gaps)**。如果说经典 DDP 的 forward pass 相当于一列火车——每节车厢(时间步)必须严格连接,那么 FDDP 相当于允许车厢之间有弹性连接:初始时车厢可以有间隙,随着优化迭代,间隙逐步收紧至零。这种"先宽松后收紧"的策略大幅提升了对初始猜测的容忍度。
 
 **Gap 的定义**:
 
@@ -599,6 +654,133 @@ $$\hat{\mathbf{x}}_{k+1} = f_k(\hat{\mathbf{x}}_k, \hat{\mathbf{u}}_k) + (1 - \a
 **练习 54.4a** (⭐⭐): 在 54.2 的 2D 小车例子上,给一个"不可行"的初始轨迹(比如所有状态都设为零,但控制设为随机值)。经典 DDP 是否能收敛?FDDP 呢?
 
 **练习 54.4b** (⭐⭐⭐): 实现 FDDP 的 forward pass(带 gap 项),并绘制每次迭代中 $\|\bar{\mathbf{f}}\|$ 的变化,验证 gap 单调减小。
+
+---
+
+## 54.4B Control-Limited DDP(box-DDP)——把控制限位塞进 backward pass ⭐⭐⭐⭐
+
+上一节的 FDDP 解决了"初始轨迹不可行"的问题,但还遗留一个 DDP 家族的老大难:**控制限位**(control limits)。Crocoddyl 默认的求解器叫 `SolverBoxFDDP`,这个 "Box" 前缀正是本节的主题。我们先讲清楚为什么控制限位这么棘手,再一步步推导 Tassa et al.(ICRA 2014)提出的 box-DDP,最后说明它如何与 FDDP 的 gap 机制合体成 Box-FDDP。
+
+### 54.4B.1 动机:为什么控制限位是 DDP 的硬骨头? ⭐⭐⭐
+
+回顾 足式/60_QP_NLP建模:在通用 NLP 里,控制限位 $\underline{\mathbf{u}} \leq \mathbf{u} \leq \overline{\mathbf{u}}$ 只是又一组不等式约束,内点法或 active-set 法统一处理即可。但 DDP 是一种**间接法**(indirect method)——它不直接在约束集上优化,而是通过 Bellman 递推在**无约束的控制空间**里解析地求出最优修正 $\delta\mathbf{u}^* = \mathbf{k} + \mathbf{K}\delta\mathbf{x}$。这个解析解是把 $\partial Q/\partial\delta\mathbf{u}=0$ 直接求逆得到的,它**根本不知道**控制有上下界。
+
+> **本质洞察**:DDP 的高效率恰恰来自"只在无约束控制空间里求解"——它用 $-Q_{\mathbf{uu}}^{-1}Q_\mathbf{u}$ 一步算出最优控制,省掉了通用 NLP 反复探测约束激活集的代价。而控制限位破坏了这个前提:一旦最优解落在边界外,那个漂亮的闭式解就失效了。box-DDP 的全部技巧,就是在"保住闭式解的高效"和"尊重控制边界"之间找平衡。
+
+那么,不专门处理控制限位会怎样?工程上有两种朴素做法,Tassa 的论文证明它们都不行:
+
+**朴素做法一:Clamping(事后裁剪)。** 先用无约束 DDP 算出 $\mathbf{u}^* = \bar{\mathbf{u}} + \alpha\mathbf{k} + \mathbf{K}\delta\mathbf{x}$,然后在 forward pass 里把超界的分量裁剪回边界:$\mathbf{u} \leftarrow \mathrm{clamp}(\mathbf{u}, \underline{\mathbf{u}}, \overline{\mathbf{u}})$。
+
+```
+为什么 Clamping 不行?
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+问题在于:反馈增益 K 是在"无约束假设"下算出来的。
+当某个控制分量被裁剪到边界,它就不再随 δx 变化了
+(它的有效增益应该是 0),但 K 矩阵仍然让其它分量
+按"它还在自由变化"的假设去补偿——这是错误的耦合。
+
+后果:被裁剪分量与自由分量之间的反馈协调被破坏,
+     line search 经常失败,收敛退化为线性甚至发散。
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+**朴素做法二:Penalty(惩罚函数)。** 在代价里加一项 $\rho\cdot\max(0, \mathbf{u}-\overline{\mathbf{u}})^2$ 软性惩罚越界。问题是:$\rho$ 小则约束形同虚设,$\rho$ 大则 $Q_{\mathbf{uu}}$ 病态(condition number 爆炸),Riccati 回退数值崩溃。这与 足式/80_接触力学与约束优化 中讨论的"软约束 vs 硬约束"权衡完全同构——惩罚法永远在"约束不够硬"和"数值不稳定"之间走钢丝。
+
+> ⚠️ **概念误区**:很多人以为"控制限位嘛,clamp 一下不就行了"。Tassa et al.(2014)用实验证明:naive clamping 会让 DDP 在带限位的人形机器人问题上**丧失二次收敛**,迭代次数翻几倍甚至发散。控制限位不是 forward pass 的事后修补,而必须在 **backward pass 求控制律时**就纳入考虑。
+
+### 54.4B.2 核心思想:把每一步的 $\delta\mathbf{u}$ 求解变成一个 box-QP ⭐⭐⭐⭐
+
+box-DDP 的洞察是:backward pass 里求 $\delta\mathbf{u}^*$ 本质上是在最小化一个**二次型**
+
+$$\delta\mathbf{u}^* = \arg\min_{\delta\mathbf{u}} \; \frac{1}{2}\delta\mathbf{u}^T Q_{\mathbf{uu}}\delta\mathbf{u} + (Q_\mathbf{u} + Q_{\mathbf{ux}}\delta\mathbf{x})^T\delta\mathbf{u}$$
+
+无约束时,令梯度为零就得到 $\delta\mathbf{u}^* = -Q_{\mathbf{uu}}^{-1}(Q_\mathbf{u} + Q_{\mathbf{ux}}\delta\mathbf{x})$。现在我们**直接给这个二次最小化加上箱型约束**:
+
+$$\boxed{\delta\mathbf{u}^* = \arg\min_{\delta\mathbf{u}} \; \frac{1}{2}\delta\mathbf{u}^T Q_{\mathbf{uu}}\delta\mathbf{u} + Q_\mathbf{u}^T\delta\mathbf{u} \quad \text{s.t.} \quad \underline{\mathbf{u}} - \bar{\mathbf{u}} \leq \delta\mathbf{u} \leq \overline{\mathbf{u}} - \bar{\mathbf{u}}}$$
+
+这是一个**带箱型约束的二次规划(box-constrained QP,简称 box-QP)**。注意约束边界是 $\underline{\mathbf{u}}-\bar{\mathbf{u}}$ 到 $\overline{\mathbf{u}}-\bar{\mathbf{u}}$,因为 $\delta\mathbf{u}$ 是相对当前 $\bar{\mathbf{u}}$ 的扰动。
+
+> 💡 **洞察**:这一步是"把约束从 forward pass 搬到 backward pass"的关键。无约束 DDP 在每个时间步解一个**线性方程组**($Q_{\mathbf{uu}}\delta\mathbf{u} = -Q_\mathbf{u}$);box-DDP 在每个时间步解一个**小规模 box-QP**($n_u$ 维,$n_u$ 通常只有 12)。$n_u$ 维的 box-QP 用 projected-Newton 几次迭代就收敛,代价远小于一次 Pinocchio 动力学求导。
+
+### 54.4B.3 Projected-Newton 求解 box-QP ⭐⭐⭐⭐
+
+Tassa 用 **projected-Newton 法**(投影牛顿法)解这个 box-QP。核心是维护一个**激活集(active set)**——记录哪些控制分量当前顶在边界上。
+
+把控制分量分成两类:
+- **自由集(free set)** $\mathcal{F}$:$\delta u_i$ 严格在边界内,可自由优化。
+- **钳制集(clamped set)** $\mathcal{C}$:$\delta u_i$ 顶在上界或下界,暂时固定。
+
+对自由集里的分量,我们解一个**降维的无约束 Newton 子问题**——只用 $Q_{\mathbf{uu}}$ 中对应自由分量的子块:
+
+$$\delta\mathbf{u}_{\mathcal{F}}^* = -\left(Q_{\mathbf{uu}}^{\mathcal{F}\mathcal{F}}\right)^{-1}\left(Q_{\mathbf{u}}^{\mathcal{F}} + Q_{\mathbf{uu}}^{\mathcal{F}\mathcal{C}}\delta\mathbf{u}_{\mathcal{C}}\right)$$
+
+其中 $Q_{\mathbf{uu}}^{\mathcal{F}\mathcal{F}}$ 是 $Q_{\mathbf{uu}}$ 取自由集行列的子矩阵,$\delta\mathbf{u}_{\mathcal{C}}$ 是钳制分量(固定在边界)。算完后投影回箱内、更新激活集,重复直到激活集稳定。
+
+```
+Projected-Newton 求解 box-QP (单个时间步):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+输入: Q_uu (n_u×n_u), Q_u (n_u), 边界 [lb, ub]
+1. 初始化 δu = clamp(无约束解, lb, ub)
+2. Repeat:
+   a. 判定激活集:
+      clamped = { i : (δu_i==lb_i 且 grad_i>0) 或
+                      (δu_i==ub_i 且 grad_i<0) }
+      free    = 其余分量
+   b. 在 free 子空间解 Newton 步:
+      δu_free = -(Q_uu[free,free])⁻¹ · grad[free]
+   c. 沿 Newton 方向做投影 line search:
+      δu = clamp(δu + t·Δ, lb, ub)
+   d. if 激活集不再变化 且 ‖free 梯度‖<ε: break
+3. 返回 δu* 及自由集上的反馈增益 K_free
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+> 🧠 **深入理解**:为什么是"projected-**Newton**"而不是"projected-**gradient**"?因为在自由子空间里我们用了完整的二阶信息 $(Q_{\mathbf{uu}}^{\mathcal{F}\mathcal{F}})^{-1}$,这保住了 DDP 的二次收敛特性——Tassa 论文的标题结论正是"box-DDP exhibits quadratic convergence"。如果只用投影梯度,会退化成一阶方法,收敛慢得多。这与 足式/60_QP_NLP建模 中"梯度法 vs 牛顿法"的对比一脉相承,只是这里的牛顿步被限制在激活集补集上。
+
+### 54.4B.4 钳制分量的反馈增益必须置零 ⭐⭐⭐
+
+box-DDP 还有一个极易被忽略的细节,正是 naive clamping 翻车的根因:**钳制集分量的反馈增益行必须置零**。
+
+直觉是这样的:如果某个控制分量 $u_i$ 已经顶在上界(比如电机已经满扭矩),那么当状态发生扰动 $\delta\mathbf{x}$ 时,$u_i$ **不能再增加**去响应——它已经饱和了。因此它对 $\delta\mathbf{x}$ 的反馈增益就应该是 0:
+
+$$\mathbf{K}_{i,:} = \mathbf{0}, \quad \forall i \in \mathcal{C}\ (\text{钳制集})$$
+
+只有自由集分量才保留非零反馈增益,且这些增益由 $-(Q_{\mathbf{uu}}^{\mathcal{F}\mathcal{F}})^{-1}Q_{\mathbf{ux}}^{\mathcal{F}}$ 给出。
+
+> **本质洞察**:naive clamping 的致命错误,就是用了**完整**的 $\mathbf{K}=-Q_{\mathbf{uu}}^{-1}Q_{\mathbf{ux}}$ 但又在 forward pass 裁剪控制——增益矩阵假设所有分量都自由,而现实里一部分分量已饱和。box-DDP 通过"钳制分量增益置零"让反馈律与饱和事实自洽,这才是它能保持收敛的根本原因。一句话:**饱和的执行器不该再有反馈权限**。
+
+### 54.4B.5 Box-FDDP:gap 机制 + 控制限位合体 ⭐⭐⭐
+
+现在把两条线索接起来。Crocoddyl 的旗舰求解器 `SolverBoxFDDP` 同时具备:
+- **FDDP 的 gap 机制**(§54.4):容忍不可行初值,gap 单调收敛;
+- **box-DDP 的 projected-Newton**(本节):每步解 box-QP,尊重控制边界。
+
+Mastalli et al.(2022)的论文把它表述为**两种模式的自动切换**:
+
+| 模式 | 触发条件 | 行为 |
+|------|---------|------|
+| **feasibility-driven 模式** | 当前轨迹不可行($\|\bar{\mathbf{f}}\|$ 大) | 优先收紧 gap,$\alpha$ 主要用于消除动力学间隙 |
+| **control-bounded 模式** | 轨迹接近可行 | 启用 box-QP,精细处理控制限位,逼近最优 |
+
+```
+Box-FDDP 双模式自动切换:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                  ‖gap‖ 大?
+                 ╱        ╲
+              是╱          ╲否
+   feasibility-driven    control-bounded
+   (先把轨迹拉回可行)    (box-QP 精修控制)
+        │                    │
+        └────── 迭代推进 ─────┘
+              gap → 0, 控制满足边界
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+> ⚠️ **思维陷阱**:不要把 box-DDP 和 ProxDDP(§54.9.2)搞混。box-DDP 只处理**控制限位**(箱型约束,可在每步局部 QP 解决);ProxDDP 用增广拉格朗日处理**任意约束**(含状态约束、摩擦锥这类把不同时间步耦合起来的约束)。控制限位之所以能用 box-DDP 廉价解决,正因为它是**逐时间步解耦**的——每个 $\mathbf{u}_k$ 的边界只约束自己,不牵连别的时间步。一旦约束跨时间步耦合(如"整条轨迹的足端不能踩进禁区"),box-QP 就无能为力,必须上 ProxDDP/SQP。
+
+**练习 54.4Ba** (⭐⭐⭐): 在 54.2 的 2D 小车例子上加控制限位 $|u|\leq 2$。先用 naive clamping(无约束 DDP + forward pass 裁剪),再用 projected-Newton box-QP。对比两者的收敛迭代数和最终代价。
+
+**练习 54.4Bb** (⭐⭐⭐⭐): 实现一个 $n_u=3$ 的 box-QP projected-Newton 求解器(Eigen),输入随机正定 $Q_{\mathbf{uu}}$、随机 $Q_\mathbf{u}$ 和边界,验证:(a) 解满足 KKT 条件;(b) 钳制分量的梯度方向都指向边界外。与 `quadprog` 或 OSQP 的结果对照。
 
 ---
 
@@ -1501,25 +1683,18 @@ DDP 流派 (Crocoddyl, MuJoCo)       SQP 流派 (OCS2, ALTRO)
 
 ## 🔧 故障排查手册
 
-| 现象 | 可能原因 | 排查方法 |
-|------|---------|---------|
-| DDP 迭代代价不下降,反复回退步长 $\alpha$ 直至 $\alpha_{\min}$ | 正则化参数 $\mu$ 过小导致 $Q_{uu}$ 不正定,或初始轨迹离最优解太远 | 1. 打印 $Q_{uu}$ 的最小特征值,确认正定性 2. 增大初始正则化 $\mu_0$(如从 $10^{-9}$ 提高到 $10^{-4}$) 3. 提供更好的初始猜测(如用逆动力学生成) |
-| Forward pass 出现 NaN 或 Inf | 动力学积分发散——控制量 $u$ 过大导致关节加速度爆炸 | 1. 检查控制量上下界是否设置 2. 在 `ActionModel` 中加 control bounds 3. 打印 forward pass 每步的状态范数,定位发散起始时间步 |
-| 求解结果中接触力违反摩擦锥约束 | 使用无约束 FDDP 时,摩擦锥仅通过代价函数惩罚而非硬约束 | 1. 检查 `CostModelFrictionCone` 的权重是否足够大 2. 切换到 ProxDDP/CSQP 以硬约束方式处理摩擦锥 3. 对比约束违反量与摩擦锥余量 |
-| MPC warm-start 后首次迭代代价反而上升 | 新的 MPC 周期移除了首步、追加了末步,产生了 gap 和末步初始猜测不良 | 1. 确认 warm-start 的轨迹平移逻辑正确(shift + extrapolate) 2. 检查末步的初始控制是否合理(复制倒数第二步而非填零) 3. 允许 MPC 首次迭代多跑几步以消化 gap |
-| Crocoddyl `calcDiff()` 耗时远超预期(> 5ms) | 每次 `calcDiff()` 都重新创建 Data 对象,触发堆分配 | 1. 确认使用 `problem.createData()` 一次性预分配 2. 用 `EIGEN_RUNTIME_NO_MALLOC` 检测运行时堆分配 3. 对比 `calc()` 和 `calcDiff()` 的单独耗时,定位瓶颈 |
-
----
-
-## 🔧 故障排查手册
+> 本表覆盖 DDP/FDDP/Crocoddyl 工程中最高频的 8 类故障。列顺序遵循"症状(可观测)→可能原因(机制)→排查步骤(可执行)→相关章节"。注意排查时**先看现象再猜原因**——很多人一上来就调 $\mu$,结果真正的 bug 是 URDF 惯量写错了。
 
 | 症状 | 可能原因 | 排查步骤 | 相关章节 |
 |------|---------|---------|---------|
-| backward pass Q_uu 不正定 | 正则化μ不足/动力学Hessian数值问题 | 增大μ或切换iLQR(Gauss-Newton近似丢弃二阶项) | 足式/100 §54.3 |
-| forward pass 发散 | 步长过大/初始轨迹离最优太远 | 减小α或启用line search(Armijo条件) | 足式/100 §54.4 |
-| warm-start 反而变慢 | 上一次解在约束边界震荡 | 检查约束激活状态变化；对比冷启动与热启动的迭代次数 | 足式/100 §54.7 |
-| Crocoddyl calcDiff 报段错误 | Data未正确createData | 检查model/data匹配；确认使用problem.createData()预分配 | 足式/100 §54.5 |
-| 并行Riccati结果不一致 | OpenMP线程数据竞争 | 检查Eigen内存对齐；用ThreadSanitizer检测竞态 | 足式/100 §54.8 |
+| DDP 迭代代价不下降,反复回退步长 $\alpha$ 直至 $\alpha_{\min}$ | 正则化 $\mu$ 过小使 $Q_{\mathbf{uu}}$ 不正定,或初始轨迹离最优解太远 | 1. 打印 $Q_{\mathbf{uu}}$ 的最小特征值确认正定性 2. 增大初始正则化 $\mu_0$(从 $10^{-9}$ 提到 $10^{-4}$) 3. 用 `quasiStatic()` 或逆动力学生成更好初值 | §54.2.8, §54.3 |
+| Forward pass 出现 NaN/Inf | 动力学积分发散——$\boldsymbol{u}$ 过大导致关节加速度爆炸;或 `dt` 太大使 Euler 不稳定 | 1. 打印 forward pass 每步状态范数,定位发散起始步 2. 加 control bounds(Box-FDDP) 3. 减小 `dt` 或改 RK4 4. 检查 URDF 惯量/质量是否为正定 | §54.2.7, §54.4 |
+| 求解结果中接触力违反摩擦锥 | 无约束 FDDP 下摩擦锥仅是代价惩罚,非硬约束 | 1. 增大 `ResidualModelContactFrictionCone` 权重 2. 切换 ProxDDP/CSQP 用硬约束 3. 对比约束违反量与摩擦锥余量 | §54.6.3, §54.9.2 |
+| MPC warm-start 后首次迭代代价反而上升 | 移位后追加的末步初值不良,产生大 gap | 1. 确认平移逻辑(shift + extrapolate)正确 2. 末步控制复制倒数第二步而非填零 3. 首次迭代多跑几步消化 gap 4. 确认 `isFeasible=False` | §54.4, §54.11.1 |
+| `calcDiff()` 耗时远超预期(>5ms) | 每次调用重新 `createData()` 触发堆分配;或误用 RK4 | 1. 确认用 `problem.createData()` 一次性预分配 2. 用 `EIGEN_RUNTIME_NO_MALLOC` 检测运行时 malloc 3. 分别测 `calc()`/`calcDiff()` 耗时定位瓶颈 | §54.5.3, §54.6.5 |
+| `calcDiff()` 段错误(segfault) | Model 与 Data 不匹配,或 Data 未由对应 Model 的 `createData()` 生成 | 1. 确认每个 `running_models_[t]` 配对正确的 `running_datas_[t]` 2. 自定义 ActionModel 时检查 `createData()` 返回类型 3. 用 AddressSanitizer 定位越界 | §54.5.4 |
+| OpenMP 并行结果与串行不一致 | 多线程共享同一 Data,或 Eigen 临时对象 data race | 1. 确认每时间步独立 Data 2. 用 ThreadSanitizer 检测竞态 3. 检查 Eigen 16 字节对齐(`EIGEN_MAKE_ALIGNED_OPERATOR_NEW`) | §54.5.4, §54.8 |
+| FDDP 的 gap 范数不下降反而振荡 | Armijo line search 参数不当,或正则化模式选错 | 1. 打印每次迭代 `max‖fs‖` 观察单调性 2. 检查 line search 接受准则 3. 尝试切换 Crocoddyl 的 `xreg`/`ureg` 两种正则模式 | §54.4.6, §54.2.8 |
 
 ---
 
@@ -1608,6 +1783,56 @@ DDP 流派 (Crocoddyl, MuJoCo)       SQP 流派 (OCS2, ALTRO)
 
 ---
 
+## API 速查表
+
+> 下表汇总本章涉及的 Crocoddyl 核心 API(以 Python 接口为主,C++ 接口同名)。签名以 Crocoddyl 2.x 为准;不同小版本参数可能微调,以本地 `help(crocoddyl.XXX)` 为准。**记忆抓手**:几乎所有类都遵循 `Model`(无状态、可共享)+ `Data`(有状态、每线程一份)+ `createData()` 的三件套模式。
+
+### 状态与驱动
+
+| API | 作用 | 关键参数/返回 |
+|------|------|-------------|
+| `crocoddyl.StateMultibody(model)` | 用 Pinocchio 模型构造状态流形(含 $SE(3)$ 浮动基) | 提供 `ndx`(切空间维度)、`integrate`/`diff`(流形上的加减) |
+| `crocoddyl.StateVector(nx)` | 欧氏状态空间(无流形) | 简单系统用 |
+| `crocoddyl.ActuationModelFloatingBase(state)` | 浮动基驱动:前 6 维(基座)不可驱动 | `.nu` = 关节数 |
+| `crocoddyl.ActuationModelFull(state)` | 全驱动(每个状态都有控制) | 机械臂用 |
+
+### 动力学(DifferentialActionModel)
+
+| API | 作用 | 关键参数 |
+|------|------|---------|
+| `DifferentialActionModelFreeFwdDynamics(state, actuation, costs)` | 无接触全身动力学(内部调 Pinocchio ABA) | 机械臂/自由飞行 |
+| `DifferentialActionModelContactFwdDynamics(state, actuation, contacts, costs, JMinvJt_damping, enable_force)` | 含接触 KKT 动力学(腿足核心) | `JMinvJt_damping`:KKT 阻尼正则;`enable_force`:是否输出接触力导数 |
+| `IntegratedActionModelEuler(diffModel, dt)` | 把连续动力学离散化(显式 Euler) | MPC 默认 |
+| `IntegratedActionModelRK(diffModel, RKType, dt)` | RK2/RK3/RK4 积分 | 离线、大 `dt` |
+
+### 接触与代价
+
+| API | 作用 | 关键参数 |
+|------|------|---------|
+| `ContactModelMultiple(state, nu)` | 接触集合容器,`.addContact(name, model)` 增删 | 步态切换时改这个 |
+| `ContactModel3D(state, frameId, ref, type, nu, gains)` | 点接触(3 维力,无力矩) | `gains`=[Kp, Kd] Baumgarte 稳定化 |
+| `ContactModel6D(...)` | 面接触(6 维力+力矩) | 人形脚掌 |
+| `CostModelSum(state, nu)` | 代价集合,`.addCost(name, cost, weight)` | 权重即代价系数 |
+| `CostModelResidual(state, activation, residual)` | 残差式代价 = 激活 ∘ 残差 | 见 §54.6.4 |
+| `ResidualModelState / Control / FrameTranslation / CoMPosition / ContactForce / ContactFrictionCone` | 各类残差 | 残差 = 当前量 − 参考量 |
+| `ActivationModelQuad / WeightedQuad / Smooth1Norm / QuadraticBarrier` | 激活函数 $\Phi(\mathbf{r})$ | `QuadraticBarrier` 可做软限位 |
+
+### 问题与求解器
+
+| API | 作用 | 关键返回/字段 |
+|------|------|-------------|
+| `ShootingProblem(x0, runningModels, terminalModel)` | 组装 OCP;`.createData()` 一次性预分配所有 Data | `.calc/.calcDiff` 内部 OpenMP 并行 |
+| `problem.quasiStatic(xs)` | 计算静力平衡控制(优于零初值) | 见 §54.10 陷阱 |
+| `SolverFDDP(problem)` | FDDP 求解器 | 容忍不可行初值 |
+| `SolverBoxFDDP(problem)` | Box-FDDP(FDDP + 控制限位 box-QP) | 见 §54.4B |
+| `SolverIntro / SolverCSQP`(Crocoddyl 2.1+) | 带等式/不等式硬约束的求解器 | 摩擦锥硬约束 |
+| `solver.solve(xs_init, us_init, maxiter, isFeasible)` | 主求解;`isFeasible=False` 表示初值不可行 | 返回 `True` 表示收敛 |
+| `solver.setCallbacks([CallbackVerbose()])` | 注册回调(打印/记录) | 调试必备 |
+| `solver.xs / .us / .K / .fs` | 最优状态/控制/反馈增益/gap 序列 | `.K[k]` 即 §54.11.3 的 $\mathbf{K}_k$ |
+| `solver.iter / .cost` | 实际迭代数 / 最终代价 | 收敛诊断 |
+
+---
+
 ## 实战练习汇总
 
 ### A 型(基础)
@@ -1649,17 +1874,20 @@ DDP 流派 (Crocoddyl, MuJoCo)       SQP 流派 (OCS2, ALTRO)
 1. **Jacobson D. H., Mayne D. Q. (1970)** *Differential Dynamic Programming*. 原始 DDP 专著。
 2. **Li W., Todorov E. (2004)** "Iterative Linear Quadratic Regulator Design for Nonlinear Biological Movement Systems". ICINCO. iLQR 的奠基。
 3. **Tassa Y., Mansard N., Todorov E. (2014)** "Control-Limited Differential Dynamic Programming". ICRA. 带控制限位的 DDP。
-4. **Mastalli C., et al. (2019)** "Crocoddyl: An Efficient and Versatile Framework for Multi-Contact Optimal Control". ICRA. **Crocoddyl 主论文**。
-5. **Mastalli C., et al. (2022)** "A Feasibility-Driven Approach to Control-Limited DDP". Autonomous Robots. **FDDP/BOX-FDDP 完整版**。
+4. **Mastalli C., et al. (2020)** "Crocoddyl: An Efficient and Versatile Framework for Multi-Contact Optimal Control". ICRA 2020 (Paris), arXiv 1909.04947. **Crocoddyl 主论文**。
+5. **Mastalli C., et al. (2022)** "A Feasibility-Driven Approach to Control-Limited DDP". Autonomous Robots 46(8):985-1005, arXiv 2010.00411. **Box-FDDP 完整版**(feasibility-driven + control-bounded 双模式)。
 
 ### 近期进展 (2023-2025)
 
-6. **Jallet W., et al. (2025)** "Parallel and Proximal Constrained Linear-Quadratic Methods for Real-Time Nonlinear MPC". T-RO. **ProxDDP + ParallelRiccati**, 博士必读。
-7. **Kleff S., et al. (2022)** "On the Derivation of Contact Dynamics in Arbitrary Frames". Humanoids 2022. 接触动力学导数的推广。
+6. **Jallet W., et al. (2025)** "PROXDDP: Proximal Constrained Trajectory Optimization". IEEE T-RO 41:2605-2624. **ProxDDP 增广拉格朗日约束**, 博士必读。
+7. **Jallet W., Dantec E., et al. (2024)** "Parallel and Proximal Constrained Linear-Quadratic Methods for Real-Time Nonlinear MPC". RSS 2024 (Delft). **ParallelRiccati ($O(\log N)$ backward pass)**。
+8. **Mastalli C., et al. (2023)** "Inverse-Dynamics MPC via Nullspace Resolution". IEEE T-RO, arXiv 2209.05375. **逆动力学 MPC + 零空间约束消去**,首次在 ANYmal 硬件上实现 ID-MPC(计算量减少达 47.3%),已并入 Crocoddyl。
+9. **(2025)** "Primal-Dual iLQR for GPU-Accelerated Learning and Control in Legged Robots". arXiv 2506.07823. **GPU 并行 primal-dual associative scan**,$O(n\log N+m)$,JAX 实现,支持 MPC-in-the-loop 学习。
+10. **Kleff S., et al. (2022)** "On the Derivation of Contact Dynamics in Arbitrary Frames". Humanoids 2022. 接触动力学导数的推广。
 
 ### ALIGATOR：Pinocchio 3.x 的新一代轨迹优化求解器 ⭐⭐⭐⭐
 
-**Aligator** 是 LAAS-CNRS / Inria（Jallet, Carpentier 等, T-RO 2025）开发的下一代轨迹优化框架，核心创新为 ProxDDP（增广拉格朗日约束处理）和 ParallelRiccati（$O(\log N)$ 并行 backward pass）。详见 54.9 节的完整架构分析、代码示例和性能对比。
+**Aligator** 是 LAAS-CNRS / Inria（Jallet, Carpentier 等）开发的下一代轨迹优化框架，核心创新为 ProxDDP（增广拉格朗日约束处理，T-RO 41:2605-2624, 2025）和 ParallelRiccati（$O(\log N)$ 并行 backward pass，RSS 2024）。详见 54.9 节的完整架构分析、代码示例和性能对比。
 
 ### MuJoCo MPC (Predictive Sampling) 与 DDP 的对比 ⭐⭐⭐
 
@@ -1687,9 +1915,51 @@ DDP 流派 (Crocoddyl, MuJoCo)       SQP 流派 (OCS2, ALTRO)
 
 > **本质洞察**：DDP 和 MPC 的关系不是"DDP 是 MPC 的一种求解器"，而是"DDP 利用了控制问题的 Markov 结构来高效求解 NLP"。任何 NLP 求解器（Ipopt, SQP）都可以做 MPC，但只有 DDP 家族利用了"时间步之间只有相邻耦合"这一特殊稀疏结构。这就是为什么 DDP 的复杂度是 $O(N)$ 而通用 NLP 是 $O(N^3)$——不是因为 DDP 更聪明，而是因为它利用了问题结构。
 
+### 近年关键进展深读 (2023-2025) ⭐⭐⭐⭐
+
+本章主线讲的是"forward-dynamics + 串行 backward pass"的经典范式。近三年有两条研究主线正在改写这个范式,博士方向的读者应当熟悉它们的核心思想。
+
+**进展一:Inverse-Dynamics MPC(逆动力学 MPC)。** Mastalli et al., *Inverse-Dynamics MPC via Nullspace Resolution*(IEEE T-RO, 2023;arXiv 2209.05375)。
+
+回顾 §54.6.3:`DifferentialActionModelContactFwdDynamics` 走的是**正动力学**(forward dynamics)路线——给定扭矩 $\boldsymbol{\tau}$,解 KKT 系统算出加速度 $\ddot{\mathbf{q}}$ 和接触力 $\boldsymbol{\lambda}$。逆动力学 MPC 反过来:把 $(\ddot{\mathbf{q}}, \boldsymbol{\lambda})$ 也当作决策变量,动力学方程 $\mathbf{M}\ddot{\mathbf{q}}+\mathbf{h}=\mathbf{S}^T\boldsymbol{\tau}+\mathbf{J}_c^T\boldsymbol{\lambda}$ 变成一组**等式约束**。
+
+```
+正动力学 OCP vs 逆动力学 OCP:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+正动力学:  决策变量 = (x, u=τ)
+           动力学嵌入:  q̈ = ABA(q,q̇,τ)  (内部求逆 M)
+           → 变量少,但每步要解 KKT/求 M⁻¹
+
+逆动力学:  决策变量 = (x, u, q̈, λ)
+           动力学作约束:  M q̈ + h = Sᵀτ + Jᵀλ
+           → 变量多,但约束是"粗粒度"的,收敛更快
+           → 大量等式约束 → 需高效处理
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+逆动力学路线的好处是 Mastalli 所说的"coarse optimization 与高收敛率"——优化问题的曲率更友好,迭代次数更少。代价是引入了**大量等式约束**(每个时间步一组动力学方程)。论文的核心贡献是用 **nullspace 参数化**(零空间分解)高效消去这些等式约束——这与 足式/90_WBC分层优化与TSID 里 WBC 的零空间投影是同一套数学工具(把约束方向投影掉,只在零空间里自由优化)。报告的计算量减少最高达 **47.3%**,并首次在 ANYmal 硬件上实现逆动力学 MPC,做出了 state-of-the-art 的动态攀爬。该算法已并入 Crocoddyl。
+
+> 🧠 **深入理解**:为什么逆动力学能"粗粒度优化"?正动力学把"解 $\mathbf{M}^{-1}$"这一非线性操作埋进了每次 `calc()`,使得代价对 $\boldsymbol{\tau}$ 的依赖高度非线性;逆动力学把 $\ddot{\mathbf{q}}$ 暴露成独立变量后,代价对 $\ddot{\mathbf{q}}$ 往往是简单的二次型,$\mathbf{M}$ 只出现在线性的等式约束里。优化器面对的"非线性"被从代价转移到了约束,而约束的非线性更容易用 SQP/ALM 的局部线性化处理。这是"变量增多反而更快"的典型案例——维度不是唯一的复杂度指标,**问题的曲率结构**同样关键。
+
+**进展二:GPU 并行 Primal-Dual iLQR。** *Primal-Dual iLQR for GPU-Accelerated Learning and Control in Legged Robots*(arXiv 2506.07823, 2025)。
+
+§54.9.5 的 ParallelRiccati 把 backward pass 从 $O(N)$ 降到 $O(\log N)$,但它仍是 CPU 多核(几十核)的并行。这条新主线把 **parallel associative scan**(并行结合扫描)直接搬上 **GPU**,并且并行的对象不是纯 Riccati 而是**原始-对偶 KKT 系统**(primal-dual KKT,把约束的对偶变量一起纳入扫描)。
+
+| 维度 | ParallelRiccati (RSS 2024) | Primal-Dual iLQR GPU (2025) |
+|------|---------------------------|----------------------------|
+| 并行硬件 | CPU 多核(~32) | GPU(数千线程)/ JAX |
+| 扫描对象 | 价值函数 Riccati 算子 | 原始-对偶 KKT 系统 |
+| 复杂度 | $O(\log N)\cdot n_x^3$ | $O(n\log N + m)$ |
+| 报告加速 | 8 核 $4.4\times$,32 核 $8\times$ | 对比 acados/Crocoddyl,WB-MPC 最高 +60%,SRBD-MPC 最高 +700% |
+| 额外能力 | — | 可在 GPU 上集中控制 $\leq 16$ 个四足($< 25$ ms);支持 MPC-in-the-loop 学习 |
+
+> 💡 **洞察**:GPU 版本最深远的意义不在"更快",而在**把 MPC 求解器变成可微、可批量的计算图**(JAX 实现)。这让"MPC 在训练回路里"成为可能——可以在 GPU 上同时跑数千个环境,每个环境内嵌一个 MPC 求解器,端到端训练。这正是 足式/210_RL与MPC混合范式 讨论的 RL+MPC 融合方向的算力基础:当 MPC 本身可微且可批量,它就不再是 RL 之外的黑盒,而能作为一层"可微分控制先验"嵌入策略网络。
+
+> ⚠️ **思维陷阱**:看到"对比 Crocoddyl 加速 700%"不要简单理解为"Crocoddyl 过时了"。这些加速是在**特定问题规模**(长 horizon、SRBD)和**特定硬件**(高端 GPU)上测得的。对于短 horizon、需要在嵌入式 CPU 上跑的场景,Crocoddyl 的 CPU 友好、零 GPU 依赖、成熟稳定仍是巨大优势(回顾 §54.9.5 陷阱:N 小时串行 Riccati 反而更快)。选型永远是"问题规模 $\times$ 硬件 $\times$ 工程成熟度"的综合权衡,不是单看 benchmark 数字。
+
 ### 开放研究问题 ⭐⭐⭐⭐
 
-- **GPU ParallelRiccati**: 能否把 parallel scan 移植到 GPU? SIMT 架构与树形归约的匹配度?
+- **GPU ParallelRiccati**: parallel scan 移植到 GPU 已有初步答案(见上文 Primal-Dual iLQR, arXiv 2506.07823),但 SIMT 架构与树形归约的匹配仍有优化空间——如何处理 horizon 不能被线程块整除、如何隐藏合并步的同步延迟,仍是开放问题。
 - **学习 + DDP**: 用神经网络预测初始 $V_\mathbf{x}, V_{\mathbf{xx}}$ 来热启动 DDP (MPC-Net 方向, 足式/210_RL与MPC混合范式)。
 - **Contact-Implicit DDP**: 接触模式作为决策变量——极其困难的开放问题。
 - **Differentiable DDP**: 让 DDP 本身可微,嵌入端到端学习管线。

@@ -1,6 +1,6 @@
 ## 博士前数学路线图·第五批·子专题 A4：Kalman 族全景收口——迭代变体、平滑、全景对比与完整工程映射
 
-> **底线陈述（BLUF）**：本文是 5-A 系列的**收口**。到此为止，您应能：(i) 把线性 KF / EKF / UKF / ESKF / InEKF / IKFoM / EnKF / Schmidt-KF / H∞ / RTS / MHE 这一族方法**用一张图组织起来**，并说出每一对相邻方法的精确差异；(ii) 任给一个工程场景（VIO、LIO、腿足、航天、低成本 IMU），**从 18 个开源库里准确选型**并指出其四元数与扰动约定；(iii) 能把**迭代 EKF ≡ 单时间步 Gauss-Newton**、**RTS ≡ 块三对角系统回代**、**VINS-Mono 滑窗 ≡ 非线性 MHE**这三条跨学科等价关系写在黑板上现场推导；(iv) 避开 5-A1 ~ 5-A4 累积 20 条工程陷阱。**一句话概括 5-A 全系列**：*「先验高斯 × 线性化策略 × 状态空间几何 × 迭代/平滑维度」这四条正交坐标轴，生成了整个 Kalman 族*。
+> **底线陈述（BLUF）**：本文是 5-A 系列的**收口**。到此为止，您应能：(i) 把线性 KF / EKF / UKF / ESKF / InEKF / IKFoM / EnKF / Schmidt-KF / $H_\infty$ / RTS / MHE 这一族方法**用一张图组织起来**，并说出每一对相邻方法的精确差异；(ii) 任给一个工程场景（VIO、LIO、腿足、航天、低成本 IMU），**从 18 个开源库里准确选型**并指出其四元数与扰动约定；(iii) 能把**迭代 EKF ≡ 单时间步 Gauss-Newton**、**RTS ≡ 块三对角系统回代**、**VINS-Mono 滑窗 ≡ 非线性 MHE**这三条跨学科等价关系写在黑板上现场推导；(iv) 避开 5-A1 ~ 5-A4 累积 20 条工程陷阱。**一句话概括 5-A 全系列**：*「先验高斯 × 线性化策略 × 状态空间几何 × 迭代/平滑维度」这四条正交坐标轴，生成了整个 Kalman 族*。
 
 **A1 → A2 → A3 → A4 递进关系回顾**。A1 在线性高斯假设下建立了 KF 的完整机器（协方差形、信息形、平方根形、一致性诊断），这是整个 Kalman 族的地基。A2 保持欧氏状态空间不变，将线性化策略从"精确"升级为"近似"——EKF 的一阶 Taylor、UKF 的 sigma 点、CKF 的球面径向积分——同时暴露了 EKF 在 SLAM/VIO 中的一致性病理。A3 保持一阶线性化不变，将状态空间从 $\mathbb{R}^n$ 提升到李群流形——ESKF/MEKF 解决过参数化与奇点，InEKF 利用 group-affine 结构从根源消除虚假可观测性。本专题 A4 在前三者基础上打开最后两个维度：**迭代**（IEKF = 单步 Gauss-Newton，连接到因子图世界）和**平滑**（RTS、MHE、滑动窗口），并以全景对比表和 18 个开源库选型指南作为 Kalman 族的工程收口。
 
@@ -414,12 +414,12 @@ N=∞: 全局 BA（COLMAP, 离线建图）
 | 无人机飞控（1kHz） | 0（纯 ESKF） | 实时性最高优先 |
 | VIO（30Hz camera） | 10-15 帧 | 平衡精度与延迟 |
 | LiDAR-IO（10Hz） | 1-5（滤波+ikd-tree） | LiDAR 约束已经很强 |
-| 离线建图 | ∞（全 BA） | 精度优先 |
+| 离线建图 | $\infty$（全 BA） | 精度优先 |
 | 大规模 SLAM | 分层：局部 BA + 全局 pose graph | 兼顾局部精度与全局一致 |
 
 ---
 
-### §A4.5b 全景补充方法：EnKF、Schmidt-KF、H∞、连续-离散变体 ⭐⭐⭐
+### §A4.5b 全景补充方法：EnKF、Schmidt-KF、$H_\infty$、连续-离散变体 ⭐⭐⭐
 
 在 A1–A3 集中讨论了 Kalman 族的主线方法后，工程实践中还有三类重要变体经常出现在文献和代码中，但不属于"流形"或"迭代"的主线叙事。本节逐一介绍它们的动机、核心公式和适用场景，然后在 §A4.6 的全景大表中统一收录。
 
@@ -754,7 +754,7 @@ $$\dot P=F_c P+PF_c^\top+L_cQ_cL_c^\top$$
 | **UKF-M** | `CAOR-MINES-ParisTech/ukfm` | ~0.25k | Python (MATLAB) | UKF on Manifolds, 左/右不变 UKF | `ukfm/ukfm.py`, `models/`, `benchmarks/` | 用户定义 $\phi$ 自选左/右不变 | NumPy, Matplotlib | Brossard ICRA-20 参考实现 |
 | **IKFoM** | `hku-mars/IKFoM` | ~0.6k | C++ H-only | Iterated EKF on Manifold (IKFoM) | `esekfom/esekfom.hpp`, `use-ikfom.hpp`, `mtk/` | 右扰动, Hamilton；流形复合类型 | Eigen, Boost | FAST-LIO/LINS 核心 |
 | **FAST-LIO2** | `hku-mars/FAST_LIO` | ~4.6k | C++ ROS1/2 | 紧耦合 LiDAR-Inertial IEKF + ikd-Tree | `laserMapping.cpp`, `use-ikfom.hpp`, `IMU_Processing.hpp` | 右扰动, Hamilton | PCL, Eigen, IKFoM, ROS, livox | LiDAR-IO 实时 |
-| **FilterPy** | `rlabbe/filterpy` | ~3.7k | Python | KF, EKF, UKF, IMM, PF, g-h, H∞, RTS, FLS | `kalman/kalman_filter.py`, `kalman/UKF.py`, `kalman/IMM.py`, `monte_carlo/` | 欧式（无李群） | NumPy, SciPy | 教学首选 |
+| **FilterPy** | `rlabbe/filterpy` | ~3.7k | Python | KF, EKF, UKF, IMM, PF, g-h, $H_\infty$, RTS, FLS | `kalman/kalman_filter.py`, `kalman/UKF.py`, `kalman/IMM.py`, `monte_carlo/` | 欧式（无李群） | NumPy, SciPy | 教学首选 |
 | **robot_localization** | `cra-ros-pkg/robot_localization` | ~1.6k | C++ ROS1/2 | EKF, UKF 多源 (IMU/GPS/odom) | `ekf.h`, `ukf.h`, `ros_filter.cpp`, `navsat_transform_node.cpp` | 欧式 RPY + tf2 Hamilton | Eigen, ROS, tf2 | ROS 标准融合节点 |
 | **ROVIO** | `ethz-asl/rovio` | ~1.3k | C++ ROS | IEKF + 光度误差直接法 VIO | `rovio::FilterState`, `ImuPrediction`, `ImgUpdate` | Hamilton `qCM`；IEKF 切空间迭代 | Eigen, OpenCV, kindr, lightweight_filtering, ROS | 单/双目直接法 VIO |
 | **VINS-Mono** | `HKUST-Aerial-Robotics/VINS-Mono` | ~5k | C++ ROS | 滑窗 BA + 预积分 + 在线外参/td | `estimator.cpp`, `marginalization_factor.cpp`, `integration_base.h`, `feature_manager.cpp` | Hamilton；右扰动 body-frame | Ceres, Eigen, OpenCV, ROS, DBoW2 | VIO 事实标准基线 |

@@ -2,7 +2,7 @@
 
 ## 前置自测
 
-📋 **答不出 ≥ 2 题 → 先回前置章节复习**
+📋 **答不出 $\ge$ 2 题 → 先回前置章节复习**
 
 1. PPO 的训练循环分为哪两个阶段？每个阶段的核心操作是什么？（RL 基础）
 2. `env.step()` 返回什么？`terminated` 和 `truncated` 的区别是什么？（Ch01 §1.4 env.step 时序）
@@ -167,14 +167,14 @@ class OnPolicyRunner:
 
 > **反事实推理**：如果 Wrapper 不区分 `terminated` 和 `truncated`，PPO 的 value bootstrap 会出错——truncated（超时）的 episode 需要 bootstrap（因为策略还没"真正"结束），而 terminated（真正失败）的 episode 不需要。这个区分对 GAE 计算的正确性至关重要。
 
-### GAE 中的 γ 和 λ
+### GAE 中的 $\gamma$ 和 $\lambda$
 
 GAE（Generalized Advantage Estimation）是 PPO 计算 advantage 的标准方法。两个关键超参数：
 
 | 参数 | 含义 | 典型值 | 调参方向 |
 |------|------|--------|---------|
-| `gamma` (γ) | 折扣因子 | 0.99 | 减小→更关注短期 reward |
-| `lam` (λ) | GAE 平滑参数 | 0.95 | 减小→更关注 TD(0)，增大→更关注 Monte Carlo |
+| `gamma` ($\gamma$) | 折扣因子 | 0.99 | 减小→更关注短期 reward |
+| `lam` ($\lambda$) | GAE 平滑参数 | 0.95 | 减小→更关注 TD(0)，增大→更关注 Monte Carlo |
 
 **GAE 的工程直觉**：GAE 在 TD(0) 估计（低方差高偏差）和 Monte Carlo 估计（高方差低偏差）之间做加权平均。`lam=0` 对应纯 TD(0)——advantage 只看"下一步的 reward + 下一步的 value 估计"，噪声小但可能有系统性偏差（如果 value 函数不准）。`lam=1` 对应纯 Monte Carlo——advantage 看"到 episode 结束的所有 reward 之和"，无偏但噪声大（因为累积了很多步的随机性）。`lam=0.95` 是两者的折中——既有 TD 的低方差优点，又有 MC 的低偏差优点。
 
@@ -194,9 +194,9 @@ GAE（Generalized Advantage Estimation）是 PPO 计算 advantage 的标准方�
 | `num_steps_per_env` | 24 | 每个 env 的 rollout 步数 | ⭐⭐ |
 | `num_mini_batches` | 4 | mini-batch 数量 | ⭐⭐ |
 | `num_epochs` | 5 | 每批数据重复训练的次数 | ⭐⭐ |
-| `clip_range` | 0.2 | PPO clip 参数 ε | ⭐ |
+| `clip_range` | 0.2 | PPO clip 参数 $\epsilon$ | ⭐ |
 | `gamma` | 0.99 | 折扣因子 | ⭐ |
-| `lam` | 0.95 | GAE λ 参数 | ⭐ |
+| `lam` | 0.95 | GAE $\lambda$ 参数 | ⭐ |
 | `desired_kl` | 0.01 | KL 散度目标值（自适应 lr） | ⭐⭐ |
 | `entropy_coef` | 0.01 | 熵正则化系数 | ⭐ |
 | `value_loss_coef` | 1.0 | value loss 权重 | — |
@@ -256,7 +256,7 @@ def unitree_go2_rl_cfg() -> RslRlOnPolicyRunnerCfg:
     )
 ```
 
-> **rsl_rl ≥ 4.0 的关键变化**：actor 和 critic 的网络配置被**拆分**为独立的 model config。这允许 actor 用 MLP 而 critic 用 CNN（非对称 actor-critic），是视觉策略和 teacher-student 蒸馏的工程基础。旧版（< 4.0）使用 `RslRlPpoActorCriticCfg` 统一配置——如果你看到这个类名，说明代码基于旧版 rsl_rl。
+> **rsl_rl $\ge$ 4.0 的关键变化**：actor 和 critic 的网络配置被**拆分**为独立的 model config。这允许 actor 用 MLP 而 critic 用 CNN（非对称 actor-critic），是视觉策略和 teacher-student 蒸馏的工程基础。旧版（< 4.0）使用 `RslRlPpoActorCriticCfg` 统一配置——如果你看到这个类名，说明代码基于旧版 rsl_rl。
 
 ### PPO 与 env.step() 的交互图
 
@@ -298,7 +298,7 @@ RSL-RL OnPolicyRunner
 
 1. **在 env.step() 内部假设"当前在 rollout 阶段"。** Manager 的代码不应依赖外部的训练阶段——它们应该是无状态的（给定输入产生确定输出）。
 2. **忘记 `terminated` 和 `truncated` 的区别。** `terminated=True` 意味着"任务失败"（如机器人摔倒），`truncated=True` 意味着"超时"（episode 达到最大步数）。PPO 需要这个区分来正确计算 value bootstrap。
-3. **把 `num_steps_per_env` 设得太大。** 这会导致 GPU 显存中存储大量 transition——对于 4096 envs × 24 steps，存储的 obs/action/reward 就需要数 GB 显存。
+3. **把 `num_steps_per_env` 设得太大。** 这会导致 GPU 显存中存储大量 transition——对于 4096 envs $\times$ 24 steps，存储的 obs/action/reward 就需要数 GB 显存。
 
 ### 练习
 
@@ -653,11 +653,11 @@ Manager-Based 架构通过**显式依赖**消除了这个问题：obs term 和 r
 
 | 操作 | legged_gym 工时 | Manager-Based 工时 | 加速倍数 |
 |------|----------------|-------------------|---------|
-| 添加一个新 reward 项 | 15 min（编辑函数+测试） | 2 min（添加一行 config） | 7.5× |
-| 对比 3 种 reward 配置 | 60 min（复制 3 份文件） | 5 min（3 次 CLI 覆盖） | 12× |
-| 换一个新机器人 | 3 天（修改 50+ 处） | 30 min（改 EntityCfg） | 48× |
-| 定位 "reward 为零" bug | 2 小时（逐行排查） | 10 min（打印各 term） | 12× |
-| 团队 2 人并行开发 | 频繁 merge conflict | 无冲突（改不同 config 段） | ∞ |
+| 添加一个新 reward 项 | 15 min（编辑函数+测试） | 2 min（添加一行 config） | 7.5$\times$ |
+| 对比 3 种 reward 配置 | 60 min（复制 3 份文件） | 5 min（3 次 CLI 覆盖） | 12$\times$ |
+| 换一个新机器人 | 3 天（修改 50+ 处） | 30 min（改 EntityCfg） | 48$\times$ |
+| 定位 "reward 为零" bug | 2 小时（逐行排查） | 10 min（打印各 term） | 12$\times$ |
+| 团队 2 人并行开发 | 频繁 merge conflict | 无冲突（改不同 config 段） | $\infty$ |
 
 > **本质洞察**：Manager-Based 架构的核心价值不是"代码更优雅"（虽然确实更优雅），而是**把实验迭代速度提升了一个数量级**。在机器人 RL 研究中，能快速迭代 reward/obs/DR 配置的研究者，比能写更快代码的研究者更有竞争力。
 
@@ -1125,7 +1125,7 @@ class RewardManager:
         return self._reward_buf
 ```
 
-**dt 缩放的工程意义**：RewardManager 默认把 reward 乘以 `dt`（step_dt = physics_dt × decimation）。这意味着如果你改了 timestep 或 decimation，reward 权重的实际效果不变——权重是"单位时间内的 reward 密度"，而非"单步 reward 绝对值"。这让跨配置的 reward 权重可复用。
+**dt 缩放的工程意义**：RewardManager 默认把 reward 乘以 `dt`（step_dt = physics_dt $\times$ decimation）。这意味着如果你改了 timestep 或 decimation，reward 权重的实际效果不变——权重是"单位时间内的 reward 密度"，而非"单步 reward 绝对值"。这让跨配置的 reward 权重可复用。
 
 > **反事实推理**：如果不做 dt 缩放，把 decimation 从 4 改成 8（policy 频率从 50Hz 降到 25Hz）时，每步 reward 变大（因为 step 更长）——你需要重新调所有 reward 权重。dt 缩放消除了这个耦合。
 
@@ -1179,7 +1179,7 @@ actions = ActionsCfg(
 )
 ```
 
-这意味着策略输出 `a ∈ [-1, 1]` 时，实际关节目标是 `default_pos + a × 0.25`（单位：rad）。`scale=0.25` 限制了策略的探索范围——在默认姿态 ±0.25 rad 内。这对训练稳定性至关重要：如果 scale 太大（如 1.0），随机策略在训练初期可能产生极端的关节位置，导致物理不稳定。
+这意味着策略输出 `a ∈ [-1, 1]` 时，实际关节目标是 `default_pos + a × 0.25`（单位：rad）。`scale=0.25` 限制了策略的探索范围——在默认姿态 $\pm$0.25 rad 内。这对训练稳定性至关重要：如果 scale 太大（如 1.0），随机策略在训练初期可能产生极端的关节位置，导致物理不稳定。
 
 ### TerminationManager 详解
 
@@ -1422,7 +1422,7 @@ TerminationManager 是最容易被忽视但影响训练正确性的 Manager。�
 
 **terminated**（真正的失败）：机器人摔倒、发生非法接触、物理状态 NaN。PPO 对 terminated episode 的处理是 `value(s_terminal) = 0`——因为任务已经真正结束，没有未来 reward 可期待。
 
-**truncated**（超时截断）：episode 达到最大步数（如 20 秒 × 50 Hz = 1000 步）。PPO 对 truncated episode 的处理是 `value(s_terminal) = V(s_terminal)`——即 bootstrap，因为任务还没真正结束，只是人为截断了。
+**truncated**（超时截断）：episode 达到最大步数（如 20 秒 $\times$ 50 Hz = 1000 步）。PPO 对 truncated episode 的处理是 `value(s_terminal) = V(s_terminal)`——即 bootstrap，因为任务还没真正结束，只是人为截断了。
 
 ```python
 # velocity task 的 termination 配置
@@ -1579,7 +1579,7 @@ uv run train <TASK> --env.scene.num-envs 64 --agent.max-iterations 2
 1. **obs 函数返回了错误的 shape。** obs term 必须返回 `[num_envs, obs_dim]`，reward term 必须返回 `[num_envs]`。维度错误会导致 concat 失败或 reward 计算错误。
 2. **在 obs 函数中修改了环境状态。** Obs 函数应该是只读的（pure function）。如果你需要修改状态，用 event term。
 3. **忘记在 Isaac Lab 中用 `"policy"` 而非 `"actor"` 作为 obs group 名。** 这是最常见的命名差异导致的 bug——RSL-RL 的 `obs_groups` 配置必须和 env 的 obs group 名匹配。
-4. **reward 函数返回了负值但 weight 也是负值。** 负 × 负 = 正——你以为在惩罚但实际在奖励。始终保证 reward 函数返回正值，用 weight 的正负来控制奖励/惩罚方向。
+4. **reward 函数返回了负值但 weight 也是负值。** 负 $\times$ 负 = 正——你以为在惩罚但实际在奖励。始终保证 reward 函数返回正值，用 weight 的正负来控制奖励/惩罚方向。
 
 ### 练习
 
@@ -2153,14 +2153,14 @@ Isaac Lab 除了 Manager-Based workflow，还提供了 **Direct workflow**——
 | rollout | PPO 的数据收集阶段，调用 env.step() 收集 transition | §4.1 |
 | update | PPO 的梯度更新阶段，不调用 env.step() | §4.1 |
 | GAE | Generalized Advantage Estimation，计算 advantage 的方法 | §4.1 |
-| `gamma` (γ) | 折扣因子，控制长期 vs 短期 reward 的权衡 | §4.1 |
-| `lam` (λ) | GAE 平滑参数，控制 bias vs variance 的权衡 | §4.1 |
+| `gamma` ($\gamma$) | 折扣因子，控制长期 vs 短期 reward 的权衡 | §4.1 |
+| `lam` ($\lambda$) | GAE 平滑参数，控制 bias vs variance 的权衡 | §4.1 |
 | `desired_kl` | RSL-RL 的自适应 lr 目标 KL 散度 | §4.1 |
 | `num_steps_per_env` | 每个 env 在一次 rollout 中的步数 | §4.1 |
 | `num_mini_batches` | rollout 数据被分成的 mini-batch 数量 | §4.1 |
 | decimation | env.step() 中调用 sim.step() 的次数 | §4.2 |
 | `physics_dt` | 物理引擎的时间步长 | §4.2 |
-| `step_dt` | policy 的时间步长 = physics_dt × decimation | §4.2 |
+| `step_dt` | policy 的时间步长 = physics_dt $\times$ decimation | §4.2 |
 | terminated | 任务真正失败（如摔倒），value = 0 | §4.2 |
 | truncated | 超时，value 需 bootstrap | §4.2 |
 | Manager-Based | 把 MDP 组件拆分到独立 Manager 的架构 | §4.3 |
@@ -2330,8 +2330,8 @@ uv run train Mjlab-Velocity-Flat-Unitree-Go2 \
 | mjlab | 1.2.0 | ManagerBasedRlEnv、所有 Manager API |
 | Isaac Lab | 2.3.0（主线） | ManagerBasedRLEnv、对应 Manager API |
 | Isaac Lab 3.0 | Beta（注释标注） | wp.array 数据管线、xyzw 四元数 |
-| rsl_rl | ≥ 4.0.0 | 分离 actor/critic config、自适应 lr |
-| RSL-RL | ≥ 4.0.0 | PPO 实现、VecEnv Wrapper |
+| rsl_rl | $\ge$ 4.0.0 | 分离 actor/critic config、自适应 lr |
+| RSL-RL | $\ge$ 4.0.0 | PPO 实现、VecEnv Wrapper |
 
 ---
 
@@ -2412,7 +2412,7 @@ Event → Command → Action → Obs → Term → Reward → Curric → Metrics 
 >
 > **提醒**：本章建立的 Manager-Based 架构理解是后续所有章节的基础。如果你在 Ch05-10 中遇到"不知道该在哪个 Manager 中做修改"的问题，回到本章的 Manager 职责表（§4.3）、加载顺序表（§4.3）和 18 步时序表（§4.2）。
 
-> **版本更新提醒**：Manager-Based 架构在 mjlab 和 Isaac Lab 中持续演进。本章的 API 和时序以 mjlab 1.2.0 + Isaac Lab 2.3.0 为准。rsl_rl ≥ 4.0 的 actor/critic 分离配置是本章示例的基础——如果你使用旧版 rsl_rl，部分 API 可能不同。查阅各框架的 CHANGELOG 获取最新信息。
+> **版本更新提醒**：Manager-Based 架构在 mjlab 和 Isaac Lab 中持续演进。本章的 API 和时序以 mjlab 1.2.0 + Isaac Lab 2.3.0 为准。rsl_rl $\ge$ 4.0 的 actor/critic 分离配置是本章示例的基础——如果你使用旧版 rsl_rl，部分 API 可能不同。查阅各框架的 CHANGELOG 获取最新信息。
 
 ---
 
@@ -2483,7 +2483,7 @@ uv run train <TASK> --enable-nan-guard True --env.scene.num-envs 256 --agent.max
 
 ---
 
-> **本教材版本锚定**：本章所有代码示例和 API 以 mjlab 1.2.0 + Isaac Lab 2.3.0 + rsl_rl ≥ 4.0.0 为准。Isaac Lab 3.0 Beta 的变更（wp.array 数据管线、xyzw 四元数）以注释标注。
+> **本教材版本锚定**：本章所有代码示例和 API 以 mjlab 1.2.0 + Isaac Lab 2.3.0 + rsl_rl $\ge$ 4.0.0 为准。Isaac Lab 3.0 Beta 的变更（wp.array 数据管线、xyzw 四元数）以注释标注。
 
 > 如果你在使用本章内容时发现了 API 变更或新的调试方法，欢迎在框架的 GitHub Issues 或 Discord 中分享——这是开源社区进步的基础。
 

@@ -355,7 +355,7 @@ def iSAM2_step(T, F, Θ, δ, F_new, Θ_new):
 5. **reorder**（可选）：对 top 内变量做局部 COLAMD/CCOLAMD 重排序，**最近访问变量约束到排序末尾**（推向根，使下次 top 更小）。
 6. **eliminate**：对 top 因子集 + orphan 的缓存边缘因子执行变量消元 → 新 Bayes 子树。
 7. **graft**：把 orphan 重新挂回新子树。
-8. **update δ**：沿受影响团向下执行 **wildfire 回代**，非路径团保持旧 δ。
+8. **update $\delta$**：沿受影响团向下执行 **wildfire 回代**，非路径团保持旧 $\delta$。
 
 ---
 
@@ -521,7 +521,7 @@ $$\delta_{dl} = \begin{cases}
 #### 理论界（Kaess 2012 §IV-C）
 
 - **完全批量 Cholesky**：2D pose graph $O(N^{3/2})$，3D BA $O(N^2)$——来自 **Lipton-Rose-Tarjan 1979 嵌套剖分**（对平面图/网格图）。
-- **iSAM2 每步**：$O(|\text{受影响团}|^{1.5})$；典型 SLAM 图受影响团数 ≈ 路径长度 = separator 长度 = $O(\sqrt N)$（2D）或 $O(N^{2/3})$（3D）。
+- **iSAM2 每步**：$O(|\text{受影响团}|^{1.5})$；典型 SLAM 图受影响团数 $\approx$ 路径长度 = separator 长度 = $O(\sqrt N)$（2D）或 $O(N^{2/3})$（3D）。
 - **结论（Kaess 2012, §IV-C）**：*"this bound does not depend on the number of loop closings"*——只要回环保持局部，每步仍 $O(\sqrt N)$。
 
 #### Lipton-Rose-Tarjan 嵌套剖分定理的直觉
@@ -882,7 +882,7 @@ UToronto ASRL 维护的 C++ 库，实现上述 GP 因子，支持 GP 内插任�
 
 12. **GN vs Dogleg 选择**：GN 在好初值下最快；Dogleg 信赖域鲁棒但慢 1.3–1.5×。**建议**：外点多场景 Dogleg；纯 LIO 平稳用 GN（LIO-SAM 选择）。
 
-13. **`PriorFactor` 太松致 Indeterminant**：首帧 σ=1e6、其余 odom，某些方向欠约束（GPSFactor 无 yaw、Pose3 z 自由）→ `IndeterminantLinearSystemException`（Issue #17, #561, #666）。**对策**：首帧 σ 给小量（LIO-SAM: 1e-2 rad/m）；IMU gravity 约束 roll/pitch；缺 yaw 时用磁 / GPS 航向。
+13. **`PriorFactor` 太松致 Indeterminant**：首帧 $\sigma$=1e6、其余 odom，某些方向欠约束（GPSFactor 无 yaw、Pose3 z 自由）→ `IndeterminantLinearSystemException`（Issue #17, #561, #666）。**对策**：首帧 $\sigma$ 给小量（LIO-SAM: 1e-2 rad/m）；IMU gravity 约束 roll/pitch；缺 yaw 时用磁 / GPS 航向。
 
 14. **`findUnusedFactorSlots=false` + 频繁 remove**：slot 单调增长，`getFactorsUnsafe()` 变慢。**对策**：长跑系统一律 `findUnusedFactorSlots=true`。
 
