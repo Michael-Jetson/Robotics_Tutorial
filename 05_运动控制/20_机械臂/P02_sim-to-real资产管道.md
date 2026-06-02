@@ -588,11 +588,11 @@ class EventCfg:
 
 | 参数 | 范围 | 分布 | 重要性 | mode |
 |------|------|------|--------|------|
-| Base mass | ±15% | Uniform | 高 | reset |
-| Link mass | ±10% | Uniform | 中 | reset |
+| Base mass | $\pm$15% | Uniform | 高 | reset |
+| Link mass | $\pm$10% | Uniform | 中 | reset |
 | Friction coefficients | 0.1-2.0 | Uniform | 高 | reset |
-| PD gains (Kp/Kd) | ±30% | Uniform | 高 | reset |
-| Motor strength | ±20% | Uniform | 中 | reset |
+| PD gains (Kp/Kd) | $\pm$30% | Uniform | 高 | reset |
+| Motor strength | $\pm$20% | Uniform | 中 | reset |
 | **Action delay** | **10-30 ms** | **Uniform** | **极高** | **reset** |
 | Joint position noise | 0.01-0.05 rad | Gaussian | 中 | step |
 | Joint velocity noise | 0.05-0.2 rad/s | Gaussian | 中 | step |
@@ -863,11 +863,11 @@ $$\begin{bmatrix} \tau_1 \\ \tau_2 \\ \vdots \\ \tau_K \end{bmatrix} = \begin{bm
 
 | 参数 | 辨识方法 | 典型精度 | 实验要求 |
 |------|---------|---------|---------|
-| 质量/惯量 | Swevers 法（激励轨迹 + LS） | ±5% | 特殊设计的周期性激励 |
-| 关节摩擦 | 低速正反转 → 记录力矩差 | ±10% | 库仑 + 粘滞摩擦模型 |
-| 关节阻尼 | 自由衰减振荡 → 拟合包络 | ±15% | 释放关节后记录振荡 |
-| 接触刚度 | 已知物体碰撞 + 力传感器 | ±20% | 需要 F/T 传感器 |
-| 执行器延迟 | 阶跃响应时间测量 | ±2 ms | 最容易测量 |
+| 质量/惯量 | Swevers 法（激励轨迹 + LS） | $\pm$5% | 特殊设计的周期性激励 |
+| 关节摩擦 | 低速正反转 → 记录力矩差 | $\pm$10% | 库仑 + 粘滞摩擦模型 |
+| 关节阻尼 | 自由衰减振荡 → 拟合包络 | $\pm$15% | 释放关节后记录振荡 |
+| 接触刚度 | 已知物体碰撞 + 力传感器 | $\pm$20% | 需要 F/T 传感器 |
+| 执行器延迟 | 阶跃响应时间测量 | $\pm$2 ms | 最容易测量 |
 
 ### sim-to-real 调试的三大观察指标
 
@@ -1115,8 +1115,8 @@ sim-to-real gap 不是一个单一问题，而是**四个独立维度的差异�
 |------|------|------|
 | 纹理 | 随机纹理/颜色 | Isaac Sim 材质替换 |
 | 光照 | 位置/强度/颜色随机 | 随机点光源 + 环境光 |
-| 相机内参 | FOV ±5%, 畸变 ±10% | 运行时修改相机参数 |
-| 相机外参 | 位姿 ±1cm / ±2度 | 随机扰动相机 transform |
+| 相机内参 | FOV $\pm$5%, 畸变 $\pm$10% | 运行时修改相机参数 |
+| 相机外参 | 位姿 $\pm$1cm / $\pm$2度 | 随机扰动相机 transform |
 | 背景 | 随机图片/颜色/纹理 | 绿幕替换或随机化 |
 
 ### 仿真保真度评估方法
@@ -1451,7 +1451,7 @@ private:
 |------|------|------|------|
 | 建模 | SolidWorks + URDF exporter | 1-2 周 | 参数化 URDF |
 | 仿真验证 | Isaac Sim + MoveIt2 | 2-4 周 | 可达性/碰撞/节拍验证 |
-| RL 训练 | Isaac Lab (GPU ×8) | 1-2 周 | 策略模型 (.onnx) |
+| RL 训练 | Isaac Lab (GPU $\times$8) | 1-2 周 | 策略模型 (.onnx) |
 | SysId 标定 | 真机实验 + 参数优化 | 1 周 | 标定后参数 |
 | 部署 | ros2_control + ONNX Runtime | 1-2 周 | 产线运行 |
 | 监控 | RViz + 数字孪生 Level 1 | 持续 | 实时状态监控 |
@@ -1693,7 +1693,7 @@ P02 新增:
 | MuJoCo 导入 URDF 报错 | DAE mesh 不支持 | 1.检查 mesh 格式 2.转换 DAE→STL/OBJ 3.重新导入 | P02.2 |
 | 仿真中机器人"飘走" | 惯性参数错误 / 基座未固定 | 1.检查 URDF 基座 joint 2.检查惯性张量正定性 3.加 `fix_base` | P02.2 |
 | DR 训练 reward 不涨 | 随机化范围过大 | 1.减小 DR 范围 2.用课程式 DR 3.检查 reward scale 4.增加网络容量 | P02.3 |
-| 真机部署策略抖动 | 输出不平滑 | 1.加 action filter (α=0.3) 2.检查 obs 噪声 3.降低策略频率 | P02.4 |
+| 真机部署策略抖动 | 输出不平滑 | 1.加 action filter ($\alpha$=0.3) 2.检查 obs 噪声 3.降低策略频率 | P02.4 |
 | 策略推理太慢 | Python / CUDA 同步 | 1.用 LibTorch/ONNX C++ 2.batch=1 3.profile CUDA 调用 4.检查 GPU 利用率 | P02.6 |
 
 ---

@@ -57,7 +57,7 @@ Barrau-Bonnabel TAC 2017 精读
     └── 与优化方法 (iSAM2/InEKF) 的互补关系
 ```
 
-> **底线陈述（BLUF）**：Barrau-Bonnabel TAC 2017 的真正贡献不是"把 EKF 搬到李群"，而是发现了一类闭合的非线性系统——group-affine 系统——使 EKF 在该类上同时获得三件平凡 EKF 永远做不到的事：误差 ODE 自治（Theorem 1）、误差对数严格满足线性时变 ODE（Theorem 2，**精确，不是近似**——但需 $\log$ 映射在收敛域内；对 $SO(3)$ 旋转误差接近 $\pi$ 时有拓扑限制）、收敛半径独立于初始化时刻（Theorem 4）。**为什么重要**：标准 EKF 的雅可比 $A(\hat x_t,u_t)$ 依赖估计，导致 Riccati 协方差传播失真、虚假可观性、filter divergence；几十年来工程界用 FEJ/OC-EKF 等经验修正缓解。InEKF 从代数结构本身解决问题——$A(u_t)$ 仅依赖输入，**Riccati 在传播段精确**，无需任何外部一致性修正。这一突破直接落地于 SE₂(3) 上的 IMU 导航（§V）、SLAM、Hartley IJRR 2020 的 Cassie 双足机器人（位置 RMSE 降低 ~30%）、以及 Mahony-van Goor 的 Equivariant Filter 推广。**本文档的边界与分工**：5-A3 已给出 InEKF 的算法流程、工程实现与 SE₂(3) IMU 验证（概念借用 group-affine 定理的结论，但不展开证明）；本子任务（5-D）专注于原论文的定理级精读——Theorem 1 三等价证明、Proposition 2 流的群同态性、Theorem 2 的 BCH 推导、Theorem 3/4 基于 Deyst-Price 1968 的 Lyapunov 稳定性证明、不变观测的代数分类、Bias 的 negative result 代数证明、以及与 Bonnabel-Martin-Rouchon 2008 (BMR)、Mahony-van Goor EqF 的关系。读者完成本文档后，应能在黑板上独立复现 Theorem 1、Theorem 2 的完整证明。
+> **底线陈述（BLUF）**：Barrau-Bonnabel TAC 2017 的真正贡献不是"把 EKF 搬到李群"，而是发现了一类闭合的非线性系统——group-affine 系统——使 EKF 在该类上同时获得三件平凡 EKF 永远做不到的事：误差 ODE 自治（Theorem 1）、误差对数严格满足线性时变 ODE（Theorem 2，**精确，不是近似**——但需 $\log$ 映射在收敛域内；对 $SO(3)$ 旋转误差接近 $\pi$ 时有拓扑限制）、收敛半径独立于初始化时刻（Theorem 4）。**为什么重要**：标准 EKF 的雅可比 $A(\hat x_t,u_t)$ 依赖估计，导致 Riccati 协方差传播失真、虚假可观性、filter divergence；几十年来工程界用 FEJ/OC-EKF 等经验修正缓解。InEKF 从代数结构本身解决问题——$A(u_t)$ 仅依赖输入，**Riccati 在传播段精确**，无需任何外部一致性修正。这一突破直接落地于 $SE_2(3)$ 上的 IMU 导航（§V）、SLAM、Hartley IJRR 2020 的 Cassie 双足机器人（位置 RMSE 降低 ~30%）、以及 Mahony-van Goor 的 Equivariant Filter 推广。**本文档的边界与分工**：5-A3 已给出 InEKF 的算法流程、工程实现与 $SE_2(3)$ IMU 验证（概念借用 group-affine 定理的结论，但不展开证明）；本子任务（5-D）专注于原论文的定理级精读——Theorem 1 三等价证明、Proposition 2 流的群同态性、Theorem 2 的 BCH 推导、Theorem 3/4 基于 Deyst-Price 1968 的 Lyapunov 稳定性证明、不变观测的代数分类、Bias 的 negative result 代数证明、以及与 Bonnabel-Martin-Rouchon 2008 (BMR)、Mahony-van Goor EqF 的关系。读者完成本文档后，应能在黑板上独立复现 Theorem 1、Theorem 2 的完整证明。
 
 ---
 
@@ -72,12 +72,12 @@ Barrau-Bonnabel TAC 2017 精读
   - §II.3 误差传播的对数线性性质（**Theorem 2**）
 - **§III Invariant Extended Kalman Filtering**：IEKF 通用结构（LIEKF/RIEKF）、增益 tuning、紧凑方程 (36)/(37)；**Proposition 2** 出现在 §III.1.1；**Theorem 3** = Deyst-Price 1968 重述；**Theorem 4** 主稳定性定理；**Theorem 5** 工程化充分条件。
 - **§IV Simplified car example**：SE(2) 独轮车，Propositions 3, 4。
-- **§V Navigation on flat earth**：SE₂(3) 上 IMU + landmark，Proposition 5 + Theorem 6。
+- **§V Navigation on flat earth**：$SE_2(3)$ 上 IMU + landmark，Proposition 5 + Theorem 6。
 - **附录 A**（李群基础）、**附录 B**（Theorem 2 证明）、**附录 C**（Theorem 4 证明）、**附录 D**（§IV 证明）。
 
 **核心贡献三件套**：
 
-1. **Group-affine 条件**（Theorem 1, eq.(7)）：完全刻画使左/右不变误差演化自治的系统类，**严格扩张**了 Bonnabel-Martin-Rouchon 2008 的"左不变 + 右不变"框架——SE₂(3) 上带重力 $g$ 的 IMU 动力学 $f(e)\neq 0$，既非左不变也非右不变，但仍 group-affine。
+1. **Group-affine 条件**（Theorem 1, eq.(7)）：完全刻画使左/右不变误差演化自治的系统类，**严格扩张**了 Bonnabel-Martin-Rouchon 2008 的"左不变 + 右不变"框架——$SE_2(3)$ 上带重力 $g$ 的 IMU 动力学 $f(e)\neq 0$，既非左不变也非右不变，但仍 group-affine。
 2. **Log-linear 性质**（Theorem 2）：对 group-affine 系统，存在仅依赖 $u_t$ 的矩阵 $A_t$ 使得 $\dot\xi=A_t\xi$ **精确**成立（在 $\log$ 映射的收敛域内；对 $SO(3)$ 旋转误差接近 $\pi$ 时有拓扑限制——$\log$ 出现多值性，BCH 公式的收敛性要求 $\|\xi\|$ 在单射半径内）。
 3. **沿任意轨迹的稳定性**（Theorem 4）：在均匀可观条件下 IEKF 渐近稳定，**收敛半径 $\varepsilon$ 独立于初始化时间 $t_0$**。
 
@@ -212,7 +212,7 @@ $$
 
 > **概念误区**：初学者常认为"group-affine 就是左不变加右不变"。实际上 group-affine 严格扩张了左右不变的并集——$SE_2(3)$ 上 IMU 动力学既非左不变也非右不变，但仍是 group-affine。区分这三者的方法是检查 $f(e)$ 是否为零：$f(e)=0$ 时退化为左右不变，$f(e)\neq 0$ 时"仿射"项登场。
 
-#### 最重要的例子：SE₂(3) 上 IMU 动力学
+#### 最重要的例子：$SE_2(3)$ 上 IMU 动力学
 
 状态 $\chi=\begin{pmatrix}R&v&p\\0&1&0\\0&0&1\end{pmatrix}\in SE_2(3)$，输入陀螺 $\omega$、加速度计 $a_m$、重力 $g\in\mathbb{R}^3$。动力学
 $$
@@ -224,7 +224,7 @@ f_{\omega,a_m}(\chi)=\begin{pmatrix}R(\omega)_\times & g+Ra_m & v\\ 0&0&0\\0&0&0
 $$
 此 $f$ 既非左不变也非右不变（重力项 $g$ 出现在 $f(e)\neq 0$ 中），但仍 group-affine。最直接的代数验证：把 $f$ 写成 $f_{\omega,a_m}(\chi) = A\chi + \chi B$，其中 $A$ 携带重力（$f(e)$ 的非零部分），$B$ 携带 body-frame 输入；这是 Remark 1 左右组合形式的特例，(7) 自动成立。
 
-> **教学要点**：SE₂(3) 把 $v,p$ 嵌入为"虚拟平移"，使得 IMU 动力学呈现 $A\chi+\chi B$ 的左右组合 + 常数漂移结构。$f(e)=A\neq 0$ 对应重力——这是"仿射"一词最直观的工程体现。Barrau PhD 2015 Ch.4 与 Hartley IJRR 2020 Appendix B 给出逐块严格验证。
+> **教学要点**：$SE_2(3)$ 把 $v,p$ 嵌入为"虚拟平移"，使得 IMU 动力学呈现 $A\chi+\chi B$ 的左右组合 + 常数漂移结构。$f(e)=A\neq 0$ 对应重力——这是"仿射"一词最直观的工程体现。Barrau PhD 2015 Ch.4 与 Hartley IJRR 2020 Appendix B 给出逐块严格验证。
 
 ---
 
@@ -319,7 +319,7 @@ $$
 $$
 A_t = \begin{pmatrix} 0_{3\times 3} & 0_{3\times 3} & 0_{3\times 3} \\ (g)_\times & 0_{3\times 3} & 0_{3\times 3} \\ 0_{3\times 3} & I_3 & 0_{3\times 3} \end{pmatrix},\qquad\text{完全独立于 }\hat\chi_t.
 $$
-注意 $A_t$ **下三角且严格幂零**——这是 SE₂(3) 在 IMU 导航中数值稳定性极佳的结构性原因。
+注意 $A_t$ **下三角且严格幂零**——这是 $SE_2(3)$ 在 IMU 导航中数值稳定性极佳的结构性原因。
 
 ---
 
@@ -526,7 +526,7 @@ TAC 2017 限定 $\rho$ 为标准矩阵左乘/右乘 $V=\mathbb{R}^N$。ICRA 2020
 
 "observation is fundamental" 与 "dynamics is group-affine" 是**两个独立条件**。完整一致性（$F$ 与 $H$ 都独立于估计）需**二者同时成立**。
 
-#### 例：SE₂(3) 上 GPS 是 fundamental left-invariant
+#### 例：$SE_2(3)$ 上 GPS 是 fundamental left-invariant
 
 令 $e=(0,0,0,0,1)^\top$ 标记 "position slot"：$\chi e=(p^\top,0,1)^\top$，$Y_n=\chi_{t_n}e+V_n$。Jacobian $H=(0_{3\times 3},0_{3\times 3},I_3)$（Hartley IJRR 2020 §IV.C）。配合 §V 的 group-affine IMU 动力学，propagation 与 update 均满足 log-linear 一致性。
 
@@ -614,7 +614,7 @@ Bonnabel CDC 2007 "Left-invariant EKF and attitude estimation" 是 IEKF 源头�
 
 **TAC 2017 相对 CDC 2007 的三个关键推广**：
 
-1. **Group-affine 条件 (7)**：SO(3) 上左不变动力学 $\dot R=R\omega_\times$ 自然满足，但 SE₂(3) 带重力 IMU 动力学既非左不变也非右不变，需 group-affine 这个**更宽**的代数条件。
+1. **Group-affine 条件 (7)**：SO(3) 上左不变动力学 $\dot R=R\omega_\times$ 自然满足，但 $SE_2(3)$ 带重力 IMU 动力学既非左不变也非右不变，需 group-affine 这个**更宽**的代数条件。
 2. **Log-linear (Theorem 2)**：SO(3) 上由 Rodrigues 公式可见，一般李群需 BCH + Ad 证明。
 3. **$SE_k(d)$ 族群结构**：把 pose + $k$ 个向量量塞入单一 matrix group，使 velocity、landmarks、contacts 共用 $\chi$。CDC 2007 无此构造。
 
@@ -691,7 +691,7 @@ Kalman 滤波对协方差精确传播的依赖来自线性化：$\dot P=AP+PA^\t
 | **Thm 3** (Deyst-Price 1968) | LTV + 五条件 (i)-(v) | 线性 KF $V=\xi^\top P^{-1}\xi$ 指数衰减 | TAC p.1804 | Lyapunov + Riccati 上下界 |
 | **Thm 4** (主结果) | group-affine + Thm 3 条件沿真实轨迹 | LIEKF/RIEKF 渐近稳定，$\varepsilon$ 独立 $t_0$ | TAC p.1804; 证明附录 C p.1811, Lemma 4-7 | Duhamel (58) + BCH 二阶余项一致界 |
 | **Thm 5** (工程化判据) | 线性化 $(A,H,B,D)$ 可检测 + 可达 | 自动满足 (i)-(v) | TAC p.1805 | 标准 LTV 理论 |
-| **Thm 6** (SE₂(3) 应用) | 三个非共线 landmark | flat-earth navigation IEKF 稳定 | TAC §V, p.1809 | Thm 5 应用 |
+| **Thm 6** ($SE_2(3)$ 应用) | 三个非共线 landmark | flat-earth navigation IEKF 稳定 | TAC §V, p.1809 | Thm 5 应用 |
 
 ---
 
@@ -729,7 +729,7 @@ Kalman 滤波对协方差精确传播的依赖来自线性化：$\dot P=AP+PA^\t
 
 6. **"Log-linear 意味 Kalman 在李代数上是后验最优"**——错。Log-linear 仅说明误差**传播精确**（Riccati 在传播段无失真），并不说明 IEKF 是 MMSE 后验最优。最优性需要更强假设（如高斯分布在李代数上的精确对应），TAC 2017 未声称此结论。
 
-7. **"Group-affine 要求动力学本身是线性的"**——错。Group-affine 是在群上的"仿射"性质（(7) 式），不是欧氏空间线性。SE₂(3) 上 IMU 动力学高度非线性（含 $R\omega_\times,Ra_m,(g)_\times$ 耦合），但仍 group-affine。
+7. **"Group-affine 要求动力学本身是线性的"**——错。Group-affine 是在群上的"仿射"性质（(7) 式），不是欧氏空间线性。$SE_2(3)$ 上 IMU 动力学高度非线性（含 $R\omega_\times,Ra_m,(g)_\times$ 耦合），但仍 group-affine。
 
 8. **"Proposition 2 的 $g_t$ 与 $\exp(A_t)$ 是同一映射"**——部分错。$g_t:G\to G$ 是群上的非线性流（群同态）；$F_t=\exp(\int A_s\,ds)$ 是李代数 $\mathfrak g\simeq\mathbb{R}^d$ 上的线性映射。两者通过 $g_t(\exp\xi_0)=\exp(F_t\xi_0)$ 关联，但**$g_t$ 不等于** $\exp\circ F_t\circ\log$ 当作群上映射来看（除非通过 $\exp$ 参数化）。
 
@@ -757,9 +757,9 @@ Kalman 滤波对协方差精确传播的依赖来自线性化：$\dot P=AP+PA^\t
 
 **Q1**　从 group-affine 定义 (7) 出发，独立推导 (i)⟹(iii) 的完整代数（不查阅本文档）。提示：Step 1 用 ($\star$)，Step 2 代入动力学，Step 3 取 $\chi=e$，Step 4 把一般 $\chi$ 重命名为 $a$。
 
-**Q2**　用 SE₂(3) 上 IMU 动力学 $\dot R=R\omega_\times$, $\dot v=g+Ra$, $\dot p=v$ 验证 group-affine 的速度块 (1,2)。展示如何把 $f$ 写成 $A\chi+\chi B$ 形式并验证 (7) 自动成立。
+**Q2**　用 $SE_2(3)$ 上 IMU 动力学 $\dot R=R\omega_\times$, $\dot v=g+Ra$, $\dot p=v$ 验证 group-affine 的速度块 (1,2)。展示如何把 $f$ 写成 $A\chi+\chi B$ 形式并验证 (7) 自动成立。
 
-**Q3**　推导 InEKF 在 SE₂(3) 上对 IMU 的 $A$ 矩阵：
+**Q3**　推导 InEKF 在 $SE_2(3)$ 上对 IMU 的 $A$ 矩阵：
 $$
 A_t=\begin{pmatrix}0&0&0\\(g)_\times&0&0\\0&I_3&0\end{pmatrix}.
 $$
@@ -1816,7 +1816,7 @@ Fornasier et al. RA-L 2024 → Overcoming bias on Lie groups（EqF + bias）
 
 ---
 
-**对工程师的启示**：当你在 SE₂(3)/SE(3) 上设计估计器，**首先**验证动力学是否 group-affine（写成 $A\chi+\chi B$ 形式），**然后**确保观测是 fundamental（$Y=\chi^{\pm 1}d$），**最后**正确选择 LIEKF/RIEKF 手性。三者全满足时，InEKF 提供超越 EKF 的根本性优势。任一不满足，要么调整状态群表示（如把 landmark/contact 塞入 $SE_k(3)$），要么转向 EqF 框架。
+**对工程师的启示**：当你在 $SE_2(3)$/SE(3) 上设计估计器，**首先**验证动力学是否 group-affine（写成 $A\chi+\chi B$ 形式），**然后**确保观测是 fundamental（$Y=\chi^{\pm 1}d$），**最后**正确选择 LIEKF/RIEKF 手性。三者全满足时，InEKF 提供超越 EKF 的根本性优势。任一不满足，要么调整状态群表示（如把 landmark/contact 塞入 $SE_k(3)$），要么转向 EqF 框架。
 
 **设计 InEKF 的工程决策流程**：
 

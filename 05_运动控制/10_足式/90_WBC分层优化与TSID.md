@@ -10,7 +10,7 @@
 2. 给定全身动力学方程 $M\ddot{q} + h = S^T\tau + J_c^T\lambda$,如果决策变量选 $(\ddot{q}, \lambda)$ 而不是 $(\tau, \ddot{q}, \lambda)$,**减少了多少维**?为什么能这样做?
 3. 加权 QP 中设 $w_1 = 100, w_2 = 1$,为什么**不能保证** Task 1 绝对优先于 Task 2?
 4. `EIGEN_RUNTIME_NO_MALLOC` 开启后,哪些 Eigen 操作会触发 assert 失败?请至少列出 3 种。
-5. legged_control 的 WBC 只有约 300 行代码,而 TSID 有数千行——它做了哪些**简化**来实现这一点?
+5. legged_control 的 WBC 只有约 600 行代码,而 TSID 有数千行——它做了哪些**简化**来实现这一点?
 
 ---
 
@@ -458,7 +458,7 @@ Level 3 (低优先级软目标):
   - 接触力正则化(||lambda - lambda_ref||^2)
 ```
 
-> 🧠 **思维陷阱**:有人认为"HQP 一定比加权 QP 好"。**不一定**。HQP 需要解 $p$ 次 QP,计算量更大。对于实时性要求极高的场景(如 1 kHz WBC),有时用加权 QP + 合理权重比 HQP 更实用。legged_control 就是这种思路——用 2 层优先级 + 加权的混合方案。
+> 🧠 **思维陷阱**:有人认为"HQP 一定比加权 QP 好"。**不一定**。HQP 需要解 $p$ 次 QP,计算量更大。对于实时性要求极高的场景(如 1 kHz WBC),有时用加权 QP + 合理权重比 HQP 更实用。legged_control 同时提供两种实现:`HierarchicalWbc` 是 3 层严格 HQP(零空间逐层投影),而 `WeightedWbc` 则是把所有任务用权重叠加成单个 QP 的加权备选方案。
 
 #### 53.3.6 四足机器人的经典四任务分层与 NSP 递推公式
 
@@ -1050,17 +1050,17 @@ TSID 提供了一个功能完备、可扩展的 WBC 框架,但它的通用性也
 legged_wbc/
 ├── include/legged_wbc/
 │   ├── WbcBase.h          // Base class: dynamics computation
-│   ├── HierarchicalWbc.h  // 2-level HQP implementation
+│   ├── HierarchicalWbc.h  // 3-level HQP implementation
 │   └── WeightedWbc.h      // Weighted QP alternative
 └── src/
-    ├── WbcBase.cpp         // ~200 lines: task formulation
-    ├── HierarchicalWbc.cpp // ~150 lines: cascaded QP
+    ├── WbcBase.cpp         // ~270 lines: task formulation
+    ├── HierarchicalWbc.cpp // ~22 lines: 仅装配 task0/1/2,递推逻辑在 HoQp
     └── WeightedWbc.cpp     // ~100 lines: single QP
 ```
 
-#### 53.7.3 WbcBase 的 6 个任务公式
+#### 53.7.3 WbcBase 的 7 个任务公式
 
-`WbcBase` 实现了 6 个任务公式化方法,每个返回一个 `(A, b)` 对(等式约束)或 `(D, f)` 对(不等式约束):
+`WbcBase` 实现了 7 个任务公式化方法,每个返回一个 `(A, b)` 对(等式约束)或 `(D, f)` 对(不等式约束):
 
 | 方法 | 功能 | 约束类型 |
 |------|------|---------|
@@ -1070,6 +1070,7 @@ legged_wbc/
 | `formulateBaseAccelTask()` | 基座加速度追踪 | 等式(软) |
 | `formulateSwingLegTask()` | 摆动腿足端追踪 | 等式(软) |
 | `formulateTorqueLimitsTask()` | 关节扭矩限制 | 不等式 |
+| `formulateContactForceTask()` | 接触力参考追踪 | 等式(软约束) |
 
 **决策变量结构**(与 TSID 相同的消元思路):
 
@@ -1079,25 +1080,30 @@ x = [ddq (18), lambda (12), tau (12)]^T    // 42 维
 
 注意 legged_wbc 没有消去 $\tau$——它保留了全部三组决策变量。这使代码更直观(直接读出 $\tau$),但 QP 维度更大(42 vs 30)。
 
-#### 53.7.4 HierarchicalWbc 的两层结构
+#### 53.7.4 HierarchicalWbc 的三层结构
 
-`HierarchicalWbc` 实现了一个简单的两层 HQP:
+`HierarchicalWbc` 实现了一个三层严格 HQP——即 `HoQp(task2, HoQp(task1, HoQp(task0)))`,逐层在前一层的零空间内求解(与 足式/240_legged_control精读 §68.5.3 一致):
 
 ```
-Level 1 (硬约束 -> QP 1):
+Level 0 (硬约束 -> HoQp 0):
   等式约束:
-    - formulateFloatingBaseEomTask()   // 动力学
-    - formulateNoContactMotionTask()   // 接触不滑
+    - formulateFloatingBaseEomTask()   // 浮基动力学
+    - formulateNoContactMotionTask()   // 接触足零加速度(非接触运动)
   不等式约束:
+    - formulateTorqueLimitsTask()      // 力矩限制
     - formulateFrictionConeTask()      // 摩擦锥
-    - formulateTorqueLimitsTask()      // 扭矩限制
-  代价:min ||x||^2 (正则化)
+  含义:物理定律,不可违反
 
-Level 2 (软目标 -> QP 2, 在 Level 1 的零空间内):
+Level 1 (运动追踪 -> HoQp 1, 在 Level 0 的零空间内):
   代价:
     - formulateBaseAccelTask()         // 基座追踪
-    - formulateSwingLegTask()          // 足端追踪
-  约束:不破坏 Level 1
+    - formulateSwingLegTask()          // 摆动腿追踪
+  约束:不破坏 Level 0
+
+Level 2 (力分配 -> HoQp 2, 在 Level 0+1 的零空间内):
+  代价:
+    - formulateContactForceTask()      // 接触力参考(MPC 期望力)
+  约束:不破坏 Level 0+1
 ```
 
 **核心代码片段**(简化):
@@ -1107,7 +1113,7 @@ Level 2 (软目标 -> QP 2, 在 Level 1 的零空间内):
 Eigen::VectorXd HierarchicalWbc::solve(
     const Eigen::VectorXd& q, const Eigen::VectorXd& v) {
 
-  // Level 1: dynamics + contact constraints
+  // Level 0 (硬约束): dynamics + contact constraints
   auto [A1, b1] = formulateFloatingBaseEomTask();
   auto [A2, b2] = formulateNoContactMotionTask();
 
@@ -1119,29 +1125,39 @@ Eigen::VectorXd HierarchicalWbc::solve(
   auto [D2, f2] = formulateTorqueLimitsTask();
   stackTasks(D, f, D2, f2, D_ineq, f_ineq);
 
-  // Solve QP 1: min ||x||^2 s.t. A_eq*x=b_eq, D*x<=f
-  solveQP(H_identity, g_zero, A_eq, b_eq, D_ineq, f_ineq, x1);
+  // Solve HoQp 0: min ||x||^2 s.t. A_eq*x=b_eq, D*x<=f
+  solveQP(H_identity, g_zero, A_eq, b_eq, D_ineq, f_ineq, x0);
 
-  // Compute null-space of Level 1
-  // N1 = I - A_eq^+ * A_eq
-  Eigen::MatrixXd N1 = computeNullSpace(A_eq);
+  // Compute null-space of Level 0
+  // N0 = I - A_eq^+ * A_eq
+  Eigen::MatrixXd N0 = computeNullSpace(A_eq);
 
-  // Level 2: tracking tasks in null-space of Level 1
+  // Level 1 (运动追踪): tracking tasks in null-space of Level 0
   auto [A3, b3] = formulateBaseAccelTask();
   auto [A4, b4] = formulateSwingLegTask();
   stackTasks(A3, b3, A4, b4, A_track, b_track);
 
-  // Project into null-space: A_track_proj = A_track * N1
-  Eigen::MatrixXd A_proj = A_track * N1;
-  Eigen::VectorXd b_proj = b_track - A_track * x1;
+  // Project into null-space: A_track_proj = A_track * N0
+  Eigen::MatrixXd A_proj = A_track * N0;
+  Eigen::VectorXd b_proj = b_track - A_track * x0;
 
-  // Solve QP 2: min ||A_proj*delta - b_proj||^2
+  // Solve HoQp 1: min ||A_proj*delta1 - b_proj||^2
   solveQP(A_proj.transpose() * A_proj,
           -A_proj.transpose() * b_proj,
-          ..., delta);
+          ..., delta1);
+  Eigen::VectorXd x1 = x0 + N0 * delta1;
+
+  // Level 2 (力分配): contact-force reference in null-space of Level 0+1
+  Eigen::MatrixXd N01 = computeNullSpace(/* stack(Level0, Level1) */);
+  auto [A5, b5] = formulateContactForceTask();
+  Eigen::MatrixXd A_cf = A5 * N01;
+  Eigen::VectorXd b_cf = b5 - A5 * x1;
+  solveQP(A_cf.transpose() * A_cf,
+          -A_cf.transpose() * b_cf,
+          ..., delta2);
 
   // Final solution
-  return x1 + N1 * delta;
+  return x1 + N01 * delta2;
 }
 ```
 
@@ -1150,7 +1166,7 @@ Eigen::VectorXd HierarchicalWbc::solve(
 | 维度 | TSID | legged_wbc |
 |------|------|------------|
 | **代码量** | ~5000 行 | ~600 行 |
-| **优先级层数** | 任意 | 2 层 |
+| **优先级层数** | 任意 | 3 层 |
 | **Task 类型** | 10+ 种(SE3, CoM, AM, ...) | 6 种(硬编码) |
 | **约束抽象** | 通用(Equality/Inequality/Bound) | 硬编码 |
 | **求解器** | 多后端(ProxQP, eiquadprog, ...) | 只用 qpOASES |
@@ -1184,7 +1200,7 @@ Eigen::VectorXd HierarchicalWbc::solve(
 
 **练习 53.7.A** ⭐⭐:精读 `legged_wbc/src/WbcBase.cpp` 的 `formulateFloatingBaseEomTask()`。用文字描述:它如何用 Pinocchio 计算 $M$、$h$、$J_c$?动力学方程如何转化为 $Ax = b$ 的形式?
 
-**练习 53.7.B** ⭐⭐⭐:精读 `HierarchicalWbc.cpp`,画出它的两层 QP 求解流程图。标注每步的矩阵维度(以 Go2 为例)。
+**练习 53.7.B** ⭐⭐⭐:精读 `HierarchicalWbc.cpp`,画出它的三层 QP 求解流程图。标注每步的矩阵维度(以 Go2 为例)。
 
 ---
 
@@ -1439,7 +1455,7 @@ IIT 的 `robotology/bipedal-locomotion-framework` (BLF) 为 iCub 人形机器人
 | 症状 | 可能原因 | 排查步骤 | 相关章节 |
 |------|---------|---------|---------|
 | QP 求解返回 NaN | 约束矛盾(摩擦锥+力矩限同时激活) | 检查约束松弛项δ是否启用；打印KKT矩阵条件数 | 足式/80 |
-| 扭矩跳变/振荡 | 优先级切换时零空间投影不连续 | 检查任务激活/去激活的平滑过渡；对比HQP vs 加权QP | 足式/90.3 |
+| 扭矩跳变/振荡 | 优先级切换时零空间投影不连续 | 检查任务激活/去激活的平滑过渡；对比HQP vs 加权QP | 足式/90 §53.3 |
 | 接触力分配不均 | 摩擦锥权重设置不当 | 可视化四足各脚接触力；检查μ值与实际地面匹配 | 足式/80 |
 | 浮动基座加速度异常 | 动力学一致性约束松弛过大 | 检查δ_fb的L2权重；对比期望vs实际基座加速度 | 足式/50 |
 | TSID实时超限 | 任务数过多或QP维度过大 | profiling QP求解时间；减少低优先级任务；考虑ProxQP替换OSQP | 足式/60 |

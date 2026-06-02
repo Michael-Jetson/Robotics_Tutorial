@@ -4,7 +4,7 @@
 
 ## 前置自测
 
-📋 **答不出 ≥ 2 题 → 先回对应章节复习**
+📋 **答不出 $\ge$ 2 题 → 先回对应章节复习**
 
 1. **[Ch04 Manager-Based]** mjlab 的九大 Manager 分别管理 MDP 的哪些组件？`ObservationManager` 和 `RewardManager` 的调用时序是什么？
 2. **[Ch05 Obs/Action]** `ObservationGroupCfg` 中 `enable_corruption=False` 的含义是什么？它在 teacher-student 训练中扮演什么角色？
@@ -937,7 +937,7 @@ Step 5        Step 6        Step 7        Step 8       Step 9
 | 人形 | 19-29 | 非常复杂 | ⭐⭐⭐⭐ | ⭐⭐⭐ | Ch14 |
 | 人形+灵巧手 | 50+ | 极其复杂 | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ | Ch20 |
 
-**经验法则**：你的第一个自定义环境应该选择 DOF ≤ 12 的构型。DOF 越高，debug 的搜索空间越大——12 DOF 的四足已经有 $2^{12} = 4096$ 种"某个关节配置错误"的可能性。
+**经验法则**：你的第一个自定义环境应该选择 DOF $\le$ 12 的构型。DOF 越高，debug 的搜索空间越大——12 DOF 的四足已经有 $2^{12} = 4096$ 种"某个关节配置错误"的可能性。
 
 ### Step 2-3：SolidWorks → sw2urdf → URDF ⭐
 
@@ -973,7 +973,7 @@ MuJoCo 的接触参数决定了碰撞行为的"软硬"和"弹跳"：
 |------|------|---------|
 | `condim` | 接触约束维度（1=法向，3=+2D切向，4=+扭转） | 足式机器人用 4（需要扭转摩擦防旋转滑动） |
 | `friction` | 切向摩擦、扭转摩擦、滚动摩擦 | 第一项 0.5-1.2 for 室内地面 |
-| `solref` | 约束求解器参考频率和阻尼比 | timeconst ≈ 2×dt，dampratio ≈ 1.0 |
+| `solref` | 约束求解器参考频率和阻尼比 | timeconst $\approx$ 2$\times$dt，dampratio $\approx$ 1.0 |
 | `solimp` | 约束穿透允许范围 | dmin=0.9, dmax=0.95（几乎不允许穿透） |
 
 **（2）仿真步长**
@@ -1273,7 +1273,7 @@ Stage 2: Student Distillation (DAgger)
 |------|---------|---------|
 | Oracle → Student 两阶段 | 先训练有 privileged obs 的强策略，再蒸馏 | Ch09 |
 | Mask 随机化 | 每个 episode 开始时采样 mask，episode 内固定 | Ch05 obs 设计 |
-| 历史帧堆叠 | 25 帧 × proprioception 维度 = 大 obs | Ch05 obs 设计 |
+| 历史帧堆叠 | 25 帧 $\times$ proprioception 维度 = 大 obs | Ch05 obs 设计 |
 | DAgger 而非 KL | action MSE 比 distribution matching 更稳定 | Ch09 蒸馏 |
 | Config YAML | 超参通过 YAML 管理，不修改源码 | Ch07 训练管线 |
 
@@ -1387,7 +1387,7 @@ Phase 3: 推进↔转向切换
 | 器具建模需要 equality constraint | 滑板转向架的运动学耦合 | Ch11 建模、Ch03 物理引擎 |
 | AMP 只用于"人类做得好"的子技能 | 推进用 AMP，转向用 physics reward | Ch10 模仿学习 |
 | 多阶段训练而非 end-to-end | 推进→转向→切换，各阶段独立训练 | Ch06 Curriculum |
-| mjlab 支持复杂的自定义环境 | 4096 并行 × 20 秒 episode | Ch24 大规模训练 |
+| mjlab 支持复杂的自定义环境 | 4096 并行 $\times$ 20 秒 episode | Ch24 大规模训练 |
 
 ### 两个案例的对比总结
 
@@ -1549,7 +1549,7 @@ class CommandsCfg:
 |------|------|---------|
 | `resampling_time_range` | 指令重新采样的间隔 | 太短（<3s）策略来不及执行；太长（>30s）训练效率低 |
 | `heading_command` | 是否使用 heading 而非 ang_vel_z | heading 更适合导航；ang_vel_z 更适合速度跟踪 |
-| `lin_vel_x` 范围 | 前后速度的采样范围 | 从小范围开始（±0.5），curriculum 逐步扩大 |
+| `lin_vel_x` 范围 | 前后速度的采样范围 | 从小范围开始（$\pm$0.5），curriculum 逐步扩大 |
 | `lin_vel_y` 范围 | 侧向速度范围 | 差速底盘设为 0（不能横移）；全向底盘可设非零 |
 
 **自定义 Command 的编写模式**：如果你的任务不是速度跟踪（如目标位置导航），需要编写自定义 Command：
@@ -1602,7 +1602,7 @@ class GoalPositionCommand(CommandTerm):
 ⚠️ **编程陷阱：resampling_time_range 太短导致指令抖动**
 - 如果 `resampling_time_range=(1.0, 1.0)`，策略每秒收到一个新指令——还没执行完上一个就被要求做新的
 - 后果：策略学到"忽略指令"的行为（因为执行指令反而被惩罚——tracking error 在指令切换时瞬间变大）
-- 正确做法：resampling time ≥ 机器人到达目标速度所需的时间 × 2
+- 正确做法：resampling time $\ge$ 机器人到达目标速度所需的时间 $\times$ 2
 
 ⚠️ **编程陷阱：Command 返回的是 world frame 而非 base frame**
 - 后果：obs 中的指令随底盘旋转而变化——相同的"向前走"在不同朝向下有不同的 obs 表示
@@ -2395,7 +2395,7 @@ python scripts/export_onnx.py MyQuad-Velocity-Flat \
 
 1. **[实践题]** 使用本节的完整代码，替换 robot MJCF 为 MuJoCo Menagerie 中的 Unitree Go2（`github.com/google-deepmind/mujoco_menagerie/tree/main/unitree_go2`），更新 joint names 和 init_state，跑通训练并达到 80% 的速度跟踪成功率。
 2. **[扩展题]** 在完整代码的基础上，添加 terrain curriculum（参考 Ch13）：Phase 0 在平地上训练，Phase 1 加入随机台阶地形。实现 CurriculumCfg 并验证阶段推进。
-3. **[对比题]** 分别用 PPO 默认配置和 AGILE 推荐的配置（actor [256,256,128], critic [512,256,128], LR 1e-3, entropy 0.005, γ=0.99）训练 5000 iterations，比较 reward 曲线和最终行为。AGILE 的配置是否更好？为什么？
+3. **[对比题]** 分别用 PPO 默认配置和 AGILE 推荐的配置（actor [256,256,128], critic [512,256,128], LR 1e-3, entropy 0.005, $\gamma=0.99$）训练 5000 iterations，比较 reward 曲线和最终行为。AGILE 的配置是否更好？为什么？
 
 ### 从零到第一次成功训练的典型时间线
 

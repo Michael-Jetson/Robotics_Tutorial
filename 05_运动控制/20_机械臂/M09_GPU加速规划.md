@@ -78,7 +78,7 @@
 
 | 路线 | 代表 | 硬件 | 加速原理 | 加速倍数 |
 |------|------|------|---------|---------|
-| **GPU 并行** | cuRobo (NVIDIA) | GPU (Turing+) | 数百个并行种子 × GPU 碰撞检测 | 10-60x |
+| **GPU 并行** | cuRobo (NVIDIA) | GPU (Turing+) | 数百个并行种子 $\times$ GPU 碰撞检测 | 10-60x |
 | **CPU SIMD** | VAMP (Kavraki Lab) | 任意现代 CPU | 手写 AVX2/NEON intrinsics 向量化碰撞 | 100-1000x (单次碰撞检测) |
 
 > **本质洞察**: cuRobo 和 VAMP 加速的核心都是**碰撞检测**——前者用 GPU 的数千核心并行检查数百个构型，后者用 CPU 的 SIMD 寄存器一次检查 8 个球对。它们不改变 RRT/优化的算法逻辑——只是让每次碰撞检查从 50 us 变成 0.1 us。这印证了 M07.5 的判断：**碰撞检测是性能瓶颈，加速碰撞检测等于加速整个规划管线**。
@@ -269,7 +269,7 @@ L6 [  1   1   1   1   0   0   0 ]
 节省: 43% 碰撞检测计算
 ```
 
-当碰撞检查对数超过 512 × 1024 时，cuRobo 的 self-collision kernel 有针对**稀疏性 + GPU 线程块 + 原子操作**的专门优化——是学习 CUDA 优化的进阶素材。
+当碰撞检查对数超过 512 $\times$ 1024 时，cuRobo 的 self-collision kernel 有针对**稀疏性 + GPU 线程块 + 原子操作**的专门优化——是学习 CUDA 优化的进阶素材。
 
 ### cuRobo Python API 使用 ⭐⭐
 

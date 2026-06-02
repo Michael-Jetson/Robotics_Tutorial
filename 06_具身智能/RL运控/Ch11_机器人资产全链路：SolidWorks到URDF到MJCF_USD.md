@@ -10,14 +10,14 @@
 
 ## 前置自测
 
-📋 **答不出 ≥ 3 题 → 先回前置章节复习**
+📋 **答不出 $\ge$ 3 题 → 先回前置章节复习**
 
 | # | 问题 | 检查目的 |
 |---|------|----------|
 | 1 | MjSpec、MjModel、MjData 的生命周期分别是什么？在哪个阶段可以修改模型结构？ | Ch03 核心概念 |
 | 2 | URDF 的 `<link>` 和 `<joint>` 元素分别描述什么？一个 6-DOF 机械臂有几个 link 和几个 joint？ | URDF 基础 |
 | 3 | 为什么仿真中的碰撞检测通常不使用三角形 mesh 而是凸包？ | 物理仿真基础 |
-| 4 | 刚体的惯性张量 $I$ 是一个 3×3 矩阵。它必须满足什么物理约束才是"合法"的？ | 刚体力学基础 |
+| 4 | 刚体的惯性张量 $I$ 是一个 $3\times3$ 矩阵。它必须满足什么物理约束才是"合法"的？ | 刚体力学基础 |
 | 5 | MuJoCo 的 `<actuator>` 元素中，`<position>` 和 `<motor>` 类型有什么区别？ | Ch03 |
 | 6 | Isaac Lab 加载机器人资产时需要 USD 格式。USD 是什么？它和 URDF 有什么本质区别？ | Isaac Lab 基础 |
 
@@ -1004,7 +1004,7 @@ def compare_free_fall(urdf_path):
 
 ### 动机：为什么仿真需要凸包而非三角形 mesh
 
-物理仿真中的碰撞检测分为两步：(1) broad phase（快速排除明显不碰的对）和 (2) narrow phase（精确计算碰撞点和法向量）。Narrow phase 对凸包的计算复杂度是 O(n)，但对凹 mesh 是 O(n²) 或更高。一个有 10,000 个三角形面的 mesh 在 narrow phase 中极其缓慢——尤其是 MuJoCo 要在 GPU 上对 4096 个环境同时做碰撞检测时。
+物理仿真中的碰撞检测分为两步：(1) broad phase（快速排除明显不碰的对）和 (2) narrow phase（精确计算碰撞点和法向量）。Narrow phase 对凸包的计算复杂度是 $O(n)$，但对凹 mesh 是 $O(n^2)$ 或更高。一个有 10,000 个三角形面的 mesh 在 narrow phase 中极其缓慢——尤其是 MuJoCo 要在 GPU 上对 4096 个环境同时做碰撞检测时。
 
 解决方案：把复杂的原始 mesh 分解为多个凸包的组合——这就是 **convex decomposition**。这类似于用乐高积木搭建复杂形状——每个乐高块是一个简单的凸几何体，但组合在一起可以近似任意形状。凸包数越多近似越精确，但碰撞检测的计算量也越大。
 
@@ -1423,7 +1423,7 @@ print(f"位置漂移: {drift:.4f}m")
 
 Ch08 讨论了 Domain Randomization 对质量和惯量的随机化。但随机化惯性参数时有一个微妙的陷阱：**独立随机化质量、质心和惯性张量的对角元素可能产生物理不一致的参数。**
 
-Wensing et al. (RA-L 2018) 定义了 **pseudo-inertia 矩阵**——一个 4×4 矩阵 $J(\pi)$，它是 10 维惯性参数向量 $\pi = (m, mc_x, mc_y, mc_z, I_{xx}, I_{xy}, I_{xz}, I_{yy}, I_{yz}, I_{zz})$ 的线性函数。物理一致性等价于 $J(\pi) \succ 0$（正定）。
+Wensing et al. (RA-L 2018) 定义了 **pseudo-inertia 矩阵**——一个 $4\times4$ 矩阵 $J(\pi)$，它是 10 维惯性参数向量 $\pi = (m, mc_x, mc_y, mc_z, I_{xx}, I_{xy}, I_{xz}, I_{yy}, I_{yz}, I_{zz})$ 的线性函数。物理一致性等价于 $J(\pi) \succ 0$（正定）。
 
 ```python
 # pseudo_inertia.py — 检查惯性参数的物理一致性（Wensing LMI 方法）
@@ -1694,7 +1694,7 @@ mujoco_menagerie/
 | 人形 locomotion | unitree_g1, unitree_h1 | 23-29 DoF | g1 是当前 sim2real 主流 |
 | 机械臂操作 | franka_emika_panda, kuka_iiwa | 7 DoF | panda 是操作研究标准 |
 | 灵巧手操作 | shadow_hand, allegro_hand | 16-24 DoF | 需要 collision 简化 |
-| 双臂操作 | aloha | 2×7 DoF | 包含夹具 |
+| 双臂操作 | aloha | $2\times7$ DoF | 包含夹具 |
 
 **快速开始代码——在 mjlab 中使用 Menagerie 模型：**
 
@@ -2295,7 +2295,7 @@ def check_alignment(mjcf_path, isaac_cfg):
 | V-HACD vs CoACD | 填充孔洞 vs 保留凹面，操作任务必须用 CoACD | ⭐⭐⭐ |
 | Collision 精度-速度权衡 | RL 训练优先吞吐量→简化 collision→8-16 parts | ⭐⭐ |
 | MJX/Warp collision 要求 | GPU 后端需要 primitive shapes 或极简化 mesh | ⭐⭐ |
-| 惯性张量三角不等式 | Ix+Iy≥Iz（循环），MuJoCo 会拒绝不合法参数 | ⭐⭐⭐ |
+| 惯性张量三角不等式 | $I_x+I_y\ge I_z$（循环），MuJoCo 会拒绝不合法参数 | ⭐⭐⭐ |
 | Pseudo-inertia LMI | 物理一致的 DR 随机化必须等比缩放 mass/inertia | ⭐⭐⭐ |
 | 惯性验证三测试 | 自由落体 + 静止平衡 + 质心可视化 | ⭐⭐ |
 | MuJoCo Menagerie | 50+ 模型，每个有详细的转换文档，是最佳学习材料 | ⭐⭐⭐ |
@@ -2493,7 +2493,7 @@ URDF → USD 转换：
 | sw2urdf 导出的关节限位全为 0 | SolidWorks 中未定义 mate limit | 1. 在 SolidWorks 中设置角度限制 2. 手动修改 URDF limit | 本章 11.2 |
 | Menagerie 模型 RL 训练不收敛 | actuator kp 值不适合 RL | 1. 检查 kp 值（viewer 默认偏低）2. 增大到 200-400 3. 参考 Ch05 action space | 本章 11.3 |
 | MuJoCo 的 kv 和 Isaac Lab 的 damping 不一致 | MuJoCo 的 kv 和 joint damping 叠加 | 1. 检查 MJCF 中 actuator kv + joint damping 的总和 2. 在 Isaac Lab 设 damping = 总和 | 本章 11.9 |
-| 惯性 DR 后 MuJoCo 报错 | 独立随机化违反三角不等式 | 1. 改用等比缩放（密度×factor） 2. 验证 pseudo-inertia PSD | 本章 11.6 |
+| 惯性 DR 后 MuJoCo 报错 | 独立随机化违反三角不等式 | 1. 改用等比缩放（密度$\times$factor） 2. 验证 pseudo-inertia PSD | 本章 11.6 |
 | CoACD 分解后凸包数过多 | threshold 太小 | 1. 增大 threshold 到 0.1 2. 减小 max_convex_hull | 本章 11.5 |
 | V-HACD 填充了夹具的抓取空间 | V-HACD 对凹面做凸包填充 | 1. 改用 CoACD 2. 或手动设计 primitive collision | 本章 11.5 |
 

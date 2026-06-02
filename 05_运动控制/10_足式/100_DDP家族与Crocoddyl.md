@@ -131,11 +131,13 @@ $$V_k(\mathbf{x}) = \min_{\mathbf{u}} \left[ l_k(\mathbf{x}, \mathbf{u}) + V_{k+
         │
 2004 ─ Li & Todorov ─ 提出 iLQR(DDP 的简化版)
         │
-2014 ─ Tassa et al. ─ 带控制限位的 DDP(MuJoCo)
+2014 ─ Tassa et al. ─ 带控制限位的 box-DDP(ICRA 2014; MuJoCo)
         │
-2019 ─ Mastalli et al. ─ Crocoddyl(ICRA 2019; 期刊版 Autonomous Robots 2022)
+2020 ─ Mastalli et al. ─ Crocoddyl(ICRA 2020,arXiv 1909.04947)
         │
-2025 ─ Jallet et al. ─ ProxDDP + Aligator(T-RO 2025)
+2022 ─ Mastalli et al. ─ Box-FDDP(Autonomous Robots 46(8):985-1005)
+        │
+2025 ─ Jallet et al. ─ ProxDDP(T-RO 41:2605-2624)+ ParallelRiccati(RSS 2024)+ Aligator 库
 ```
 
 > 🧠 **深入理解**: Jacobson 1970 年的 DDP 论文是一本书,不是一篇文章!那时候的"论文"可以是 200 页。现代 DDP 的实用化是 2000 年代 Todorov 的工作推动的——他在 MuJoCo 里把 iLQR 变成了实用工具。
@@ -1049,7 +1051,7 @@ void ShootingProblem::calcDiff(const std::vector<VectorXd>& xs,
 
 ### 54.9.1 Aligator:Crocoddyl 的"下一代" ⭐⭐⭐
 
-**Aligator** (LAAS-CNRS / Inria, Jallet, Carpentier 等, T-RO 2025) 是 Pinocchio/Crocoddyl 团队的新一代轨迹优化库:
+**Aligator** (LAAS-CNRS / Inria, Jallet, Carpentier 等) 是 Pinocchio/Crocoddyl 团队的新一代轨迹优化库,它综合了两篇论文的成果:ProxDDP 的约束处理(Jallet et al., *PROXDDP: Proximal Constrained Trajectory Optimization*, T-RO 41:2605-2624, 2025)与 ParallelRiccati 的并行 backward pass(Jallet et al., *Parallel and Proximal Constrained Linear-Quadratic Methods for Real-Time Nonlinear MPC*, RSS 2024, Delft):
 
 ```
 Crocoddyl 与 Aligator 的定位:
@@ -1135,13 +1137,13 @@ $$\mathcal{L}_{\mu}(\mathbf{x}, \mathbf{u}, \boldsymbol{\lambda}) = l(\mathbf{x}
 | 收敛速度(无约束） | 快 | 略慢(ALM 外层开销) |
 | 初始猜测鲁棒性 | FDDP 比 DDP 好 | **更好**(ALM 平滑化) |
 | 实时性 | 成熟(Crocoddyl 调优) | 需要更多调参 |
-| 论文发表 | ICRA 2019 | T-RO 2025 |
+| 论文发表 | Box-FDDP: Auton. Robots 2022 | ProxDDP: T-RO 2025 |
 
 ### 54.9.5 ParallelRiccati:打破 30 年的教条 ⭐⭐⭐⭐
 
 **"backward pass 不可并行"**:这是 DDP 社区从 1970 年 Jacobson 的论文以来的共识。$V_k$ 的计算依赖 $V_{k+1}$,必须严格顺序从 $N$ 到 $0$。
 
-**Jallet et al. (T-RO 2025) 的突破**:Riccati 递推可以表达为**矩阵链乘**,而链乘可以用 **parallel scan** 算法并行化。
+**Jallet et al. (RSS 2024) 的突破**:Riccati 递推可以表达为**矩阵链乘**,而链乘可以用 **parallel scan** 算法并行化。(注意:并行 backward pass 这一贡献出自 RSS 2024 的 *Parallel and Proximal...* 一文,而约束处理的 ProxDDP 出自 T-RO 2025 一文,两者同属 Aligator 库但是不同论文,引用时勿混淆。)
 
 **核心数学**:每一步的 Riccati 递推可以写成一个仿射变换:
 
@@ -1178,7 +1180,7 @@ Level 3:        T₀₁₂₃₄₅₆₇                     ← 1 次乘法
 
 > 🧠 **深入理解**: Parallel scan 算法在计算机科学中早已成熟(parallel prefix sum),但把它应用到 Riccati 递推上需要一个关键观察:Riccati 算子构成一个**半群**,即它满足结合律。这不是显然的——需要仔细证明 $\mathbf{T}_k$ 的乘法确实是结合的。
 
-**性能数据** (Jallet et al. T-RO 2025):
+**性能数据** (Jallet et al. RSS 2024):
 
 ```
 ParallelRiccati 性能 (ANYmal 全身 MPC):
@@ -1198,7 +1200,7 @@ ParallelRiccati 性能 (ANYmal 全身 MPC):
 
 **练习 54.9a** (⭐⭐⭐): 用 Eigen 实现一个简化版的 Parallel Scan:给定 N 个 $3 \times 3$ 矩阵,用二叉树合并计算它们的连乘。与顺序连乘对比结果的正确性和速度。
 
-**练习 54.9b** (⭐⭐⭐⭐): 阅读 Jallet et al. (T-RO 2025) 的 Section IV,用自己的话复述 ParallelRiccati 的完整算法。重点理解:为什么 Riccati 算子满足结合律?
+**练习 54.9b** (⭐⭐⭐⭐): 阅读 Jallet et al. (RSS 2024, *Parallel and Proximal...*) 关于并行 LQ 求解的章节,用自己的话复述 ParallelRiccati 的完整算法。重点理解:为什么 Riccati 算子满足结合律?
 
 ---
 
@@ -1513,11 +1515,11 @@ DDP 流派 (Crocoddyl, MuJoCo)       SQP 流派 (OCS2, ALTRO)
 
 | 症状 | 可能原因 | 排查步骤 | 相关章节 |
 |------|---------|---------|---------|
-| backward pass Q_uu 不正定 | 正则化μ不足/动力学Hessian数值问题 | 增大μ或切换iLQR(Gauss-Newton近似丢弃二阶项) | 足式/100.3 |
-| forward pass 发散 | 步长过大/初始轨迹离最优太远 | 减小α或启用line search(Armijo条件) | 足式/100.4 |
-| warm-start 反而变慢 | 上一次解在约束边界震荡 | 检查约束激活状态变化；对比冷启动与热启动的迭代次数 | 足式/100.7 |
-| Crocoddyl calcDiff 报段错误 | Data未正确createData | 检查model/data匹配；确认使用problem.createData()预分配 | 足式/100.5 |
-| 并行Riccati结果不一致 | OpenMP线程数据竞争 | 检查Eigen内存对齐；用ThreadSanitizer检测竞态 | 足式/100.8 |
+| backward pass Q_uu 不正定 | 正则化μ不足/动力学Hessian数值问题 | 增大μ或切换iLQR(Gauss-Newton近似丢弃二阶项) | 足式/100 §54.3 |
+| forward pass 发散 | 步长过大/初始轨迹离最优太远 | 减小α或启用line search(Armijo条件) | 足式/100 §54.4 |
+| warm-start 反而变慢 | 上一次解在约束边界震荡 | 检查约束激活状态变化；对比冷启动与热启动的迭代次数 | 足式/100 §54.7 |
+| Crocoddyl calcDiff 报段错误 | Data未正确createData | 检查model/data匹配；确认使用problem.createData()预分配 | 足式/100 §54.5 |
+| 并行Riccati结果不一致 | OpenMP线程数据竞争 | 检查Eigen内存对齐；用ThreadSanitizer检测竞态 | 足式/100 §54.8 |
 
 ---
 

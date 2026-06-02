@@ -1,4 +1,4 @@
-# 第 80 章 轮足机器人 RL 训练栈——从仿真环境到实机部署的完整流程
+# 第 78 章 轮足机器人 RL 训练栈——从仿真环境到实机部署的完整流程
 
 | 元信息 | 值 |
 | --- | --- |
@@ -39,7 +39,7 @@
 
 ---
 
-## 80.1 为什么轮足 RL 比纯足式更难 ⭐⭐
+## 78.1 为什么轮足 RL 比纯足式更难 ⭐⭐
 
 ### 动机：额外自由度带来的维度诅咒
 
@@ -72,18 +72,18 @@ RL 的优势正在于此：它可以从数据中学习**连续的、软的**模�
 整个训练过程围绕一个核心优化问题：
 
 $$
-\theta^* = \arg\max_\theta \; \mathbb{E}_{\tau \sim \pi_\theta} \left[ \sum_{t=0}^{T} \gamma^t r_t \right] \tag{80.1}
+\theta^* = \arg\max_\theta \; \mathbb{E}_{\tau \sim \pi_\theta} \left[ \sum_{t=0}^{T} \gamma^t r_t \right] \tag{78.1}
 $$
 
 其中策略 $\pi_\theta$ 将观测映射到混合动作空间：
 
 $$
-a_t = \pi_\theta(o_t) = \begin{bmatrix} \Delta q_{leg}^{des} \\ \omega_{wheel}^{des} \end{bmatrix} \in \mathbb{R}^{n_{leg} + n_{wheel}} \tag{80.2}
+a_t = \pi_\theta(o_t) = \begin{bmatrix} \Delta q_{leg}^{des} \\ \omega_{wheel}^{des} \end{bmatrix} \in \mathbb{R}^{n_{leg} + n_{wheel}} \tag{78.2}
 $$
 
 对于四足轮足机器人（如基于 ANYmal 的 Swiss-Mile 平台），$n_{leg} = 12$（每条腿 3 个关节），$n_{wheel} = 4$（每条腿末端一个轮子），总动作维度为 16。
 
-> 💡 **概念澄清**：公式 (80.2) 中腿关节用的是**位置增量** $\Delta q$，而不是绝对位置 $q$。这是因为 RL 策略输出的是围绕默认站姿 $q_0$ 的残差：$q_{leg}^{des} = q_0 + s_q \cdot \Delta q_{leg}^{des}$，其中 $s_q$ 是动作缩放系数。这样做有两个好处：(1) 策略输出的零值对应默认站姿，初始化时机器人不会乱动；(2) 动作范围更对称，有利于神经网络学习。
+> 💡 **概念澄清**：公式 (78.2) 中腿关节用的是**位置增量** $\Delta q$，而不是绝对位置 $q$。这是因为 RL 策略输出的是围绕默认站姿 $q_0$ 的残差：$q_{leg}^{des} = q_0 + s_q \cdot \Delta q_{leg}^{des}$，其中 $s_q$ 是动作缩放系数。这样做有两个好处：(1) 策略输出的零值对应默认站姿，初始化时机器人不会乱动；(2) 动作范围更对称，有利于神经网络学习。
 
 | 对比维度 | 纯足式 RL | 轮足 RL |
 |---------|----------|---------|
@@ -120,7 +120,7 @@ $$
 
 ---
 
-## 80.2 仿真环境搭建：IsaacLab 配置与 URDF 模型 ⭐⭐
+## 78.2 仿真环境搭建：IsaacLab 配置与 URDF 模型 ⭐⭐
 
 ### 动机：为什么仿真环境是训练成功的前提
 
@@ -171,7 +171,7 @@ IsaacLab（IsaacGym 的继任者，基于 NVIDIA Isaac Sim）继承了 GPU 并�
 IsaacLab 中的地形通常用高度图（height field）或三角网格生成。课程训练中，地形难度应随训练进度逐步提升：
 
 $$
-\text{terrain\_level}_{k+1} = \text{terrain\_level}_k + \mathbf{1}[\text{success\_rate} > \eta] \tag{80.3}
+\text{terrain\_level}_{k+1} = \text{terrain\_level}_k + \mathbf{1}[\text{success\_rate} > \eta] \tag{78.3}
 $$
 
 其中 $\eta$ 是晋级阈值（通常 0.7-0.8）。这个公式的含义是：当某个难度级别的成功率超过阈值后，自动进入下一个难度级别。
@@ -223,7 +223,7 @@ class WheelLeggedActuatorCfg:
 > 💡 **概念误区：认为地形越复杂越好**
 > - 新手想法：一开始就用最复杂的混合地形训练
 > - 实际上：课程训练（Curriculum Learning）的核心是从简单到复杂。如果一开始地形太难，策略只会学到"站在原地不动"——因为任何运动都会摔倒。应该从纯平地开始，让策略先学会滚动，再逐步增加台阶和坡面
-> - 正确思路：设计 5-8 个难度级别，每个级别有明确的地形参数范围，用公式 (80.3) 自动晋级
+> - 正确思路：设计 5-8 个难度级别，每个级别有明确的地形参数范围，用公式 (78.3) 自动晋级
 
 > 🧠 **思维陷阱：只关注物理引擎精度，忽略并行仿真的数值一致性**
 > - 新手想法：用最高精度的物理引擎设置（最小时间步、最多求解迭代）
@@ -238,7 +238,7 @@ class WheelLeggedActuatorCfg:
 
 ---
 
-## 80.3 观测空间设计：策略能看到什么 ⭐⭐⭐
+## 78.3 观测空间设计：策略能看到什么 ⭐⭐⭐
 
 ### 动机：观测决定策略的信息边界
 
@@ -246,7 +246,7 @@ RL 策略只能基于观测 $o_t$ 来决策。如果一个信息没有进入观�
 
 这个区分之所以如此关键，是因为训练和部署的信息不对称。在仿真中，你可以获取地形的完整高度图、每个接触点的精确法向力、轮子的真实滑移率——这些都是仿真器内部状态的直接读出。但在真机上，你只有 IMU（噪声、偏置、漂移）、关节编码器（量化误差）、轮速传感器（延迟）和可能的深度相机（遮挡、光照变化）。
 
-如果训练时策略看到了特权信息，部署时这些信息突然消失，策略的性能会断崖式下降。这就是为什么需要 Teacher-Student 两阶段训练（§80.7 详述）。
+如果训练时策略看到了特权信息，部署时这些信息突然消失，策略的性能会断崖式下降。这就是为什么需要 Teacher-Student 两阶段训练（§78.7 详述）。
 
 ### 可部署观测：真机传感器能给什么
 
@@ -273,13 +273,13 @@ RL 策略只能基于观测 $o_t$ 来决策。如果一个信息没有进入观�
 如果加入前 $k$ 帧的观测历史，策略可以通过时间差分推断出速度变化趋势、加速度方向、以及摩擦力是否足够。实践中 $k = 3$~$10$ 帧（对应 15-50 ms 的历史窗口）已足够。
 
 $$
-o_t^{history} = [o_{t-k}, o_{t-k+1}, \ldots, o_{t-1}, o_t] \tag{80.4}
+o_t^{history} = [o_{t-k}, o_{t-k+1}, \ldots, o_{t-1}, o_t] \tag{78.4}
 $$
 
 或者更紧凑地，只保留一个学习的隐变量：
 
 $$
-z_t = \phi(o_{t-k:t}) \tag{80.5}
+z_t = \phi(o_{t-k:t}) \tag{78.5}
 $$
 
 其中 $\phi$ 可以是 TCN（时间卷积网络）或 MLP。
@@ -287,7 +287,7 @@ $$
 **观测归一化**：所有观测量在进入策略网络之前必须归一化。不同物理量的数值范围差异极大——关节角度在 $[-\pi, \pi]$，轮速在 $[-40, 40]$ rad/s，IMU 角速度在 $[-10, 10]$ rad/s。如果不归一化，数值大的量会主导梯度，数值小的量会被忽略。
 
 $$
-o_{norm} = \text{clip}\left(\frac{o - \mu}{\sigma}, -c, c\right) \tag{80.6}
+o_{norm} = \text{clip}\left(\frac{o - \mu}{\sigma}, -c, c\right) \tag{78.6}
 $$
 
 其中 $\mu, \sigma$ 是运行统计量（running mean/std），$c$ 是裁剪范围（通常 5-10）。裁剪是必要的，因为 RL 训练早期环境重置频繁，统计量不稳定，不裁剪会出现极端的归一化值。
@@ -360,7 +360,7 @@ OBSERVATION_SCHEMA = {
 
 ---
 
-## 80.4 动作空间设计：策略输出什么 ⭐⭐⭐
+## 78.4 动作空间设计：策略输出什么 ⭐⭐⭐
 
 ### 动机：动作空间的设计决定了策略的表达能力边界
 
@@ -383,7 +383,7 @@ OBSERVATION_SCHEMA = {
 3. **学习效率**：位置目标的变化范围小（$\pm 0.3$~$0.5$ rad），网络输出分布紧凑，PPO 的 clipping 机制更有效
 
 $$
-q_{leg}^{des} = q_{default} + s_{leg} \cdot a_{leg} \tag{80.7}
+q_{leg}^{des} = q_{default} + s_{leg} \cdot a_{leg} \tag{78.7}
 $$
 
 其中 $q_{default}$ 是默认站姿角度，$s_{leg}$ 是动作缩放系数（通常 0.25-0.5 rad），$a_{leg} \in [-1, 1]^{12}$ 是策略的归一化输出。
@@ -393,7 +393,7 @@ $$
 轮关节的控制模式与腿关节有本质不同。轮子不存在"位置"概念——它可以连续旋转——因此只能控制**速度**或**力矩**。
 
 $$
-\omega_{wheel}^{des} = s_{wheel} \cdot a_{wheel} \tag{80.8}
+\omega_{wheel}^{des} = s_{wheel} \cdot a_{wheel} \tag{78.8}
 $$
 
 其中 $s_{wheel}$ 是轮速缩放系数（通常 10-30 rad/s），$a_{wheel} \in [-1, 1]^4$ 是策略的归一化输出。
@@ -412,7 +412,7 @@ $$
 **第一层：低通滤波。** 策略网络的输出可能在相邻时步之间有很大跳变（尤其是训练早期），直接执行会产生冲击力矩。
 
 $$
-a_{filtered} = \alpha \cdot a_{raw} + (1 - \alpha) \cdot a_{prev} \tag{80.9}
+a_{filtered} = \alpha \cdot a_{raw} + (1 - \alpha) \cdot a_{prev} \tag{78.9}
 $$
 
 其中 $\alpha \in [0.2, 0.8]$ 是滤波系数。$\alpha$ 越小，平滑度越高但响应越慢。实践中 $\alpha = 0.6$ 是常见选择。
@@ -420,13 +420,13 @@ $$
 **第二层：限幅。** 滤波后的动作仍需限制在物理可行范围内。
 
 $$
-a_{clipped} = \text{clip}(a_{filtered}, a_{min}, a_{max}) \tag{80.10}
+a_{clipped} = \text{clip}(a_{filtered}, a_{min}, a_{max}) \tag{78.10}
 $$
 
 **第三层：姿态保护。** 当机器人姿态异常（如 roll/pitch 超过安全阈值）时，强制减小动作幅度：
 
 $$
-a_{safe} = a_{clipped} \cdot \max\left(0, 1 - \frac{\|[\text{roll}, \text{pitch}]\|}{\theta_{max}}\right) \tag{80.11}
+a_{safe} = a_{clipped} \cdot \max\left(0, 1 - \frac{\|[\text{roll}, \text{pitch}]\|}{\theta_{max}}\right) \tag{78.11}
 $$
 
 ```python
@@ -476,7 +476,7 @@ def process_action(raw_action, last_action, robot_state, config):
 
 ---
 
-## 80.5 奖励函数工程：从物理目标到可学习信号 ⭐⭐⭐⭐
+## 78.5 奖励函数工程：从物理目标到可学习信号 ⭐⭐⭐⭐
 
 ### 动机：奖励是 RL 训练的"灵魂"
 
@@ -493,13 +493,13 @@ def process_action(raw_action, last_action, robot_state, config):
 **第一类：任务奖励（鼓励完成目标）**
 
 $$
-r_{vel} = w_{vel} \cdot \exp\left(-\frac{\|v_{xy} - v_{xy}^{cmd}\|^2}{\sigma_v^2}\right) \tag{80.12}
+r_{vel} = w_{vel} \cdot \exp\left(-\frac{\|v_{xy} - v_{xy}^{cmd}\|^2}{\sigma_v^2}\right) \tag{78.12}
 $$
 
 速度跟踪奖励。用高斯核而不是线性误差有两个好处：(1) 当跟踪误差很小时奖励接近 1，策略有明确的"做对了"信号；(2) 当误差很大时奖励接近 0（而不是负无穷），不会主导梯度。$\sigma_v$ 控制宽容度——$\sigma_v = 0.25$ m/s 意味着速度误差在 0.25 m/s 以内时奖励已经接近最大值。
 
 $$
-r_{yaw} = w_{yaw} \cdot \exp\left(-\frac{(\omega_z - \omega_z^{cmd})^2}{\sigma_\omega^2}\right) \tag{80.13}
+r_{yaw} = w_{yaw} \cdot \exp\left(-\frac{(\omega_z - \omega_z^{cmd})^2}{\sigma_\omega^2}\right) \tag{78.13}
 $$
 
 航向角速度跟踪，形式与速度跟踪相同。
@@ -507,7 +507,7 @@ $$
 **第二类：姿态和稳定性奖励**
 
 $$
-r_{upright} = w_{up} \cdot (g_{proj,z} + 1) / 2 \tag{80.14}
+r_{upright} = w_{up} \cdot (g_{proj,z} + 1) / 2 \tag{78.14}
 $$
 
 姿态保持奖励。$g_{proj,z}$ 是重力在机体 z 轴的投影，完全直立时 $g_{proj,z} = -1$（指向地面），完全翻倒时 $g_{proj,z} = 1$（指向天空）。上式将其归一化到 $[0, 1]$，直立时奖励为 0（因为 $(-1+1)/2=0$）。
@@ -515,7 +515,7 @@ $$
 等等，这里有个问题——直立时奖励为 0 似乎没有鼓励作用。实际中通常用另一种形式：
 
 $$
-r_{upright} = -w_{up} \cdot \|[\text{roll}, \text{pitch}]\|^2 \tag{80.15}
+r_{upright} = -w_{up} \cdot \|[\text{roll}, \text{pitch}]\|^2 \tag{78.15}
 $$
 
 这是一个惩罚项（负号），姿态偏离越大惩罚越重。二者等价但后者更直观。
@@ -523,7 +523,7 @@ $$
 **第三类：滑移惩罚（轮足特有）**
 
 $$
-c_{slip} = w_{slip} \cdot \sum_{i=1}^{4} (|\kappa_i| + |\alpha_i|) \tag{80.16}
+c_{slip} = w_{slip} \cdot \sum_{i=1}^{4} (|\kappa_i| + |\alpha_i|) \tag{78.16}
 $$
 
 其中 $\kappa_i$ 是第 $i$ 个轮子的纵向滑移率，$\alpha_i$ 是侧向滑移角。
@@ -531,7 +531,7 @@ $$
 纵向滑移率的定义：
 
 $$
-\kappa = \frac{r\omega_{wheel} - v_{contact}}{max(|r\omega_{wheel}|, |v_{contact}|, \epsilon)} \tag{80.17}
+\kappa = \frac{r\omega_{wheel} - v_{contact}}{max(|r\omega_{wheel}|, |v_{contact}|, \epsilon)} \tag{78.17}
 $$
 
 其中 $r$ 是轮半径，$\omega_{wheel}$ 是轮转速，$v_{contact}$ 是接触点的地面速度（沿轮子前进方向）。$\kappa = 0$ 表示纯滚动（无滑移），$|\kappa| = 1$ 表示完全滑移（轮子锁死拖行或空转）。
@@ -541,7 +541,7 @@ $$
 **第四类：能耗惩罚**
 
 $$
-c_{energy} = w_E \cdot \sum_{j=1}^{n_a} |\tau_j \dot{q}_j| \tag{80.18}
+c_{energy} = w_E \cdot \sum_{j=1}^{n_a} |\tau_j \dot{q}_j| \tag{78.18}
 $$
 
 能耗惩罚鼓励策略选择低能耗的运动方式。这对轮足 RL 尤其重要——在平坦路面上，纯滚动的能耗远低于行走（轮子滚动摩擦远小于腿部关节摩擦），能耗惩罚会自然驱使策略在可滚动时选择滚动。
@@ -549,13 +549,13 @@ $$
 **第五类：动作平滑惩罚**
 
 $$
-c_{smooth} = w_{sm} \cdot \|a_t - a_{t-1}\|^2 \tag{80.19}
+c_{smooth} = w_{sm} \cdot \|a_t - a_{t-1}\|^2 \tag{78.19}
 $$
 
 惩罚相邻时步之间动作的突变。过大的动作变化意味着关节加速度过高，不仅费电还会加速机械磨损。
 
 $$
-c_{jerk} = w_{jk} \cdot \|a_t - 2a_{t-1} + a_{t-2}\|^2 \tag{80.20}
+c_{jerk} = w_{jk} \cdot \|a_t - 2a_{t-1} + a_{t-2}\|^2 \tag{78.20}
 $$
 
 动作 jerk（加加速度）惩罚，比一阶平滑更强地抑制高频振荡。
@@ -563,7 +563,7 @@ $$
 **第六类：关节限位惩罚**
 
 $$
-c_{limit} = w_{lim} \cdot \sum_{j} \max(0, |q_j| - q_j^{soft\_limit})^2 \tag{80.21}
+c_{limit} = w_{lim} \cdot \sum_{j} \max(0, |q_j| - q_j^{soft\_limit})^2 \tag{78.21}
 $$
 
 软限位惩罚。$q_j^{soft\_limit}$ 设在硬件限位的 80%-90%，留出安全裕度。
@@ -622,13 +622,13 @@ $$
 
 ### 练习
 
-1. ⭐ 用 Python 实现滑移率公式 (80.17)，输入是轮速 $\omega$、轮半径 $r$、接触点速度 $v_{contact}$。测试边界情况：$\omega = 0, v = 0$ 时返回什么？
+1. ⭐ 用 Python 实现滑移率公式 (78.17)，输入是轮速 $\omega$、轮半径 $r$、接触点速度 $v_{contact}$。测试边界情况：$\omega = 0, v = 0$ 时返回什么？
 2. ⭐⭐ 进行一次完整的消融实验：关闭滑移惩罚训练 1M 步，与完整奖励的基线对比。记录速度跟踪误差、平均滑移率和摔倒率。
 3. ⭐⭐⭐ （跨章综合题）结合 复合/70_轮足混合MPC 中的模式切换逻辑，设计一个奖励项来鼓励"在平地上优先滚动、在台阶前自动切换为行走"。写出数学公式并解释为什么这种设计能起作用。
 
 ---
 
-## 80.6 PPO 训练细节：网络、超参数与曲线诊断 ⭐⭐⭐
+## 78.6 PPO 训练细节：网络、超参数与曲线诊断 ⭐⭐⭐
 
 ### 动机：PPO 是手段，不是目标
 
@@ -637,7 +637,7 @@ PPO（Proximal Policy Optimization）是当前足式/轮足 RL 中使用最广�
 回顾 足式/190_腿足RL训练栈 中的 PPO 基础：PPO 的核心思想是用 clipped surrogate objective 限制策略更新步长，防止一次更新破坏已学到的好行为。
 
 $$
-L^{CLIP}(\theta) = \mathbb{E}_t \left[ \min\left( r_t(\theta) \hat{A}_t, \; \text{clip}(r_t(\theta), 1-\epsilon, 1+\epsilon) \hat{A}_t \right) \right] \tag{80.22}
+L^{CLIP}(\theta) = \mathbb{E}_t \left[ \min\left( r_t(\theta) \hat{A}_t, \; \text{clip}(r_t(\theta), 1-\epsilon, 1+\epsilon) \hat{A}_t \right) \right] \tag{78.22}
 $$
 
 其中 $r_t(\theta) = \pi_\theta(a_t|s_t) / \pi_{\theta_{old}}(a_t|s_t)$ 是新旧策略的概率比，$\hat{A}_t$ 是优势函数估计，$\epsilon$ 是 clipping 范围。
@@ -712,7 +712,7 @@ $$
 
 ---
 
-## 80.7 Teacher-Student 蒸馏：从特权到可部署 ⭐⭐⭐
+## 78.7 Teacher-Student 蒸馏：从特权到可部署 ⭐⭐⭐
 
 ### 动机：信息不对称的优雅解决方案
 
@@ -734,7 +734,7 @@ Teacher-Student 框架是解决这个矛盾的标准方法。其核心思想是�
 教师策略的观测包含所有可部署观测加上特权信息：
 
 $$
-o_T = [o_{deploy}, o_{priv}] \tag{80.23}
+o_T = [o_{deploy}, o_{priv}] \tag{78.23}
 $$
 
 用标准 PPO 训练到收敛。教师策略的性能是学生的性能上界——学生不可能比教师做得更好（因为学生看到的信息是教师的子集）。
@@ -744,7 +744,7 @@ $$
 学生策略只看可部署观测加历史窗口：
 
 $$
-o_S = [o_{deploy,t-k}, \ldots, o_{deploy,t}] \tag{80.24}
+o_S = [o_{deploy,t-k}, \ldots, o_{deploy,t}] \tag{78.24}
 $$
 
 蒸馏损失有两种形式：
@@ -752,7 +752,7 @@ $$
 **动作蒸馏**：直接模仿教师的动作输出。
 
 $$
-L_{BC} = \mathbb{E} \left[ \|\pi_S(o_S) - \pi_T(o_T)\|^2 \right] \tag{80.25}
+L_{BC} = \mathbb{E} \left[ \|\pi_S(o_S) - \pi_T(o_T)\|^2 \right] \tag{78.25}
 $$
 
 这是最简单的形式，但存在一个问题：如果教师的动作分布是多模态的（比如在某种情况下既可以走也可以滚），L2 损失会让学生学到两种模式的平均，而不是任何一种模式。
@@ -760,7 +760,7 @@ $$
 **隐变量蒸馏**：教师网络提取一个隐变量 $z_T = \text{encoder}_T(o_{priv})$，学生网络学习从历史观测中预测这个隐变量。
 
 $$
-L_z = \mathbb{E} \left[ \|z_S - z_T\|^2 \right] + \beta \cdot L_{BC} \tag{80.26}
+L_z = \mathbb{E} \left[ \|z_S - z_T\|^2 \right] + \beta \cdot L_{BC} \tag{78.26}
 $$
 
 其中 $z_S = \text{encoder}_S(o_{deploy,t-k:t})$。这种方式的优势是：学生不是在模仿教师的具体动作，而是在学习**推断教师所依赖的环境状态**。一旦学生能准确推断环境状态，即使教师的动作策略是多模态的，学生也能做出正确的选择。
@@ -828,7 +828,7 @@ for epoch in range(num_epochs):
 
 ---
 
-## 80.8 Domain Randomization：覆盖真实世界的参数分布 ⭐⭐⭐
+## 78.8 Domain Randomization：覆盖真实世界的参数分布 ⭐⭐⭐
 
 ### 动机：为什么仿真中训练好的策略到真机就"废了"
 
@@ -886,7 +886,7 @@ class ActionDelayBuffer:
 如果一开始就用最大范围的随机化，策略在训练早期会完全无法学习——环境变化太大，任何行为都得不到稳定的奖励信号。课程训练的思想是从小范围开始，随着策略能力增强逐步扩大：
 
 $$
-p_{range}(epoch) = p_{min} + (p_{max} - p_{min}) \cdot \min\left(1, \frac{epoch}{epoch_{full}}\right) \tag{80.27}
+p_{range}(epoch) = p_{min} + (p_{max} - p_{min}) \cdot \min\left(1, \frac{epoch}{epoch_{full}}\right) \tag{78.27}
 $$
 
 其中 $epoch_{full}$ 是达到完整随机化范围的 epoch 数（通常设为总训练 epoch 的 30%-50%）。
@@ -914,7 +914,7 @@ $$
 
 ---
 
-## 80.9 Sim-to-Real 部署：从仿真到实机 ⭐⭐⭐
+## 78.9 Sim-to-Real 部署：从仿真到实机 ⭐⭐⭐
 
 ### 动机：部署不是"把模型拷贝到机器人上"
 
@@ -1007,7 +1007,7 @@ def export_to_onnx(model, obs_dim, output_path):
 
 ---
 
-## 80.10 RL+MPC 混合架构：两种范式的最佳组合 ⭐⭐⭐
+## 78.10 RL+MPC 混合架构：两种范式的最佳组合 ⭐⭐⭐
 
 ### 动机：RL 和 MPC 不是竞争关系
 
@@ -1030,10 +1030,10 @@ def export_to_onnx(model, obs_dim, output_path):
 MPC 在上层做轨迹规划（输出目标速度、步态参数），RL 策略在底层做运动控制（输出关节命令）。这种模式中 RL 替代了传统的 WBC（全身控制器）。
 
 $$
-v_{cmd}, \text{gait\_params} = \text{MPC}(x_{state}, x_{goal}) \tag{80.28}
+v_{cmd}, \text{gait\_params} = \text{MPC}(x_{state}, x_{goal}) \tag{78.28}
 $$
 $$
-a_t = \pi_\theta(o_t, v_{cmd}, \text{gait\_params}) \tag{80.29}
+a_t = \pi_\theta(o_t, v_{cmd}, \text{gait\_params}) \tag{78.29}
 $$
 
 **模式 B：MPC 底层安全壳 + RL 上层决策**
@@ -1041,10 +1041,10 @@ $$
 RL 策略在上层输出"意图"（如期望的运动方向和速度），MPC 在底层将这个意图转化为满足安全约束的关节命令。
 
 $$
-\text{intent} = \pi_\theta(o_t) \tag{80.30}
+\text{intent} = \pi_\theta(o_t) \tag{78.30}
 $$
 $$
-a_t = \text{MPC}(\text{intent}, \text{constraints}) \tag{80.31}
+a_t = \text{MPC}(\text{intent}, \text{constraints}) \tag{78.31}
 $$
 
 Lee et al. (Science Robotics 2024) 的 Swiss-Mile 工作采用的是接近模式 A 的方案：RL 策略负责底层的运动控制和模式切换，上层的导航规划负责提供目标速度和航向。
@@ -1076,7 +1076,7 @@ RL 和 MPC 之间的接口设计是混合架构的核心。接口不当会导致
 
 ---
 
-## 80.11 完整训练配置参考与调参策略 ⭐⭐
+## 78.11 完整训练配置参考与调参策略 ⭐⭐
 
 ### 动机：配置文件是训练的"DNA"
 
@@ -1189,7 +1189,7 @@ class WheelLeggedTrainCfg:
 
 **第三轮：DR 调优（4-8 小时）**
 1. 从小范围 DR 开始训练到收敛
-2. 逐步扩大 DR 范围（公式 80.27），观察性能下降
+2. 逐步扩大 DR 范围（公式 78.27），观察性能下降
 3. 找到"性能可接受的最大 DR 范围"
 
 **第四轮：精细调参（2-4 小时）**
@@ -1220,7 +1220,7 @@ class WheelLeggedTrainCfg:
 
 ---
 
-## 80.12 轮足 RL 的前沿进展与开放问题 ⭐⭐⭐⭐
+## 78.12 轮足 RL 的前沿进展与开放问题 ⭐⭐⭐⭐
 
 ### 动机：知道前沿在哪里才能找到研究方向
 
@@ -1253,7 +1253,7 @@ CoRL 2025 的 Omni-Perception 方法展示了直接处理 LiDAR 点云的端到�
 Constrained RL（如 CPO, PPO-Lagrangian）将安全约束作为优化问题的硬约束：
 
 $$
-\max_\theta \; \mathbb{E}[R(\tau)] \quad \text{s.t.} \quad \mathbb{E}[C_i(\tau)] \leq d_i, \quad \forall i \tag{80.32}
+\max_\theta \; \mathbb{E}[R(\tau)] \quad \text{s.t.} \quad \mathbb{E}[C_i(\tau)] \leq d_i, \quad \forall i \tag{78.32}
 $$
 
 其中 $C_i$ 是第 $i$ 个约束的代价函数，$d_i$ 是约束阈值。这比在奖励中加惩罚项更有理论保证，但训练也更困难。
@@ -1287,20 +1287,20 @@ $$
 
 | 模块 | 核心问题 | 应掌握输出 |
 |------|---------|-----------|
-| 80.1 轮足 RL 难点 | 额外自由度 + 模式切换 + 滑移 | 能说清楚为什么不能直接复用足式 RL |
-| 80.2 仿真环境 | URDF + 地形 + 执行器模型 | 能搭建可训练的 IsaacLab 环境 |
-| 80.3 观测空间 | 可部署 vs 特权 + 历史窗口 | 能写出完整的观测 schema |
-| 80.4 动作空间 | 腿位置 + 轮速度 + 安全包裹 | 能设计混合动作空间 |
-| 80.5 奖励设计 | 12+ 项逐项分析 + 消融方法 | 能独立设计并调试奖励函数 |
-| 80.6 PPO 训练 | 网络架构 + 超参数 + 曲线诊断 | 能诊断训练问题并调参 |
-| 80.7 蒸馏 | Teacher-Student + 隐变量重建 | 能实现特权→可部署的迁移 |
-| 80.8 Domain Randomization | 参数表 + 课程训练 | 能设计覆盖真机的 DR 方案 |
-| 80.9 Sim-to-Real | ONNX 导出 + 灰度部署 | 能完成从训练到真机的全流程 |
-| 80.10 RL+MPC 混合 | 两种混合模式 + 接口设计 | 能设计混合架构的责任分工 |
+| 78.1 轮足 RL 难点 | 额外自由度 + 模式切换 + 滑移 | 能说清楚为什么不能直接复用足式 RL |
+| 78.2 仿真环境 | URDF + 地形 + 执行器模型 | 能搭建可训练的 IsaacLab 环境 |
+| 78.3 观测空间 | 可部署 vs 特权 + 历史窗口 | 能写出完整的观测 schema |
+| 78.4 动作空间 | 腿位置 + 轮速度 + 安全包裹 | 能设计混合动作空间 |
+| 78.5 奖励设计 | 12+ 项逐项分析 + 消融方法 | 能独立设计并调试奖励函数 |
+| 78.6 PPO 训练 | 网络架构 + 超参数 + 曲线诊断 | 能诊断训练问题并调参 |
+| 78.7 蒸馏 | Teacher-Student + 隐变量重建 | 能实现特权→可部署的迁移 |
+| 78.8 Domain Randomization | 参数表 + 课程训练 | 能设计覆盖真机的 DR 方案 |
+| 78.9 Sim-to-Real | ONNX 导出 + 灰度部署 | 能完成从训练到真机的全流程 |
+| 78.10 RL+MPC 混合 | 两种混合模式 + 接口设计 | 能设计混合架构的责任分工 |
 
 ---
 
-## 80.13 Wheel-Legged-Gym 代码走读：从入口到训练循环 ⭐⭐
+## 78.13 Wheel-Legged-Gym 代码走读：从入口到训练循环 ⭐⭐
 
 ### 动机：读懂仓库是独立开发的前提
 
@@ -1546,8 +1546,8 @@ def print_final_config(cfg, prefix=""):
 
 | 症状 | 可能原因 | 排查步骤 | 相关章节 |
 |------|---------|---------|---------|
-| 训练奖励一直不涨 | 1. 奖励权重失衡（惩罚太重）<br>2. 观测未归一化<br>3. 学习率过低 | 1. 打印各奖励分项，检查惩罚项是否占主导<br>2. 打印观测的 mean/std<br>3. 扫描 lr={1e-4, 3e-4, 1e-3} | §80.5, §80.6 |
-| 策略只会站着不动 | 1. 课程太难（初始地形复杂）<br>2. 碰撞惩罚太重<br>3. 动作缩放太小 | 1. 从纯平地开始训练<br>2. 降低碰撞惩罚权重<br>3. 增大 action_scale | §80.2, §80.5 |
-| 仿真中好但真机摔倒 | 1. DR 范围未覆盖真机参数<br>2. 观测顺序训练/部署不一致<br>3. 缺少执行器延迟随机化 | 1. 测量真机参数，对比 DR 范围<br>2. 用 schema 交叉验证<br>3. 加入 1-3 步延迟随机化 | §80.8, §80.9 |
-| 模式切换时力矩跳变 | 1. 动作滤波不够<br>2. 奖励缺少平滑项<br>3. 模式边界处奖励冲突 | 1. 减小 $\alpha$（增强滤波）<br>2. 增加动作 jerk 惩罚<br>3. 检查消融实验中边界附近的行为 | §80.4, §80.5 |
-| ONNX 导出后行为异常 | 1. 归一化参数未冻结<br>2. 动作后处理未包含在导出中<br>3. float32/float16 精度问题 | 1. 检查导出前是否调用了 model.eval()<br>2. 对比导出前后的 100 组输出<br>3. 统一使用 float32 | §80.9 |
+| 训练奖励一直不涨 | 1. 奖励权重失衡（惩罚太重）<br>2. 观测未归一化<br>3. 学习率过低 | 1. 打印各奖励分项，检查惩罚项是否占主导<br>2. 打印观测的 mean/std<br>3. 扫描 lr={1e-4, 3e-4, 1e-3} | §78.5, §78.6 |
+| 策略只会站着不动 | 1. 课程太难（初始地形复杂）<br>2. 碰撞惩罚太重<br>3. 动作缩放太小 | 1. 从纯平地开始训练<br>2. 降低碰撞惩罚权重<br>3. 增大 action_scale | §78.2, §78.5 |
+| 仿真中好但真机摔倒 | 1. DR 范围未覆盖真机参数<br>2. 观测顺序训练/部署不一致<br>3. 缺少执行器延迟随机化 | 1. 测量真机参数，对比 DR 范围<br>2. 用 schema 交叉验证<br>3. 加入 1-3 步延迟随机化 | §78.8, §78.9 |
+| 模式切换时力矩跳变 | 1. 动作滤波不够<br>2. 奖励缺少平滑项<br>3. 模式边界处奖励冲突 | 1. 减小 $\alpha$（增强滤波）<br>2. 增加动作 jerk 惩罚<br>3. 检查消融实验中边界附近的行为 | §78.4, §78.5 |
+| ONNX 导出后行为异常 | 1. 归一化参数未冻结<br>2. 动作后处理未包含在导出中<br>3. float32/float16 精度问题 | 1. 检查导出前是否调用了 model.eval()<br>2. 对比导出前后的 100 组输出<br>3. 统一使用 float32 | §78.9 |

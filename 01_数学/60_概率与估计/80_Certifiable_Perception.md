@@ -808,7 +808,7 @@ $$
 
 **陷阱 8 — TEASER++ 的 noise_bound 对成功率极敏感**。`noise_bound` 设得太小 → 真内点被误判外点；太大 → 真外点混入。实际应用要基于传感器 spec（LiDAR $\pm$ 3cm、FPFH 匹配噪声）分析性设定。经验：3DMatch 用 `noise_bound = 0.05`；KITTI LiDAR 用 `0.02`。
 
-**陷阱 9 — BM 二阶临界点 ≠ 全局最优（非秩亏时）**。BVB 定理 (a) 要求**秩亏**二阶临界点；RTR 收敛到秩满的二阶临界点时，根据 (b) 对"几乎所有 $C$"仍全局最优，但存在 Lebesgue 零测集反例（Waldspurger-Waters）。**实践**：若 $Y^\star$ 满秩，爬一级楼梯 $p \leftarrow p+1$ 再优化；仍满秩则报告不紧。
+**陷阱 9 — BM 二阶临界点 $\ne$ 全局最优（非秩亏时）**。BVB 定理 (a) 要求**秩亏**二阶临界点；RTR 收敛到秩满的二阶临界点时，根据 (b) 对"几乎所有 $C$"仍全局最优，但存在 Lebesgue 零测集反例（Waldspurger-Waters）。**实践**：若 $Y^\star$ 满秩，爬一级楼梯 $p \leftarrow p+1$ 再优化；仍满秩则报告不紧。
 
 **陷阱 10 — 对偶证书验证的数值误差**。$\lambda_{\min}(S)$ 的 Lanczos 估计有绝对误差 $\epsilon_{\text{Lanczos}} \approx 10^{-10}\|\tilde Q\|_2$。若 $\tilde Q$ 条件数 $\kappa(\tilde Q) = 10^{12}$（大规模、差尺度测量），数值上无法区分 $\lambda_{\min} = 0$ 与 $\lambda_{\min} = -10^{-6}$。**稳健做法**：同时检查 $(F(\tilde Q \hat R^\top \hat R) - p^\star_{\text{SDP}})/p^\star_{\text{SDP}} < 10^{-6}$（相对 suboptimality）作为 **primal-dual gap** 验证，与 $\lambda_{\min}$ 双重认证。
 

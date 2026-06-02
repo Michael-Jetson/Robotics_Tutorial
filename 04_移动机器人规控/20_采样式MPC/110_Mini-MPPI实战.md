@@ -12,7 +12,7 @@
 
 ## 📋 前置自测
 
-> 答不出 **≥ 2 题**，先回对应章节补课，再读本章。本章是综合实战，默认你已掌握前 9 章的核心内容。
+> 答不出 **$\geq 2$ 题**，先回对应章节补课，再读本章。本章是综合实战，默认你已掌握前 9 章的核心内容。
 
 1. **（Ch2 §2.1）** 写出 MPPI 权重公式 $w_k$，并解释 $\rho = \min_k S_k$ 减法的作用。如果不减 $\rho$，在代价 $S_k \approx 1200$ 时会发生什么？
 2. **（Ch2 §2.2）** CUDA 的 rollout kernel 中，"每 thread 一条轨迹"和"每 warp/block 一条轨迹"两种线程映射各有什么优缺点？MPPI-Generic 倾向哪种？为什么？
@@ -1087,7 +1087,7 @@ Ch2 §2.2 引用的性能数字（GPU 约 50 倍加速）来自 MPPI-Generic 论
   额外记录每次的 ESS
 ```
 
-**为什么跑 100 次取中位数而非单次。** GPU kernel 的执行时间有波动（±10-20%），来源包括：GPU 动态频率调节（boost clock vs base clock）、L2 缓存状态、GPU 上其他进程的干扰。中位数比均值更鲁棒——它不受偶尔出现的异常值（如系统中断导致的延迟）影响。
+**为什么跑 100 次取中位数而非单次。** GPU kernel 的执行时间有波动（$\pm$10-20%），来源包括：GPU 动态频率调节（boost clock vs base clock）、L2 缓存状态、GPU 上其他进程的干扰。中位数比均值更鲁棒——它不受偶尔出现的异常值（如系统中断导致的延迟）影响。
 
 ### GPU vs CPU 对比
 
@@ -1322,7 +1322,7 @@ def plot_mppi_debug(data_file):
 **调试陷阱：在 GPU kernel 里用 `printf` 调试，输出丢失或乱序。**
 - **错误描述**：在 kernel 里加 `printf("k=%d cost=%f\n", k, total_cost);`，K=4096 时只看到几百行输出（而非 4096 行），且顺序杂乱。
 - **现象/后果**：以为某些线程没执行，误判为 kernel 的线程映射有 bug——实际上所有线程都执行了，只是 printf 的输出缓冲区溢出了。
-- **根本原因**：CUDA 的设备端 printf 使用一个固定大小的环形缓冲区（默认 1 MB），4096 条 ~40 字节的输出 = ~160 KB，通常没问题；但如果你在循环内部也 printf（T 步 × K 条 = 12 万行），160 KB 缓冲区就远远不够了。输出不保证顺序（不同 warp 的 printf 是非确定性交错的）。
+- **根本原因**：CUDA 的设备端 printf 使用一个固定大小的环形缓冲区（默认 1 MB），4096 条 ~40 字节的输出 = ~160 KB，通常没问题；但如果你在循环内部也 printf（T 步 $\times$ K 条 = 12 万行），160 KB 缓冲区就远远不够了。输出不保证顺序（不同 warp 的 printf 是非确定性交错的）。
 - **正确做法**：(1) 只对少数线程 printf：`if (k < 5) printf(...);`；(2) 增大 printf 缓冲：`cudaDeviceSetLimit(cudaLimitPrintfFifoSize, 10 * 1024 * 1024);`（10 MB）；(3) 更好的方式是把中间数据写到一个 `debug_buffer_d_` 数组里，kernel 结束后整块拷贝回 CPU 分析。
 
 **调试陷阱：NaN 的传染性——一个 NaN 污染整条计算链。**
@@ -1350,7 +1350,7 @@ def plot_mppi_debug(data_file):
 | §10.1 | 搭项目骨架 | 模板化设计，按编译单元分文件 | Ch2 §2.3 MPPI-Generic 的四维解耦 |
 | §10.2 | 写动力学模型 | `__host__ __device__` 双标注，固定大小 Eigen | Ch2 §2.2 寄存器与内存层级 |
 | §10.3 | 写 rollout kernel | 线程映射、shared memory、register pressure | Ch2 §2.2 CUDA 并行化策略 |
-| §10.4 | 写 MPPI 主循环 | ρ 减法、warm-start、SGF 集成 | Ch2 §2.1 完整伪代码的全部细节 |
+| §10.4 | 写 MPPI 主循环 | $\rho$ 减法、warm-start、SGF 集成 | Ch2 §2.1 完整伪代码的全部细节 |
 | §10.5 | 接 MuJoCo 引擎 | mjData 线程安全、batch rollout | Ch8 腿足全身 MPPI 的动力学基础 |
 | §10.6 | 做性能基准测试 | K/T 扫参、nsys/ncu profiling | Ch2 §2.2 的基准数字需要你自己验证 |
 | §10.7 | 调试与排查 | compute-sanitizer、NaN 追踪、可视化 | 全书所有数值细节的实战检验 |
@@ -1437,7 +1437,7 @@ def plot_mppi_debug(data_file):
 |------|---------|
 | 1 | block_size 是否超过 1024 |
 | 2 | shared memory 请求是否超过 SM 容量（48 KB） |
-| 3 | 每线程寄存器数 × block_size 是否超过 SM 寄存器总数 |
+| 3 | 每线程寄存器数 $\times$ block_size 是否超过 SM 寄存器总数 |
 
 ### 场景 3：结果正确但 GPU 没有预期的加速
 
@@ -1454,7 +1454,7 @@ def plot_mppi_debug(data_file):
 | 步骤 | 检查内容 |
 |------|---------|
 | 1 | 动力学方程是否正确（在 CPU 上单独测试） |
-| 2 | 代价函数是否鼓励 swing-up（θ=0 代价最低？） |
+| 2 | 代价函数是否鼓励 swing-up（$\theta=0$ 代价最低？） |
 | 3 | K 和 T 是否足够（K < 256 或 T < 15 时可能不够） |
 | 4 | 是否做了 warm-start（不做则收敛极慢） |
 | 5 | $\sigma$ 是否太小（探索不足，找不到 swing-up 的动作） |
@@ -1479,7 +1479,7 @@ def plot_mppi_debug(data_file):
 |------|---------|------|
 | Williams 等, *MPPI: From Theory to Parallel Computation*, JGCD 2017 | §10.3, §10.6 | GPU rollout kernel 的工程设计原版——register/shared/global 三级内存策略的详细分析 |
 | Vlahov 等, *MPPI-Generic: A CUDA Library for Stochastic Trajectory Optimization*, arXiv 2024 | §10.1, §10.3 | 模板化设计的工业参考——Dynamics/Cost/Sampler/Controller 四维解耦 |
-| Williams 等, *Aggressive Driving with MPPI*, ICRA 2016 | §10.4 | 首次实车 GPU MPPI——warm-start、ρ 减法等工程细节的起源 |
+| Williams 等, *Aggressive Driving with MPPI*, ICRA 2016 | §10.4 | 首次实车 GPU MPPI——warm-start、$\rho$ 减法等工程细节的起源 |
 | MuJoCo 官方文档, https://mujoco.readthedocs.io | §10.5 | mjModel/mjData API 参考、线程安全说明、XML 模型格式 |
 | NVIDIA Nsight Systems/Compute 文档 | §10.6 | nsys/ncu 的使用教程和指标解读 |
 

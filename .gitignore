@@ -8,3 +8,6 @@ _archive/
 _failed_archive/
 tmp_*.md
 *_failed.md
+
+# 工具自动生成产物（claude-mem 上下文桩，非项目内容）
+AGENTS.md

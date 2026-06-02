@@ -5,7 +5,7 @@
 | 难度 | ⭐⭐⭐⭐（跨方法理论推导 + 工程部署闭环 + 方法选型决策） |
 | 预计时间 | 2 周（40-50 小时） |
 | 前置依赖 | 足式/190_腿足RL训练栈（PPO/奖励设计），足式/200_RL的CPP部署（ONNX/LibTorch），复合/240_ASAP_SimToReal（Delta-Action 实例），复合/110_轮足SimToReal与硬件（硬件接口） |
-| 下游章节 | 复合/280_端到端学习（视觉策略部署），复合/290_大模型与具身智能（世界模型） |
+| 下游章节 | 复合/280_多机协作LocoMani，复合/290_感知操作运动统一闭环 |
 | 核心关键词 | Domain Randomization、System Identification、Actuator Network、RMA、Delta-Action、Teacher-Student、在线适应 |
 
 ---

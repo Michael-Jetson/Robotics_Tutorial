@@ -1765,8 +1765,8 @@ EndEffectorKinematics<cg_scalar_t>   // CppADCodeGen 代码生成
 
 | 症状 | 可能原因 | 排查步骤 | 相关章节 |
 |------|---------|---------|---------|
-| SQP不收敛 | 初始猜测太差/约束线性化精度不足 | 用rollout初始化；增加SQP内循环迭代次数 | 足式/110.3 |
-| 双线程数据撕裂 | Triple Buffer实现错误 | 检查memory_order/std::atomic使用；用ThreadSanitizer检测 | 足式/110.7 |
+| SQP不收敛 | 初始猜测太差/约束线性化精度不足 | 用rollout初始化；增加SQP内循环迭代次数 | 足式/110 §55.3 |
+| 双线程数据撕裂 | Triple Buffer实现错误 | 检查memory_order/std::atomic使用；用ThreadSanitizer检测 | 足式/110 §55.7 |
 | CppADCodeGen编译失败 | 模型维度变化后缓存过期 | 清除.so缓存重新生成；检查CppAD版本兼容性 | 足式/40 |
 | MPC频率不稳定 | GC暂停或页面错误 | 用mlockall+RT线程优先级；检查是否有运行时堆分配 | 足式/170 |
 | Centroidal模型接触力为负 | 摩擦锥约束未正确编码 | 检查ConeConstraint参数；验证法向力下界约束 | 足式/80 |

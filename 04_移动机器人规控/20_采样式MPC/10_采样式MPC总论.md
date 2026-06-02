@@ -65,7 +65,7 @@ RL 基础已完成(PPO/SAC/IsaacLab)
 
 | 维度 | 采样式 MPC（本大纲） | 梯度式 MPC（已有基础） |
 |------|-------------------|---------------------|
-| 梯度需求 | **零梯度**——纯前向采样 | 需要 ∂f/∂x、∂f/∂u 和代价 Hessian |
+| 梯度需求 | **零梯度**——纯前向采样 | 需要 $\partial f/\partial x$、$\partial f/\partial u$ 和代价 Hessian |
 | 代价函数 | 任意（含不连续 indicator、CNN cost-map） | 需平滑、可二次近似 |
 | 动力学 | 黑箱/神经网络/仿真器皆可 | 需可微（CasADi/Pinocchio） |
 | GPU 友好度 | **极高**——数千线程并行 rollout | 低——Riccati sweep 串行性强 |
@@ -98,7 +98,7 @@ RL 基础已完成(PPO/SAC/IsaacLab)
 | PPO/SAC 策略梯度 | MPPI 权重公式与 REINFORCE **数学同构** | **零迁移** |
 | IsaacLab GPU 并行环境 | MPPI CUDA 并行 rollout **思路完全一致** | **零迁移** |
 | reward shaping | MPPI cost function 设计 = reward shaping | **零迁移** |
-| 温度/熵系数调节 | MPPI 温度 λ = 探索-利用权衡 | **零迁移** |
+| 温度/熵系数调节 | MPPI 温度 $\lambda$ = 探索-利用权衡 | **零迁移** |
 | Eigen 矩阵运算 | MPPI-Generic 的 Eigen::Map + CUDA 互操作 | 低 |
 | ROS2 节点/消息 | Nav2 MPPI Controller 直接用 ROS2 | 零迁移 |
 | 约束 QP（OSQP/ProxQP） | MPPI 用 barrier 函数/投影替代硬约束——**范式不同** | **高** |
