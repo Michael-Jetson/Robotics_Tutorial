@@ -1890,6 +1890,361 @@ GTSAM 的边缘化和协方差查询有两个常见边界：
 
 ---
 
+## 25.9 边缘协方差 Marginals 与退化诊断 ⭐⭐⭐
+
+### 这一节解决什么问题
+
+到目前为止，我们只关心 SLAM 后端给出的**点估计**（每个变量的最优值）。但工程中还有一个同等重要的问题：**这个估计有多可信？** 机器人在长走廊里直行 50 米，横向（沿墙方向）的位置可能误差几厘米，而前进方向因为缺乏特征约束误差可能高达数米——点估计本身完全看不出这种差异。下游模块（路径规划的安全裕度、多传感器融合的卡尔曼增益、回环检测的搜索半径、主动 SLAM 的信息增益）都需要知道估计的**不确定性**，也就是后验协方差。本节讲 GTSAM 如何用 `Marginals` 查询边缘协方差，以及当协方差查询失败（`IndeterminantLinearSystemException`）时如何诊断系统退化。
+
+### 动机：点估计不告诉你"哪个方向不确定"
+
+回顾 25.1：MAP 估计最小化 $\sum_i \|h_i(X_i) - z_i\|^2_{\Sigma_i}$。在最优点 $X^*$ 附近，把目标函数做二阶 Taylor 展开，后验近似为一个高斯分布：
+
+$$
+p(X \mid Z) \approx \mathcal{N}\!\left(X^*, \; \Lambda^{-1}\right), \qquad \Lambda = \sum_i J_i^\top \Sigma_i^{-1} J_i
+$$
+
+其中 $\Lambda$ 是**信息矩阵**（也就是高斯-牛顿近似下的 Hessian），$J_i$ 是因子 $i$ 在 $X^*$ 处对各变量切空间的雅可比。**整个轨迹的联合协方差**是 $\Sigma = \Lambda^{-1}$，但它是一个 $6N \times 6N$ 的稠密大矩阵（$N$ 个位姿），既算不动也存不下。
+
+工程上我们几乎从不需要完整的 $\Sigma$，而是只需要：
+
+- **单变量的边缘协方差** $\Sigma_{x_i}$：变量 $x_i$ 自身的 $6\times 6$ 不确定性块；
+- **少数几个变量的联合边缘协方差**：例如回环候选帧 $x_i$ 和当前帧 $x_j$ 的 $12 \times 12$ 联合块，里面包含 $x_i$ 与 $x_j$ 的**互协方差**（cross-covariance）。
+
+> **本质洞察**：边缘协方差不是"把大协方差矩阵切一块出来"那么简单。$\Sigma_{x_i}$ 是 $\Lambda^{-1}$ 的对角块，而 $(\Lambda^{-1})_{ii} \neq (\Lambda_{ii})^{-1}$——除非 $x_i$ 与其余所有变量都不相关。换句话说，单个变量的不确定性**必须**通过整张图的耦合才能正确算出。这正是"边缘化"在概率上的含义：把其余变量积分掉，它们的不确定性会"渗透"进 $x_i$。直接对局部信息块求逆得到的是**条件协方差**（假设其余变量已知），它系统性地偏小、过度自信。
+
+### 如果不查协方差会怎样
+
+- **回环搜索半径写死**：不看协方差，回环检测只能用一个固定的欧氏距离阈值找候选帧。在长走廊里前进方向漂了 3 米，固定半径要么漏掉真回环（半径太小），要么引入大量错误候选（半径太大）。正确做法是用 $x_i$ 与 $x_j$ 的**相对位姿协方差**自适应地确定马氏距离搜索椭球。
+- **多传感器融合增益失配**：把 GTSAM 的位姿输出喂给一个外层 EKF 时，如果不传协方差而是拍一个固定的 $R$ 矩阵，滤波器无法判断该信任 SLAM 还是信任新传感器——退化方向上 SLAM 明明很不可信，滤波器却当成精确观测，导致融合结果被拉偏。
+- **退化不可见**：在纯走廊、白墙、隧道等场景里，几何约束在某个方向上消失（gauge 在该方向自由）。点估计照样收敛到某个值，但那个方向的协方差应当是巨大的甚至无穷。不查协方差，你根本不知道系统已经退化，直到建图整体漂飞才发现。
+
+### Marginals 的基本用法
+
+GTSAM 用 `Marginals` 类封装协方差查询。它的构造需要因子图和**优化后的** `Values`（线性化点必须是最优点，否则协方差没有意义）：
+
+```cpp
+#include <gtsam/nonlinear/Marginals.h>
+
+// 假设已完成批量优化，得到 result
+gtsam::LevenbergMarquardtOptimizer optimizer(graph, initial);
+gtsam::Values result = optimizer.optimize();
+
+// ========== 创建 Marginals 对象 ==========
+// 第三个参数选择因子化方式：CHOLESKY（默认，快）或 QR（慢但数值稳）
+gtsam::Marginals marginals(graph, result, gtsam::Marginals::CHOLESKY);
+
+// ========== 查询单变量边缘协方差 ==========
+// 返回 6x6 矩阵（Pose3 的切空间维度）
+gtsam::Matrix cov_x5 = marginals.marginalCovariance(X(5));
+std::cout << "Covariance of x5:\n" << cov_x5 << std::endl;
+
+// 也可以查信息矩阵（协方差的逆）
+gtsam::Matrix info_x5 = marginals.marginalInformation(X(5));
+```
+
+`marginalCovariance` 返回的 $6\times 6$ 矩阵，其行列顺序与 GTSAM `Pose3` 的切向量排列一致，即 $[\omega_x,\omega_y,\omega_z,v_x,v_y,v_z]$（回顾 25.2：旋转在前、平移在后）。因此左上 $3\times 3$ 是姿态不确定性（单位 $\text{rad}^2$），右下 $3\times 3$ 是平移不确定性（单位 $\text{m}^2$）。**这一点极易看错**：很多人想当然以为前三维是平移。
+
+> **本质洞察**：`marginalCovariance` 返回的协方差是定义在**右扰动切空间**上的，不是定义在某个固定全局参考系里的。它度量的是"绕当前估计 $T^*$ 的右扰动 $\xi$ 的二阶矩"，即 $\Sigma = \mathbb{E}[\xi\xi^\top]$ 其中 $T = T^* \cdot \mathrm{Exp}(\xi)$。这与 25.2 的右扰动约定、25.5 自定义因子里"对 $\xi$ 求雅可比"是同一套坐标——三者必须用同一个扰动定义，协方差才自洽。如果你把它当成欧氏空间的位置方差直接画椭圆，在大旋转下会错位。
+
+### 联合边缘协方差与互协方差
+
+回环检测、相对位姿一致性检验需要的是**两个变量的联合分布**。单独查 $\Sigma_{x_i}$ 和 $\Sigma_{x_j}$ 拿不到它们之间的相关性——而相对位姿 $x_i^{-1}x_j$ 的不确定性恰恰依赖于互协方差 $\Sigma_{ij}$：
+
+$$
+\Sigma_{\text{rel}} \approx J_i \, \Sigma_{ii} \, J_i^\top + J_j \, \Sigma_{jj} \, J_j^\top + J_i \, \Sigma_{ij} \, J_j^\top + J_j \, \Sigma_{ji} \, J_i^\top
+$$
+
+如果忽略后两项互协方差，对于沿同一条轨迹的两帧（高度相关），$\Sigma_{\text{rel}}$ 会被严重高估——把本来很确定的相对关系当成很不确定，回环搜索椭球被无谓地撑大。
+
+```cpp
+// ========== 查询联合边缘协方差 ==========
+gtsam::KeyVector keys{X(2), X(8)};
+gtsam::JointMarginal joint = marginals.jointMarginalCovariance(keys);
+
+// JointMarginal 按 (行变量, 列变量) 取块
+gtsam::Matrix cov_22 = joint(X(2), X(2));  // x2 的 6x6 边缘块
+gtsam::Matrix cov_88 = joint(X(8), X(8));  // x8 的 6x6 边缘块
+gtsam::Matrix cov_28 = joint(X(2), X(8));  // x2-x8 的 6x6 互协方差块（一般非零、非对称）
+
+// 拼成完整的 12x12 联合协方差
+gtsam::Matrix fullJoint = joint.fullMatrix();
+```
+
+> ⚠️ **概念误区：联合边缘 ≠ 两次单变量边缘拼起来**
+>
+> **新手想法**："`jointMarginalCovariance({X(2),X(8)})` 的对角块，和分别调两次 `marginalCovariance` 应该一样，所以联合查询只是多给了个互协方差块。"
+>
+> **实际上**：两者的对角块在数学上确实相等（都是各自的边缘协方差），但**联合查询额外给出的互协方差块是单变量查询永远拿不到的**，而它正是相对不确定性计算的核心。把两个独立查询的结果当成"对角块 + 零互协方差"来用，等价于假设 $x_2$ 与 $x_8$ 不相关——对同一轨迹上的两帧这个假设严重错误。
+>
+> **正确做法**：凡是需要"两个变量之间相对量"的不确定性，一律用 `jointMarginalCovariance` 并取出互协方差块。
+
+### iSAM2 中的协方差查询
+
+在线 SLAM 里我们用 iSAM2 而不是批量优化。iSAM2 自身就提供 `marginalCovariance`，它直接复用 Bayes Tree 的因子化结果，**不需要重新构造 `Marginals`**：
+
+```cpp
+// iSAM2 内部已维护 Bayes Tree 的 R 因子，可直接查
+gtsam::Matrix cov = isam2.marginalCovariance(X(currentKey));
+```
+
+这与对"iSAM2 当前因子 + 当前线性化点"构造一个 `Marginals` 得到的结果一致——因为 Bayes Tree 本质就是 $\Lambda = R^\top R$ 的 Cholesky 因子（回顾 25.3），从 $R$ 回代即可得到协方差列，无需重新分解。
+
+> ⚠️ **思维陷阱：以为 iSAM2 取协方差和取点估计一样廉价**
+>
+> **新手想法**："`calculateEstimate()` 很快，那 `marginalCovariance()` 也应该是 $O(1)$ 的。"
+>
+> **实际上**：取点估计只需从 Bayes Tree 根到叶做一次回代。取某个变量的边缘协方差需要沿着该变量在树中到**根**的路径回代求解多列，代价与该变量的"深度"和相关 clique 大小相关。频繁对**所有**变量查协方差（例如每帧给上千个历史位姿都算一遍）会成为新的瓶颈。
+>
+> **正确做法**：只对真正需要的变量查协方差（当前帧、回环候选帧）。需要可视化整条轨迹的不确定性时，降采样或离线计算。
+
+### 退化诊断：IndeterminantLinearSystemException
+
+当系统**规范自由度（gauge freedom）未被固定**，或某个方向上完全没有约束时，信息矩阵 $\Lambda$ 奇异，Cholesky 分解失败，GTSAM 抛出 `IndeterminantLinearSystemException`，异常里会带上**触发问题的变量 Key**。这是 GTSAM 工程中最常见、也最让初学者困惑的崩溃之一。
+
+**根本原因可分两类**，必须分开诊断：
+
+| 类别 | 物理含义 | 典型场景 | 修复方向 |
+|------|----------|----------|----------|
+| **规范自由度未固定** | 整张图可以整体平移/旋转而代价不变（零空间维度 = 6 或 4） | 只加了 `BetweenFactor`，一个 `PriorFactor` 都没有 | 加一个 prior 钉住首帧（或任意一帧） |
+| **结构退化** | 某变量在某方向上没有任何约束（信息为零） | 走廊里前进方向无特征；某路标只被一帧观测到（深度不可观） | 补充约束（IMU、GPS、轮速）或将该方向设为弱先验 |
+
+```cpp
+try {
+    gtsam::Matrix cov = marginals.marginalCovariance(X(k));
+} catch (const gtsam::IndeterminantLinearSystemException& e) {
+    // e.nearbyVariable() 返回触发奇异的变量 Key —— 诊断的起点
+    std::cerr << "Indeterminate system near key: "
+              << gtsam::DefaultKeyFormatter(e.nearbyVariable()) << std::endl;
+    // 排查：该变量是否缺少 prior？是否只被一个因子约束？
+}
+```
+
+> **本质洞察**：`IndeterminantLinearSystemException` 不是"GTSAM 的 bug"，而是**它在替你阻止一个数学上无解的问题**。位姿图若不固定规范自由度，"最优位姿"根本不唯一（有无穷多个仅差一个全局刚体变换的等价解），协方差在该方向上是无穷大。Ceres 在同样情况下往往**不报错**而是默默返回一个由初值偶然决定的解，反而更危险。GTSAM 选择显式抛异常，是把"不可观测"这个本来隐蔽的建模错误暴露在你面前。
+
+**诊断流程**（按顺序排查）：
+
+1. **查异常 Key**：`e.nearbyVariable()` 指出哪个变量触发奇异，用 `DefaultKeyFormatter` 打印成可读形式（如 `x0`）。
+2. **检查是否有 prior**：整张图至少需要一个一元因子固定规范。位姿图缺 prior 是最常见原因。
+3. **检查该变量的因子数**：用图遍历统计连到该 Key 的因子数。只有 1 个因子的位姿、只被 1 帧观测的路标，通常不可观测。
+4. **切到 QR 因子化复算**：`Marginals(graph, result, Marginals::QR)`。QR 对接近奇异的系统更稳，若 QR 能算出而 Cholesky 失败，说明系统**接近但未完全**退化（病态），提示约束太弱而非完全缺失。
+5. **检查零空间维度**：对小问题可直接对 $\Lambda$ 做 SVD，零奇异值的个数就是不可观测方向数（位姿图未固定时通常为 6，平面 SLAM 为 3）。
+
+### 与 Ceres 的对比
+
+| 维度 | Ceres Solver | GTSAM `Marginals` / iSAM2 |
+|------|-------------|---------------------------|
+| 协方差接口 | `Covariance` 类，需显式指定变量对并 `Compute()` | `Marginals::marginalCovariance(key)` 一行查询 |
+| 增量场景 | 每次重算（无增量协方差） | iSAM2 复用 Bayes Tree 因子，增量回代 |
+| 坐标约定 | 取决于用户的 `LocalParameterization`/`Manifold` | 统一右扰动切空间（与因子雅可比一致） |
+| 退化处理 | 默认静默返回，需手动检查 rank | 显式抛 `IndeterminantLinearSystemException` 并指出 Key |
+| 数值选项 | `SPARSE_QR` / `DENSE_SVD` 等 | `Marginals::CHOLESKY` / `QR` |
+
+**一句话总结**：Ceres 让你"自己决定要不要算协方差、自己检查退化"；GTSAM 把协方差查询和退化检测做成了一等公民，代价是你必须理解它的右扰动坐标约定，否则会把切空间协方差误读成欧氏方差。
+
+### ⚠️ 常见陷阱
+
+> ⚠️ **编程陷阱：在未优化的 Values 上构造 Marginals**
+>
+> **错误做法**：用 `initial`（初始估计）而不是 `result`（优化结果）构造 `Marginals`
+> ```cpp
+> // ❌ 错误：协方差在非最优点没有意义
+> gtsam::Marginals marginals(graph, initial);
+> ```
+>
+> **现象**：协方差数值看起来"能算出来"，但完全错误——它是在一个随意的线性化点上算的，既不是后验协方差，也无法解释。
+>
+> **根本原因**：协方差 $\Lambda^{-1}$ 来自在**最优点** $X^*$ 处的二阶展开。在非最优点，梯度非零，二阶近似不成立，$\Lambda$ 也不是真正的后验信息矩阵。
+>
+> **正确做法**：先 `optimizer.optimize()` 得到 `result`，再 `Marginals(graph, result)`。
+
+> ⚠️ **概念误区：把切空间协方差当欧氏位置方差画椭圆**
+>
+> **新手想法**："`marginalCovariance(X(i))` 的右下 $3\times 3$ 块就是位置 $(x,y,z)$ 的方差，可以直接画 $3\sigma$ 椭球。"
+>
+> **实际上**：那 $3\times 3$ 块是**右扰动平移分量** $v$ 的协方差，定义在 $T^*$ 的局部坐标系里，不是全局位置 $t$ 的协方差。两者通过伴随矩阵相关：全局位置扰动 $\delta t = R^* \, v$，所以全局位置协方差是 $R^* \, \Sigma_{vv} \, R^{*\top}$。
+>
+> **后果**：在大姿态角下直接画局部块，椭球朝向会错。对小旋转或只关心量级时影响不大，但严格可视化必须做伴随变换。
+>
+> **正确做法**：需要全局坐标椭球时，用 $R^*$ 把平移块旋转过去；或直接对感兴趣的几何量（如 2D 位置）写一个投影函数，用其雅可比传播协方差。
+
+> ⚠️ **思维陷阱：协方差越小越好**
+>
+> **新手想法**："优化后某变量协方差非常小，说明估计非常准，系统很健康。"
+>
+> **实际上**：协方差**异常小**往往是危险信号——通常意味着某个因子的噪声模型 sigma 设得过小（过度自信），把本不该那么强的约束当成了铁律。这会让 iSAM2 在该变量上拒绝任何修正，回环来了也拉不动（回顾 25.8 工程边界）。
+>
+> **正确做法**：协方差要和传感器的真实精度对齐，而不是越小越好。怀疑过度自信时，对照传感器 datasheet 反查 sigma 设置。
+
+### 练习
+
+1. **[编程]** 在 25.2 节的 2D 位姿图上，优化后用 `Marginals` 查询每个位姿的 $3\times 3$ 边缘协方差，打印其行列式（不确定性体积）。验证"离 prior 越远的位姿协方差越大"，以及"加入回环因子后所有协方差整体减小"。
+
+2. **[编程]** 构造一个只有 `BetweenFactor`、没有任何 `PriorFactor` 的位姿链，调用 `marginalCovariance`，捕获 `IndeterminantLinearSystemException` 并打印 `nearbyVariable()`。然后加一个 prior，确认异常消失。
+
+3. **[思考]** 对回环候选帧 $x_i$ 和当前帧 $x_j$，写出用 `jointMarginalCovariance` 计算相对位姿 $x_i^{-1}x_j$ 协方差的完整步骤（含所需雅可比 $J_i, J_j$）。解释为什么忽略互协方差块会高估相对不确定性，进而影响回环搜索椭球的大小。
+
+---
+
+## 25.10 鲁棒优化与 GNC ⭐⭐⭐
+
+### 这一节解决什么问题
+
+回环检测会出错。视觉/激光的特征匹配会产生误匹配。GPS 在城市峡谷里会有多径跳变。这些**外点（outlier）** 一旦作为因子进入图，普通最小二乘会被它们带偏——因为二次代价对大残差的惩罚是平方增长的，一个错误回环可以把整条轨迹扭曲（回顾"如果跳过本章会怎样"的场景二）。25.2 介绍过 `noiseModel::Robust` 鲁棒核，本节系统地讲鲁棒优化：M-估计鲁棒核的原理与局限，以及 GTSAM 的 `GncOptimizer`（Graduated Non-Convexity，渐进非凸）如何在初值很差时仍能正确剔除外点。
+
+### 动机：一个外点污染整张图
+
+设想 100 个正确回环 + 1 个错误回环。错误回环的残差很大，在二次代价下它贡献的代价 $\propto \|e\|^2$ 可能超过其余所有因子之和。优化器为了"照顾"这个最大的代价项，会把相关位姿硬拉向错误方向，结果 100 个正确约束被一个错误约束牺牲掉。
+
+$$
+\text{二次代价}: \rho(e) = \tfrac12 e^2 \;\Rightarrow\; \frac{\partial \rho}{\partial e} = e \quad(\text{残差越大，拉力越大，无上限})
+$$
+
+这就是为什么裸最小二乘对外点**零容忍**。解决思路有两条主线：**M-估计鲁棒核**（改造代价函数，给大残差"封顶"）和 **GNC**（先把问题凸化求一个不被外点带偏的解，再逐步恢复非凸性以锐利地区分内外点）。
+
+### 主线一：M-估计鲁棒核
+
+M-估计把二次代价 $\tfrac12 e^2$ 换成一个增长更慢的鲁棒核 $\rho(e)$，使得大残差的梯度（"拉力"）被压制甚至归零。GTSAM 在 `noiseModel::mEstimator` 下提供了多种核：
+
+| 鲁棒核 | $\rho$ 的大残差行为 | 影响函数 $\psi=\rho'$ | 特点 |
+|--------|--------------------|----------------------|------|
+| `Huber` | 大残差处线性增长 | 饱和到常数 | 温和，大残差仍有恒定拉力，适合"轻度"外点 |
+| `Cauchy` | 对数增长 | 趋于 0 | 较激进，远外点拉力趋零 |
+| `GemanMcClure` | 趋于常数上限 | 快速趋 0 | 强力压制远外点 |
+| `Tukey` | 超阈值后完全平坦 | 超阈值**恒为 0** | 最激进，远外点拉力**精确为零**（完全忽略） |
+| `DCS` | 动态协方差缩放 | —— | 等价于对信息矩阵动态降权 |
+
+```cpp
+#include <gtsam/linear/NoiseModel.h>
+
+// 用 Huber 核包裹基础噪声模型
+auto base = gtsam::noiseModel::Diagonal::Sigmas(
+    (gtsam::Vector(6) << 0.1, 0.1, 0.1, 0.2, 0.2, 0.2).finished());
+auto robust = gtsam::noiseModel::Robust::Create(
+    gtsam::noiseModel::mEstimator::Huber::Create(1.345),  // 1.345 → 95% 渐近效率
+    base);
+
+// 给可能是外点的回环因子套上鲁棒核
+graph.emplace_shared<gtsam::BetweenFactor<gtsam::Pose3>>(
+    X(i), X(j), loopMeasurement, robust);
+```
+
+**鲁棒核的工作机制**（IRLS 视角）：GTSAM 在每次线性化时，把鲁棒核等价转换为对该因子的一个**权重** $w(e) = \psi(e)/e$，残差越大权重越小。于是非线性鲁棒优化变成一系列"加权最小二乘"——这就是**迭代重加权最小二乘（Iteratively Reweighted Least Squares, IRLS）**。Huber 的权重从 1 平滑降到 $\propto 1/|e|$，Tukey 的权重在超阈值后直接归零。
+
+> **本质洞察**：鲁棒核不是"另一种噪声模型"，而是**对每个因子做了自适应降权**。M-估计的全部魔法都在影响函数 $\psi(e)=\rho'(e)$ 上：$\psi$ 在大残差处是否饱和（Huber）还是归零（Tukey），决定了外点是"被削弱"还是"被彻底踢出"。理解这一点，你就能根据外点的严重程度选核，而不是照抄默认值。
+
+> ⚠️ **思维陷阱：鲁棒核能解决一切外点问题**
+>
+> **新手想法**："套上 Huber 或 Cauchy 核，外点就自动被处理了，初值差也没关系。"
+>
+> **实际上**：M-估计鲁棒核**强烈依赖初值**。鲁棒代价函数是非凸的，有多个局部极小。如果初值已经被外点带到错误盆地里，IRLS 会收敛到那个错误解——此时鲁棒核反而"锁死"了错误：它给当前看起来残差小的（其实是错误的）因子高权重，给当前残差大的（其实是正确的）因子低权重。
+>
+> **后果**：回环外点比例高、或里程计初值漂移大时，单纯加鲁棒核可能不收敛到正确解，且失败时毫无征兆。
+>
+> **正确做法**：初值可能很差、外点比例高时，用下面的 GNC——它先求凸化解避开局部极小，再逐步恢复非凸性。
+
+### 主线二：Graduated Non-Convexity（GNC）
+
+GNC 的核心思想：**鲁棒代价非凸，难优化；但它可以被一族带控制参数 $\mu$ 的"代理函数"逼近**。$\mu$ 取一个极端值时代理函数（近似）凸，容易求全局解；然后逐步把 $\mu$ 调向另一端，代理函数连续地变形回原始的非凸鲁棒代价。每一步都用上一步的解作为初值，于是解被"牵引"着从凸问题的全局最优，平滑地过渡到非凸问题的正确极小，从而避开被外点造成的坏局部极小。
+
+```text
+GNC 控制参数 μ 的演化（以 TLS 为例）：
+
+μ 初始（接近凸）        μ 中间               μ 终止（恢复非凸/锐利）
+代价 ≈ 二次             代价开始"封顶"        代价 = 真正的 TLS
+所有因子近似等权    →   外点权重开始下降   →   内点权重→1，外点权重→0
+求得不被外点带偏的解     解被持续牵引          内外点被干净二分
+```
+
+GTSAM 的 `GncOptimizer` 把这套流程封装好了。它在内部对每个因子维护一个权重 $w_i \in [0,1]$，随 $\mu$ 演化迭代更新；终止时内点权重趋于 1、外点趋于 0，相当于自动完成了一次**全局外点剔除**。
+
+```cpp
+#include <gtsam/nonlinear/GncOptimizer.h>
+#include <gtsam/nonlinear/LevenbergMarquardtParams.h>
+
+// GncParams 包裹一个基础优化器参数（这里用 LM）
+using GncLMParams = gtsam::GncParams<gtsam::LevenbergMarquardtParams>;
+
+GncLMParams gncParams;
+gncParams.setLossType(gtsam::GncLossType::TLS);  // TLS（截断最小二乘）或 GM
+gncParams.setMaxIterations(20);                  // GNC 外层迭代上限
+// 已知一定是内点的因子索引（如 prior、里程计），可固定为内点不参与剔除
+// gncParams.setKnownInliers(knownInlierIndices);
+
+// 用置信度反推内点代价阈值（按 chi-square 分布；需先指定残差维度）
+gncParams.setInlierCostThresholdsAtProbability(0.99);
+
+// 构造 GNC 优化器：模板参数是基础优化器的参数类型
+gtsam::GncOptimizer<GncLMParams> gnc(graph, initial, gncParams);
+gtsam::Values result = gnc.optimize();
+
+// optimize() 内部完成 μ 的渐进演化 + 每步加权 LM 求解
+```
+
+**TLS vs GM 怎么选**：
+
+| 损失 | 行为 | 适用 |
+|------|------|------|
+| `GncLossType::TLS`（截断最小二乘） | 内点严格二次、外点严格归零，二分干净 | 外点/内点界限清晰，追求硬剔除 |
+| `GncLossType::GM`（Geman-McClure） | 权重平滑过渡，无硬截断 | 内外点边界模糊，需要软降权 |
+
+> **本质洞察**：GNC 与 M-估计的根本区别在于**对初值的依赖**。M-估计在固定的非凸代价上做 IRLS，初值决定落入哪个盆地；GNC 用 $\mu$ 把优化路径从一个凸问题出发，**主动控制**它落入正确盆地。代价是更多的迭代和计算——GNC 是"用算力换鲁棒性"。这也解释了它的定位：离线/准实时的位姿图优化、回环验证；而强实时前端仍倾向用便宜的 Huber + 几何预筛。
+
+> ⚠️ **概念误区：GNC 不需要噪声模型，可以替代鲁棒核**
+>
+> **新手想法**："用了 GncOptimizer 就不用设噪声模型了，它会全自动处理。"
+>
+> **实际上**：GNC **仍然需要每个因子的基础噪声模型**——它据此计算加权残差，并用 `setInlierCostThresholdsAtProbability` 把"多大的加权残差算外点"换算成内点阈值。噪声模型设错（如 sigma 过小），内点阈值就错，GNC 会把正确因子误判为外点。GNC 是在噪声模型之上做外点剔除，不是替代它。
+>
+> **正确做法**：先把基础噪声模型按传感器精度设对，再用 GNC 处理"超出该精度的"外点。
+
+### 鲁棒优化方案选型
+
+把两条主线和"几何预筛"放在一起，给出工程决策：
+
+| 方案 | 何时用 | 优点 | 代价/局限 |
+|------|--------|------|-----------|
+| 几何/一致性预筛（不进优化器） | 所有场景的第一道防线 | 最便宜，直接拒掉明显错误回环 | 只能挡明显外点 |
+| Huber / Cauchy 鲁棒核 | 初值较好、外点温和 | 实时、实现简单、单次优化 | 依赖初值，非凸局部极小 |
+| GNC（TLS/GM） | 初值差、外点比例高、可离线 | 不依赖初值，全局剔除外点 | 计算量大，偏离强实时 |
+| Switchable Constraints / Dynamic Covariance Scaling | 位姿图回环鲁棒化 | 把开关变量并入优化 | 增加变量与调参复杂度 |
+
+> **本质洞察**：鲁棒性不是单一开关，而是**分层防御**——前端几何预筛挡掉明显错误，中间噪声模型 + 鲁棒核处理常规外点，后端 GNC 兜底处理初值差或高外点比例的硬场景。任何一层都不足以独当一面；真实系统（如带回环的 LIO/VIO）是三层叠加。
+
+### ⚠️ 常见陷阱
+
+> ⚠️ **编程陷阱：对 prior 和里程计也套强鲁棒核**
+>
+> **错误做法**：图里所有因子统一套 Tukey/TLS
+> ```cpp
+> // ❌ 错误：连 prior 都用强截断核
+> graph.addPrior(X(0), pose0, robustTukeyNoise);
+> ```
+>
+> **现象**：求解不稳定甚至发散——规范由 prior 提供，但强鲁棒核在残差稍大时把 prior 权重也压到接近 0，等于偷偷移除了 prior，系统退化（回到 25.9 的 `IndeterminantLinearSystemException`）。
+>
+> **根本原因**：鲁棒核是为"可能是外点"的观测设计的。prior 和高可信里程计**不是外点**，给它们加强鲁棒核反而破坏了图的可观测性骨架。
+>
+> **正确做法**：只对可能含外点的因子（回环、远距离观测、GPS）加鲁棒核；prior、相邻里程计用普通高斯噪声。用 GNC 时把这些可信因子通过 `setKnownInliers` 固定为内点。
+
+> ⚠️ **思维陷阱：把 GNC 当成强实时前端的默认优化器**
+>
+> **新手想法**："GNC 这么鲁棒，干脆每帧都用它替代 iSAM2。"
+>
+> **实际上**：GNC 的 $\mu$ 渐进需要多轮重优化，单次代价远高于一次 iSAM2 增量更新；它本质是**批量**鲁棒优化，不是增量算法。每帧跑 GNC 会彻底破坏实时性。
+>
+> **正确做法**：前端用 iSAM2 增量 + 轻量鲁棒核保实时；GNC 用于回环验证、地图后处理、或周期性的全局位姿图鲁棒重优化。
+
+### 练习
+
+1. **[编程]** 在一个带 100 个正确回环的 2D 位姿图里，人为注入 5 个错误回环（随机相对位姿）。分别用 (a) 纯高斯噪声、(b) Huber 核、(c) `GncOptimizer`(TLS) 优化，对比最终轨迹误差（APE）。验证 GNC 在高外点比例下显著优于前两者。
+
+2. **[实验]** 对上题，逐渐增大错误回环的比例（5%→20%→40%），记录 Huber 和 GNC 各自开始失效的临界点。解释为什么 GNC 的临界点更高。
+
+3. **[思考]** `setInlierCostThresholdsAtProbability(0.99)` 内部用 chi-square 分布把置信度换算成内点代价阈值。为什么这个阈值依赖**因子残差的维度**？对 `Pose3` 的 6 维回环因子和 `GPSFactor` 的 3 维因子，同一置信度对应的阈值是否相同？
+
+---
+
 > **下一章预告**：SLAM库·g2o 将学习 g2o——另一个广泛使用的图优化库。g2o 采用不同于 GTSAM 的设计哲学（直接操作图结构而非因子图），在 ORB-SLAM、RTAB-Map 等系统中被大量使用。我们将对比 GTSAM 和 g2o 的优劣，帮助你在实际项目中做出正确的库选型决策。
 
 ---
@@ -1903,3 +2258,119 @@ GTSAM 的边缘化和协方差查询有两个常见边界：
 | IMU 预积分结果漂移异常 | 重力方向、噪声单位、bias 更新或时间间隔错误 | 1. 打印每段 `dt`；2. 确认加速度单位是 m/s²；3. 每次 bias 更新后 reset 预积分 | 通用库·李群manif, SLAM库·GTSAM |
 | 边际协方差查询失败或数值巨大 | 未固定规范自由度，信息矩阵奇异 | 1. 添加 prior factor；2. 检查图连通性；3. 对比固定首帧前后的 marginal covariance | 通用库·Ceres, SLAM库·GTSAM |
 | 回环加入后轨迹整体扭曲 | 回环相对位姿错误或噪声设得过小 | 1. 先用几何验证过滤回环；2. 增大回环噪声；3. 打印回环因子优化前残差 | SLAM库·GTSAM, 通用库·PCL |
+| `IndeterminantLinearSystemException`（抛异常并指向某 Key） | 规范自由度未固定（缺 prior），或某变量在某方向不可观测 | 1. 用 `e.nearbyVariable()` 定位 Key；2. 确认至少有一个 prior；3. 统计该 Key 的因子数；4. 切 `Marginals::QR` 复算判断是病态还是全奇异 | SLAM库·GTSAM §25.9 |
+| 协方差画出的不确定性椭球朝向错误 | 把右扰动切空间协方差当成全局欧氏位置方差 | 1. 确认取的是右下 $3\times3$ 平移块；2. 用 $R^*\Sigma_{vv}R^{*\top}$ 转到全局系；3. 大旋转下尤其明显 | SLAM库·GTSAM §25.9, 通用库·李群manif |
+| 加了鲁棒核仍被错误回环带偏 | 初值差落入坏盆地，M-估计锁死错误解 | 1. 先做几何/一致性预筛；2. 改用 `GncOptimizer`(TLS) 避开局部极小；3. 把 prior/里程计设为 `setKnownInliers` | SLAM库·GTSAM §25.10 |
+
+---
+
+## 本章常见误解汇总
+
+把全章散落在各节的概念误区集中成一张表，便于复习前快速自检。每一条左边是初学者的典型错误认知，右边是正确理解（详细分析见对应小节）。
+
+| 常见误解 | 正确理解 | 对应节 |
+|---------|---------|--------|
+| 因子图就是马尔可夫随机场/贝叶斯网络，可互换 | 因子图是更精细的二部图表示，显式区分每个因子；信息量 因子图 > MRF > 贝叶斯网络，转换会丢信息 | 25.1 |
+| 边缘化是无损的，信息全保留在 Schur 补里 | 仅在线性高斯下无损；非线性 SLAM 中边缘化会固化线性化点，后续大偏离会引入误差 | 25.1 |
+| `Pose3` 切向量是 $[v,\omega]$（平移在前） | GTSAM `Pose3` 是 $[\omega,v]$（旋转在前），与 Sophus 相反；`Pose2` 又是 $[v_x,v_y,\theta]$ | 25.2 |
+| 用裸整数当 Key 没问题 | 多类型变量混用裸整数会 Key 冲突；应统一用 `Symbol`/`symbol_shorthand` | 25.2 / 25.8 |
+| iSAM2 每帧给出的解和批量 LM 完全一致 | iSAM2 用延迟重线性化换速度，两次重线性化之间是近似解，差异由 `relinearizeThreshold` 控制 | 25.3 |
+| LIO-SAM 使用 `CombinedImuFactor` | LIO-SAM 用 `ImuFactor`(5 路) + 单独的偏差 `BetweenFactor`，便于解耦调参 | 25.4 |
+| 自定义因子的 Jacobian 维度是"变量维度 × 残差维度" | 是"残差维度 × 变量切空间维度"；如 `Pose3` 上的 1 维约束 Jacobian 是 $1\times 6$ | 25.5 |
+| 单变量边缘协方差 = 对局部信息块求逆 | 那是条件协方差（过度自信）；边缘协方差是 $\Lambda^{-1}$ 的对角块，须经整图耦合 | 25.9 |
+| `marginalCovariance` 右下 $3\times3$ 块是全局位置方差 | 是右扰动平移分量协方差，定义在局部系；全局需 $R^*\Sigma_{vv}R^{*\top}$ | 25.9 |
+| 协方差越小越好 | 异常小常是噪声 sigma 设得过小（过度自信），会让 iSAM2 拒绝修正、回环拉不动 | 25.9 |
+| 鲁棒核能解决一切外点、初值差也没关系 | M-估计依赖初值，坏初值会锁死错误解；高外点比例/差初值需 GNC | 25.10 |
+| 用了 `GncOptimizer` 就不需要噪声模型 | GNC 仍需基础噪声模型计算加权残差并定阈值；它是在噪声模型之上做外点剔除 | 25.10 |
+
+---
+
+## API 速查表
+
+本章涉及的 GTSAM 核心 API 签名与一句话说明，按主题分组。完整签名以 GTSAM 4.x 官方 Doxygen 为准。
+
+**容器与变量标识**
+
+| API | 说明 |
+|-----|------|
+| `gtsam::NonlinearFactorGraph` | 因子（约束）容器；`.add(factor)` / `.emplace_shared<F>(...)` / `.addPrior(key, val, noise)` |
+| `gtsam::Values` | 变量估计字典（Key→Value）；`.insert(key, val)` / `.at<T>(key)` / `.exists(key)` / `.update(key,val)` |
+| `gtsam::Symbol('x', i)` / `symbol_shorthand::X(i)` | 把字符 + 整数编码为唯一 `Key`，避免多类型变量冲突 |
+| `gtsam::DefaultKeyFormatter` | 把 `Key` 打印成可读形式（如 `x0`），调试与异常定位用 |
+
+**因子类型**
+
+| API | 说明 |
+|-----|------|
+| `gtsam::PriorFactor<T>` | 一元先验因子，固定单个变量；位姿图必须至少有一个以固定规范 |
+| `gtsam::BetweenFactor<T>` | 二元相对约束；里程计/回环用；残差 $\mathrm{Log}(T_{ij}^{-1}x_i^{-1}x_j)$ |
+| `gtsam::BearingRangeFactor<P,L>` | 方位-距离观测因子 |
+| `gtsam::GPSFactor` | 全局 3D 位置约束（只约束平移，不约束朝向） |
+| `gtsam::ImuFactor` / `gtsam::CombinedImuFactor` | IMU 预积分因子（5 路 / 6 路含偏差约束） |
+| `gtsam::NoiseModelFactor1/2/3<...>` | 自定义因子基类，重写 `evaluateError(..., OptionalMatrixType H)` |
+
+**噪声模型**
+
+| API | 说明 |
+|-----|------|
+| `noiseModel::Diagonal::Sigmas(v)` / `::Variances(v)` | 对角噪声，按标准差 / 方差给定 |
+| `noiseModel::Isotropic::Sigma(dim, σ)` | 各向同性噪声 |
+| `noiseModel::Constrained` | 硬约束（$\sigma\to 0$） |
+| `noiseModel::Robust::Create(mEstimator, base)` | 鲁棒核包裹基础噪声模型 |
+| `noiseModel::mEstimator::Huber/Cauchy/GemanMcClure/Tukey/DCS` | 各类 M-估计鲁棒核 |
+
+**优化器**
+
+| API | 说明 |
+|-----|------|
+| `GaussNewtonOptimizer(graph, values, params)` | 高斯-牛顿批量优化，收敛快需好初值 |
+| `LevenbergMarquardtOptimizer(graph, values, params)` | LM 批量优化，带阻尼更鲁棒 |
+| `ISAM2(params)` + `.update(newFactors, newValues)` + `.calculateEstimate()` | 增量优化，在线 SLAM 核心 |
+| `ISAM2Params`: `relinearizeThreshold` / `relinearizeSkip` / `factorization` | iSAM2 关键调参 |
+| `GncOptimizer<GncParams<LMParams>>(graph, init, gncParams)` + `.optimize()` | GNC 鲁棒批量优化（全局外点剔除） |
+| `GncParams`: `setLossType(GncLossType::TLS/GM)` / `setMaxIterations` / `setKnownInliers` / `setInlierCostThresholdsAtProbability` | GNC 调参 |
+
+**预积分与导航状态**
+
+| API | 说明 |
+|-----|------|
+| `PreintegrationParams::MakeSharedU()` / `MakeSharedD()` | IMU 参数，Z 轴朝上（ENU）/ 朝下（NED） |
+| `PreintegratedImuMeasurements`: `integrateMeasurement(acc,gyro,dt)` / `predict(state,bias)` / `resetIntegrationAndSetBias(bias)` | 预积分器主接口 |
+| `gtsam::NavState` | 封装位姿 + 速度的导航状态 |
+| `gtsam::imuBias::ConstantBias` | IMU 偏差变量类型 |
+
+**协方差与几何**
+
+| API | 说明 |
+|-----|------|
+| `Marginals(graph, result, Marginals::CHOLESKY/QR)` | 在优化结果上构造边缘协方差查询器 |
+| `Marginals::marginalCovariance(key)` / `marginalInformation(key)` | 单变量边缘协方差 / 信息矩阵（右扰动切空间坐标） |
+| `Marginals::jointMarginalCovariance(keys)` → `JointMarginal` | 多变量联合边缘协方差，含互协方差块 |
+| `ISAM2::marginalCovariance(key)` | iSAM2 复用 Bayes Tree 直接查协方差（无需重建 Marginals） |
+| `Pose3::transformFrom(p, H)` / `Pose3::retract(ξ)` / `Pose3::between(other)` | 几何操作，带可选 Jacobian 输出 |
+| `numericalDerivative11/21/...` | 数值微分，验证手写 Jacobian 正确性 |
+
+---
+
+## 研究实践建议
+
+面向不同目标的读者，给出分层次的实践路线。
+
+**目标一：能用 GTSAM 搭一个能跑的位姿图后端（工程入门）**
+
+1. 先吃透 25.2 的最小闭环：`NonlinearFactorGraph` + `Values` + `PriorFactor` + `BetweenFactor` + LM，跑通 2D 位姿图示例并能解释回环为何消除漂移。
+2. 把它改写成 iSAM2 增量版本（25.3 练习 1），亲手感受批量与增量在耗时随帧数增长上的差异。
+3. 给每个位姿查一次 `marginalCovariance`（25.9 练习 1），建立"点估计 + 不确定性"一起看的习惯。
+
+**目标二：能读懂并改造工业级 LIO/VIO 后端（工程进阶）**
+
+1. 先打通理论骨架 25.1→25.3，再带着"每种因子的噪声怎么设、`update()` 调几次、初值从哪来"三个问题精读 LIO-SAM `mapOptimization.cpp`（25.7）。
+2. 重点对照 25.4：确认 LIO-SAM 用的是 `ImuFactor` + 偏差 `BetweenFactor` 而非 `CombinedImuFactor`，并理解每次 bias 更新后必须 reset 预积分器。
+3. 把回环鲁棒化补齐：前端几何预筛 + 回环因子加 Huber 核（25.10），并在离线复盘时用 `GncOptimizer` 验证高外点比例下的鲁棒性。
+
+**目标三：做 SLAM 后端方向的研究（研究级）**
+
+1. 精读 iSAM2 原论文（Kaess 2012）与本章 25.3 对照，弄清 Bayes Tree 增量消元与 fluid relinearization 的关系；能回答"回环为何是 iSAM2 最贵的操作"（25.3 练习 3）。
+2. 围绕不确定性做文章：理解右扰动切空间协方差与全局量协方差的伴随变换（25.9），这是主动 SLAM、信息论式视角选择、退化检测的数学基础。
+3. 沿鲁棒后端前沿推进：从 M-估计→Switchable Constraints→GNC（25.10）梳理鲁棒位姿图优化的演进，复现 GNC 在不同外点比例下相对 Huber 的优势（25.10 练习 1-2）。
+4. 跨库对照：用 通用库·Ceres 和本章 GTSAM 实现同一问题（25.8 练习 3），从因子图结构、增量能力、协方差接口、退化处理四个维度形成自己的库选型判断；下一章 SLAM库·g2o 会补上第三个参照系。

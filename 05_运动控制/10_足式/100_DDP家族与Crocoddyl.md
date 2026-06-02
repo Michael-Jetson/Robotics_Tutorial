@@ -30,10 +30,11 @@
 
 1. **写出 DDP 的 backward/forward pass 完整伪代码**——理解每一步数学推导
 2. **区分 DDP / iLQR / FDDP 三者的数学差异**——知道何时选哪种
-3. **解释 Crocoddyl 为什么选虚函数而不是 CRTP**——02_C++基础与进阶/10_Eigen 的精彩反例
-4. **用 Crocoddyl 搭建四足 trot 轨迹优化**——从 ActionModel 到 Solver 全流程
-5. **理解 ProxDDP 的增广拉格朗日框架**——约束 DDP 的前沿方法
-6. **复述 ParallelRiccati 的 parallel scan 思想**——打破"backward pass 不可并行"的教条
+3. **说清控制限位为什么必须进 backward pass**——理解 box-DDP 的 projected-Newton 与 Box-FDDP 双模式
+4. **解释 Crocoddyl 为什么选虚函数而不是 CRTP**——02_C++基础与进阶/10_Eigen 的精彩反例
+5. **用 Crocoddyl 搭建四足 trot 轨迹优化**——从 ActionModel 到 Solver 全流程
+6. **理解 ProxDDP 的增广拉格朗日框架**——约束 DDP 的前沿方法
+7. **复述 ParallelRiccati 的 parallel scan 思想**——打破"backward pass 不可并行"的教条
 
 ## 前置依赖
 
@@ -46,6 +47,38 @@
 │ 02_C++基础与进阶/10_Eigen Concepts│    │ 足式/90_WBC分层优化与TSID WBC/TSID  │
 └─────────────────────┘    └──────────────────────┘
 ```
+
+## 本章知识导航
+
+本章沿"通用 NLP → 利用结构的 DDP → 算法变体 → 工业级框架 → 前沿并行/约束"这条主线展开,可分为五块。下表给出全部主干小节与它们解决的核心问题,便于按需检索。
+
+| 块 | 小节 | 解决的问题 | 难度 |
+|----|------|-----------|------|
+| **一、为什么是 DDP** | 54.1 从通用 NLP 到 DDP | Ipopt 为何慢?Markov 结构如何把 $O(N^3)$ 降到 $O(N)$ | ⭐⭐ |
+| **二、DDP 的数学内核** | 54.2 Bellman 方程的二次近似 | Q 函数系数推导、控制律、Riccati 递推、正则化(含 54.2.8B 两种正则模式)、2D 小车手算 | ⭐⭐⭐ |
+| | 54.3 DDP vs iLQR | 唯一差异(动力学 Hessian 项)、收敛速率、何时重要 | ⭐⭐ |
+| **三、面向工程的变体** | 54.4 FDDP | 用 gap 容忍不可行初值,MPC warm-start 的标准选择 | ⭐⭐⭐ |
+| | 54.4B Box-DDP / Box-FDDP | 把控制限位塞进 backward pass(projected-Newton + 双模式切换) | ⭐⭐⭐⭐ |
+| **四、Crocoddyl 框架精读** | 54.5 ActionModel/ActionData 架构 | Model-Data 分离、接口、内存布局、线程安全、自定义模型 | ⭐⭐ |
+| | 54.6 常见 ActionModel | Differential/Integrated 两层、自由/接触动力学、残差代价、积分器 | ⭐⭐ |
+| | 54.7 虚函数 vs CRTP | 为什么应用层框架选虚函数(性能瓶颈不在调度) | ⭐⭐⭐ |
+| | 54.8 OpenMP 并行化 | 哪些可并行、加速比、false sharing | ⭐⭐ |
+| **五、前沿:约束与并行** | 54.9 Aligator / ProxDDP / ParallelRiccati | 增广拉格朗日约束、$O(\log N)$ 并行 backward pass | ⭐⭐⭐⭐ |
+| **实战与对比** | 54.10 四足 trot 实战 | 从 Pinocchio 模型到 FDDP 求解的全流程 Python 代码 | ⭐⭐⭐ |
+| | 54.11 DDP 在 MPC 中的使用 | warm-start、不等收敛策略、反馈增益复用 | ⭐⭐⭐ |
+| | 54.12 DDP vs SQP | 两大流派的设计哲学分歧与选型 | ⭐⭐⭐ |
+
+**阅读路径建议**:
+
+- **精读(博士/算法工程,25-30 小时)**:按 54.1 → 54.12 顺序通读,完成 A/B/C 三型练习与跨章综合题。54.2.3 的 Q 函数推导、54.4B 的 box-QP、54.9 的 ParallelRiccati 是三个必须吃透的硬骨头。
+- **速读(已懂 LQR/DDP,只补 Crocoddyl 工程,8-10 小时)**:略过 54.2 的逐项推导,重点读 54.4(FDDP)、54.4B(控制限位)、54.5-54.8(框架与并行)、54.10(实战代码)。
+- **速查(写代码时定位 API)**:直接跳 54.10 实战代码 + 章末"API 速查表"+"故障排查手册",遇到不懂的概念再回溯对应小节。
+
+### 如果跳过本章会怎样
+
+- 不理解 DDP 的 Markov 结构,就会把足式 MPC 直接丢给 Ipopt,在 1kHz 控制频率下根本算不过来(54.1)。
+- 不懂 FDDP 的 gap 机制和 Box-FDDP 的控制限位处理,MPC warm-start 会频繁发散、电机扭矩越界却无人察觉(54.4、54.4B)。
+- 看不懂 Crocoddyl 的 ActionModel/ActionData 分离,就无法为新机器人或新任务自定义动力学与代价(54.5)。
 
 ---
 
@@ -1886,9 +1919,7 @@ DDP 流派 (Crocoddyl, MuJoCo)       SQP 流派 (OCS2, ALTRO)
 9. **(2025)** "Primal-Dual iLQR for GPU-Accelerated Learning and Control in Legged Robots". arXiv 2506.07823. **GPU 并行 primal-dual associative scan**,$O(n\log N+m)$,JAX 实现,支持 MPC-in-the-loop 学习。
 10. **Kleff S., et al. (2022)** "On the Derivation of Contact Dynamics in Arbitrary Frames". Humanoids 2022. 接触动力学导数的推广。
 
-### ALIGATOR：Pinocchio 3.x 的新一代轨迹优化求解器 ⭐⭐⭐⭐
-
-**Aligator** 是 LAAS-CNRS / Inria（Jallet, Carpentier 等）开发的下一代轨迹优化框架，核心创新为 ProxDDP（增广拉格朗日约束处理，T-RO 41:2605-2624, 2025）和 ParallelRiccati（$O(\log N)$ 并行 backward pass，RSS 2024）。详见 54.9 节的完整架构分析、代码示例和性能对比。
+> 上述 6、7 两篇正是 **Aligator**(LAAS-CNRS / Inria,Jallet、Carpentier 等开发,随 Pinocchio 3.x 一同推出的新一代轨迹优化库)的核心成果——ProxDDP 提供约束处理,ParallelRiccati 提供并行 backward pass。其完整架构、代码示例与性能对比见 §54.9。
 
 ### MuJoCo MPC (Predictive Sampling) 与 DDP 的对比 ⭐⭐⭐
 
@@ -1987,11 +2018,11 @@ DDP 流派 (Crocoddyl, MuJoCo)       SQP 流派 (OCS2, ALTRO)
 | 内容 | 时间 |
 |------|------|
 | DDP 理论 (54.1-54.3) | 6-7 小时 |
-| FDDP 理论 + 实现 (54.4) | 3-4 小时 |
+| FDDP + Box-DDP 控制限位 (54.4-54.4B) | 3-4 小时 |
 | Crocoddyl 架构 (54.5-54.7) | 4-5 小时 |
 | OpenMP + 并行 (54.8) | 2-3 小时 |
 | Aligator/ProxDDP/ParallelRiccati (54.9) | 4-5 小时 |
-| 实战 (54.10-54.11) | 4-5 小时 |
+| 实战 + MPC + DDP/SQP 对比 (54.10-54.12) | 4-5 小时 |
 | 练习 + 思考题 | 3-4 小时 |
 | **合计** | **26-33 小时** |
 
