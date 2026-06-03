@@ -32,22 +32,22 @@ Robotics_Tutorial/
 
 | Direction | Files | Lines | Status |
 |-----------|------:|------:|--------|
-| 01 数学基础 | 90 | 124,596 | 6/10 sub-directions complete (QA'd) |
-| 02 C++基础与进阶 | 58 | 115,782 | 4/6 sub-directions complete |
-| 03 SLAM | 15 | 16,191 | In Progress |
-| 04 移动机器人规控 | 76 | 15,613 | Skeleton |
-| 05 运动控制 | 134 | 190,726 | **Complete** |
-| 06 具身智能 | 33 | 70,892 | In Progress |
-| **Total** | **406** | **533,800** | |
+| 01 数学基础 | 90 | 152,010 | 6/10 sub-directions complete (QA'd) |
+| 02 C++基础与进阶 | 58 | 115,729 | 4/6 sub-directions complete |
+| 03 SLAM | 14 | 14,423 | In Progress |
+| 04 移动机器人规控 | 84 | 142,532 | In Progress |
+| 05 运动控制 | 147 | 209,188 | **Complete** |
+| 06 具身智能 | 30 | 69,428 | In Progress |
+| **Total** | **442** | **712,772** | |
 
 ### 05 运动控制 Breakdown
 
 | Sub-direction | Files | Lines | Status |
 |---------------|------:|------:|--------|
 | 公共基础 (Common Foundation) | 1 | 406 | **Complete** |
-| 足式 (Legged) | 27 | 44,985 | **Complete** |
-| 机械臂 (Manipulator) | 47 | 67,085 | **Complete** |
-| 复合 (Loco-manipulation) | 48 | 56,073 | **Complete** |
+| 足式 (Legged) | 27 | 48,382 | **Complete** |
+| 机械臂 (Manipulator) | 47 | 68,965 | **Complete** |
+| 复合 (Loco-manipulation) | 48 | 60,352 | **Complete** |
 | 仿真 (Simulation) | 10 | 20,005 | **Complete** |
 | 总大纲 (Overview) | 1 | 2,172 | **Complete** |
 
