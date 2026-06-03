@@ -4,7 +4,7 @@
 >
 > **前置依赖**：Ch05（Observation/Action 接口设计）、Ch06（Reward/Curriculum）、Ch07（PPO 训练管线）、Ch08（Domain Randomization）
 >
-> **关键文献**：Pinto et al. 2017（Asymmetric Actor Critic for Image-Based Robot Learning）、Kumar et al. 2021（RMA: Rapid Motor Adaptation for Legged Robots）、Lee et al. 2020（Learning Quadrupedal Locomotion over Challenging Terrain）、Cheng et al. 2024（Extreme Parkour with Legged Robots, ICRA'24）
+> **关键文献**：Pinto et al., RSS 2018（Asymmetric Actor Critic for Image-Based Robot Learning）、Kumar et al. 2021（RMA: Rapid Motor Adaptation for Legged Robots）、Lee et al. 2020（Learning Quadrupedal Locomotion over Challenging Terrain）、Cheng et al. 2024（Extreme Parkour with Legged Robots, ICRA'24）
 >
 > **参考项目**：🔧 mjlab actor/critic group 配置 · 🔧 Isaac Lab observation group 配置 · ✅ `github.com/chengxuxin/extreme-parkour`（ICRA'24）
 
@@ -82,7 +82,7 @@ Privileged learning 在机器人 RL 中有三种主要形态，它们解决的�
 | **部署角色学习方式** | RL（policy gradient） | 监督学习（imitation loss） | RL + imitation loss |
 | **训练阶段数** | 1（同时训练 actor 和 critic） | 2（先 teacher RL，再 student BC） | 1（同时但有两个网络） |
 | **工程复杂度** | ⭐ 低（框架原生支持） | ⭐⭐⭐ 高（多阶段管线） | ⭐⭐⭐⭐ 很高 |
-| **经典论文** | Pinto et al. 2017 | Kumar et al. 2021, Lee et al. 2020 | 多种变体 |
+| **经典论文** | Pinto et al., RSS 2018 | Kumar et al. 2021, Lee et al. 2020 | 多种变体 |
 | **框架支持** | mjlab/Isaac Lab 原生 | RSL-RL DistillationRunner | 需自定义 |
 
 **形态一：非对称 Actor-Critic（Asymmetric AC）。** 这是最简单、最常用的 privileged learning 形态。critic 看到完整的 privileged observation（包括接触力、地形真值、环境参数），actor 只看部署可得信息。两者在 PPO 中同时训练。训练结束后 critic 被丢弃，只部署 actor。mjlab 和 Isaac Lab 都原生支持这种配置——只需要在 env config 中分别定义 actor group 和 critic group。
@@ -2187,13 +2187,13 @@ extreme-parkour 的三阶段管线很强大，但工程复杂度也很高——�
 | RMA | ⭐⭐⭐ | ~2× 基准 | +15-30% | 高 | 环境参数自适应 |
 | 多阶段 TS | ⭐⭐⭐⭐ | ~3-5× 基准 | 最高 | 最高 | 视觉部署、极端地形 |
 
-### 技术演进脉络：从 Pinto 2017 到 VIRAL 2025
+### 技术演进脉络：从 Pinto 2018 到 VIRAL 2025
 
 理解这四种方案的选型不能脱离历史语境——每一种方案都是前一代方案遇到瓶颈后的自然扩展。以下时间线梳理了 privileged learning 从概念提出到工业级部署的完整演化路径，每一代解决了上一代的什么问题：
 
 | 年份 | 代表工作 | 会议 | 核心贡献 | 解决了上一代什么问题 |
 |------|---------|------|---------|-------------------|
-| 2017 | Pinto et al. | RSS | Asymmetric Actor-Critic | 首次提出 actor/critic 可以看到不同信息 |
+| 2018 | Pinto et al. | RSS | Asymmetric Actor-Critic | 首次提出 actor/critic 可以看到不同信息 |
 | 2020 | Lee et al. | Science Robotics | Teacher-Student + terrain curriculum | 把 privileged learning 从视觉扩展到 locomotion |
 | 2021 | Kumar et al. (RMA) | RSS | Adaptation module + online adaptation | 让 student 在部署时实时适应新环境 |
 | 2022 | Miki et al. | Science Robotics | ANYmal depth + attention encoder | 从盲控制到感知控制；1700m 零跌倒 |
@@ -2207,7 +2207,7 @@ extreme-parkour 的三阶段管线很强大，但工程复杂度也很高——�
 
 从这个演进脉络中可以看到两条清晰的技术趋势：
 
-**趋势 1：信息边界的粒度越来越细。** 从 Pinto 2017 的"actor vs critic 二分法"，到 extreme-parkour 2024 的"三阶段渐进降级"，到 HOVER 2025 的"per-command-channel 的 mask"——信息边界从粗粒度二分走向了细粒度的连续谱。
+**趋势 1：信息边界的粒度越来越细。** 从 Pinto 2018 的"actor vs critic 二分法"，到 extreme-parkour 2024 的"三阶段渐进降级"，到 HOVER 2025 的"per-command-channel 的 mask"——信息边界从粗粒度二分走向了细粒度的连续谱。
 
 **趋势 2：从手工设计走向数据驱动。** 传统的 DR + asymmetric AC 需要手动选择哪些参数随机化、哪些信号给 critic。ASAP 用真机数据自动学习 sim-to-real gap 的补偿；VIRAL 用大规模渲染自动覆盖视觉域偏移。这个趋势意味着未来的 privileged learning 可能不再需要工程师手动分类 privileged 信号——系统会自动发现"什么信息对训练有帮助但部署时不可得"。
 
@@ -2275,7 +2275,7 @@ extreme-parkour 的三阶段管线很强大，但工程复杂度也很高——�
 | HOVER mask-conditioned distillation | 一个 student 多种控制模式，比三阶段更灵活 | ⭐⭐⭐ |
 | ONNX normalizer 烘焙 | 部署时必须导出 actor 的 normalizer，不能用 critic 的 | ⭐⭐ |
 | 15 项 debug checklist | 含 normalization 检查，系统化防止信息泄漏和配置错误 | ⭐⭐ |
-| 方案选型决策树 + 演进脉络 | 从 Pinto 2017 到 VIRAL 2025 的完整技术演化链 | ⭐⭐ |
+| 方案选型决策树 + 演进脉络 | 从 Pinto 2018 到 VIRAL 2025 的完整技术演化链 | ⭐⭐ |
 
 ## 累积项目：本章新增模块
 
@@ -2505,7 +2505,7 @@ seed：42
 
 | 资料 | 难度 | 推荐原因 |
 |------|------|---------|
-| Pinto et al. 2017, "Asymmetric Actor Critic for Image-Based Robot Learning" | ⭐⭐ | asymmetric actor-critic 的原始论文，建立了基本框架 |
+| Pinto et al., RSS 2018, "Asymmetric Actor Critic for Image-Based Robot Learning" | ⭐⭐ | asymmetric actor-critic 的原始论文，建立了基本框架 |
 | Kumar et al. 2021, "RMA: Rapid Motor Adaptation for Legged Robots" | ⭐⭐⭐ | RMA 的完整方法、adaptation module 设计和真机实验 |
 | Lee et al. 2020, "Learning Quadrupedal Locomotion over Challenging Terrain" | ⭐⭐ | 四足 privileged learning 的经典工作，teacher-student 蒸馏的早期范例 |
 | Cheng et al. 2024, "Extreme Parkour with Legged Robots" (ICRA'24) | ⭐⭐⭐ | 本章精读项目，三阶段蒸馏管线的工业级实现 |
@@ -2517,7 +2517,7 @@ seed：42
 | Huang et al. 2025, "HoST: Learning Humanoid Standing-up Control across Diverse Postures" (RSS'25) | ⭐⭐⭐ | Multi-critic 架构；理解 9.1 节 multi-critic 变体 |
 | Schwarke et al. 2025, "RSL-RL: A Learning Library for Robotics Research" (arXiv 2509.10771) | ⭐⭐ | RSL-RL 4.0 的 actor/critic 解耦架构、DistillationRunner、ONNX exporter |
 
-**阅读顺序建议**：先读 Pinto 2017（理解 asymmetric AC 的基本原理），再读 Kumar 2021（理解 RMA 的两阶段框架），然后读 Cheng 2024（理解多阶段蒸馏的完整管线）。在此基础上读 HOVER 2025（理解 mask-conditioned distillation 如何统一多种控制模式）。Miki 2022 和 Radosavovic 2024 作为"从盲控制到感知控制"和"显式 vs 隐式适应"的对比阅读材料。RSL-RL 4.0 论文中关于 obs_groups、DistillationRunner 和 ONNX exporter 的工程说明应作为持续参考。
+**阅读顺序建议**：先读 Pinto 2018（理解 asymmetric AC 的基本原理），再读 Kumar 2021（理解 RMA 的两阶段框架），然后读 Cheng 2024（理解多阶段蒸馏的完整管线）。在此基础上读 HOVER 2025（理解 mask-conditioned distillation 如何统一多种控制模式）。Miki 2022 和 Radosavovic 2024 作为"从盲控制到感知控制"和"显式 vs 隐式适应"的对比阅读材料。RSL-RL 4.0 论文中关于 obs_groups、DistillationRunner 和 ONNX exporter 的工程说明应作为持续参考。
 
 ## 🔧 故障排查手册
 

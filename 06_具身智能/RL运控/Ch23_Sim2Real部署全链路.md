@@ -176,7 +176,7 @@ Distillation 的部署边界：student 的输入必须完全由部署时可获�
 
 ### ASAP：学习残差动作模型 ⭐⭐⭐
 
-前四种方法（SysID、DR、Fine-tuning、Adaptive）是经典的 sim2real 工具箱。2025 年出现了一种新的方法——**ASAP**（Luo et al., RSS 2025, arXiv:2502.01143）——它结合了 SysID 的思想和学习方法，通过**学习一个残差动作模型**来弥合 sim2real gap。
+前四种方法（SysID、DR、Fine-tuning、Adaptive）是经典的 sim2real 工具箱。2025 年出现了一种新的方法——**ASAP**（He et al., RSS 2025, arXiv:2502.01143）——它结合了 SysID 的思想和学习方法，通过**学习一个残差动作模型**来弥合 sim2real gap。
 
 ASAP 的核心假设是：仿真器的物理模型大体正确，但在某些维度上存在系统性偏差——这种偏差可以用一个**可学习的残差函数** $\delta(s, a)$ 来补偿。具体来说，如果在仿真中执行动作 $a$ 得到的下一状态是 $s_{t+1}^{\text{sim}}$，而在真机上执行同样的动作得到的是 $s_{t+1}^{\text{real}}$，两者之间的差异可以通过修改动作来弥补：
 
@@ -2371,7 +2371,7 @@ Sim2Real 不是最后一步——而是一条贯穿训练、导出、播放、�
 
 | 资料 | 难度 | 说明 |
 |------|------|------|
-| Luo et al., "ASAP: Aligning Sim and Real Action Spaces", RSS 2025 | ⭐⭐⭐ | Delta-action 残差模型，最新 sim2real 方法 |
+| He et al., "ASAP: Aligning Simulation and Real-World Physics for Learning Agile Humanoid Whole-Body Skills", RSS 2025 (arXiv:2502.01143) | ⭐⭐⭐ | Delta-action 残差模型，最新 sim2real 方法 |
 | ProtoMotions "Baked-in Obs" ONNX export (NVlabs) | ⭐⭐⭐ | MdpComponent 三层级导出架构 |
 | unitree_rl_lab (Unitree Robotics, GitHub) | ⭐⭐ | Go2/G1/H1 完整五阶段部署管线 |
 | unitree_rl_mjlab (Unitree Robotics, GitHub) | ⭐⭐ | mjlab 版本的等价部署管线 |

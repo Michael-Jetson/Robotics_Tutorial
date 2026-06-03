@@ -46,6 +46,110 @@
 4. 说明特权教师如何利用物体真值规划可执行目标。
 5. 解释深度图学生的在线蒸馏损失和分布偏移问题。
 6. 分析 IK 不可达、深度噪声、照明、坐标标定和目标高度变化造成的失败。
+7. 读懂 `visual_wholebody` 仓库的低层/高层划分，定位球坐标命令、ROA、DAgger 蒸馏的源码位置。
+8. 区分论文叙述与源码实现的偏差，建立 VBC 的歧义审计清单，独立完成最小复现。
+
+> **本节目标与新增内容的对应**：第 7、8 两条目标对应本次精读补充的源码走读（§89.3b、§89.4b、§89.5b）、研究视角（§89.9d）、歧义审计与复现指南（§89.11、§89.12）。如果你只关心算法直觉，可先读 §89.2-§89.9 的讲授线；如果你要复现，务必读完所有 `b` 后缀的源码走读节。
+
+---
+
+## 89.1b 论文信息与知识导航
+
+### 论文信息
+
+| 字段 | 值 |
+|---|---|
+| 标题 | Visual Whole-Body Control for Legged Loco-Manipulation |
+| 作者 | Minghuan Liu, Zixuan Chen, Xuxin Cheng, Yandong Ji, Ri-Zhao Qiu, Ruihan Yang, Xiaolong Wang（UC San Diego） |
+| 会议 | CoRL 2024（**Oral**） |
+| arXiv | 2403.16967 |
+| 代码 | `github.com/Ericonaldo/visual_wholebody`（下文统一记为 `visual_wholebody`） |
+| 项目页 | wholebody-b1.github.io |
+| 硬件 | Unitree B1（12 DoF 腿）+ Unitree Z1 臂（6 DoF）+ 夹爪（1 DoF），合计 **19 DoF** |
+| 仿真器 | IsaacGym（并行训练） |
+
+VBC 是本方向的**核心论文 ⭐⭐⭐**：它第一次把"视觉移动操作"完整拆成"低层全身控制 + 特权教师 + 深度图学生"三阶段，并给出可复现的开源实现。后续的 RoboDuet、UMI-on-Legs、力敏感 LocoMani 都可看作在它确立的 goal 接口上做替换或扩展。因此本章按论文解读规范的核心论文标准展开——除算法直觉外，还做完整的源码走读、论文-代码差异分析和歧义审计。
+
+> **本质洞察**：VBC 论文的真正贡献不是"给四足臂加了相机"，而是**确立了一个可被复用的分层契约**——低层只承诺"给定一个身体系下的末端球坐标目标与底盘速度，我负责全身到达并保持平衡"，高层只承诺"从深度图产生这样一个目标"。一旦这个契约稳定，高层就可以被任何目标生成器（深度学生、VLA、传统几何、扩散策略）替换。本章所有源码走读都围绕"这个契约在代码里到底长什么样"展开。
+
+### 知识导航（§号与正文一一对应）
+
+| § | 标题 | 性质 | 难度 |
+|---|---|---|---|
+| 89.0 | 前置自测 | 自测 | — |
+| 89.1 | 本章目标 | 导引 | — |
+| 89.1b | 论文信息与知识导航 | 导引 | — |
+| 89.1c | 论文-代码映射表 | 索引 | ⭐⭐ |
+| 89.1d | 技术树全景 | 导引 | ⭐⭐ |
+| 89.2 | 从 Deep-WBC 到 Visual-WBC：为什么要分层 | 讲授 | ⭐⭐ |
+| 89.3 | Stage 1：低层通用 goal-reaching 策略 | 讲授 | ⭐⭐⭐ |
+| 89.3b | 源码走读：低层真实架构（球坐标命令 + ROA + IK） | 源码 | ⭐⭐⭐⭐ |
+| 89.4 | Stage 2：特权教师规划器 | 讲授 | ⭐⭐⭐ |
+| 89.4b | 源码走读：高层 9D 动作与特权教师 | 源码 | ⭐⭐⭐ |
+| 89.5 | Stage 3：深度图学生与在线蒸馏 | 讲授 | ⭐⭐⭐⭐ |
+| 89.5b | 源码走读：DAgger 蒸馏与深度编码器 | 源码 | ⭐⭐⭐⭐ |
+| 89.6 | 高低层接口：单位、坐标系和频率 | 讲授 | ⭐⭐⭐ |
+| 89.7 | 评估：14 物体 × 3 高度与 retry 行为 | 讲授 | ⭐⭐ |
+| 89.8 | IK 不可达、深度敏感与 Sim2Real 难点 | 讲授 | ⭐⭐⭐ |
+| 89.9 | 与 RoboDuet、UMI-on-Legs 的关系 | 讲授 | ⭐⭐ |
+| 89.9d | 🔬 研究视角：VBC 的贡献结构与局限 | 研究 | ⭐⭐⭐⭐ |
+| 89.9b | 跨章综合练习 | 练习 | ⭐⭐⭐ |
+| 89.10 | 本章小结 | 总结 | — |
+| 89.11 | 歧义审计汇总表 | 索引 | ⭐⭐⭐ |
+| 89.12 | 复现指南 | 工程 | ⭐⭐⭐ |
+| 累积项目 / 延伸阅读 / 故障排查 / 综合项目 | 章末组件 | — | — |
+
+---
+
+## 89.1c 论文-代码映射表 ⭐⭐
+
+论文解读的第一步是建立"论文节 → 代码模块"的映射，并标注每一项的清晰度级别（SPECIFIED 论文明确且与代码一致 / PARTIAL 论文提及但细节不足 / UNSPECIFIED 论文未提但代码存在 / CONFLICT 论文与代码不一致）。下表覆盖 VBC 的全部方法论组件，是后续源码走读与歧义审计的总索引。表中行号以 `visual_wholebody` 主分支为准，不同 commit 可能有 ±数行偏移，读时以函数名定位更稳妥。
+
+| 论文内容 | 对应代码 | 清晰度 | 备注（下文展开节） |
+|---|---|---|---|
+| 低层观测构成 | `low-level/.../manip_loco/manip_loco.py`（obs 拼装）、`b1z1_config.py` | PARTIAL | 论文给分组维度，逐项来源需读代码（§89.3b） |
+| 低层末端目标 = 身体系球坐标 $(l,p,y)$ | `b1z1_config.py:43` `command_mode='sphere'`，`:54-56` ranges | SPECIFIED | 论文 §III 与代码一致（§89.3b） |
+| 球坐标 → 笛卡尔转换与目标插值 | `manip_loco.py:1262-1265` `lerp` + `sphere2cart` | PARTIAL | 论文给插值公式，`arm_induced_pitch` 未提（§89.3b） |
+| 低层末端跟踪奖励 | `envs/rewards/maniploco_rewards.py:12-15` | CONFLICT | 论文写指数核，代码用 **L1 误差**而非 L2（§89.3b） |
+| 低层 PD/IK：臂用伪逆 Jacobian | `manip_loco.py`（IK 控制路径） | CONFLICT | 论文与高层 wrapper 中低层"直接输出关节"两种说法并存（§89.3b） |
+| ROA 特权编码 + 自适应模块 | `b1z1_config.py:396` `priv_reg_coef_schedual` | PARTIAL | 论文说 ROA，schedule 数值从 config 提取（§89.3b） |
+| 高层 9D 动作 | `high-level/envs/b1z1_base.py:39-45,195-199` | SPECIFIED | EE 位姿增量 6D + 底盘速度 2D + 夹爪 1D（§89.4b） |
+| 高层特权教师（物体形状 PointNet++、真值位姿） | `high-level/envs/b1z1_pickmulti.py`、`modules/feature_extractor.py` | PARTIAL | 论文说用点云特征，网络细节读代码（§89.4b） |
+| 高层奖励 | `high-level/envs/reward_vec_task.py`、`b1z1_pickmulti.py` | PARTIAL | 论文 Appendix C.2，权重从代码提取（§89.4b） |
+| 深度学生编码器 | `modules/feature_extractor.py:66` `DepthOnlyFCBackbone58x87` | CONFLICT | 真实分辨率 **58×87**，非常见的 64×64（§89.5b） |
+| DAgger 在线蒸馏 | `high-level/learning/dagger_trainer.py:94-95`、`dagger.py` | PARTIAL | 论文说 online imitation，混合策略是**硬切换**（§89.5b） |
+| 低层 checkpoint 装载进高层 | `b1z1_base.py`（`torch.load(low_policy_path)`，`hist_encoding=True`） | SPECIFIED | 高层 step 内每步调用低层（§89.4b、§89.6） |
+| 评估协议 | 论文 §IV + 项目页 | SPECIFIED | sim 33 YCB / 7 类；real 14 物体 × 3 高度 × 5 次（§89.7） |
+
+> **如何用这张表**：遇到 CONFLICT 行，先读对应的源码走读节，理解"论文为什么这么写、代码为什么那么做、该信谁"；遇到 PARTIAL 行，表示论文只给了骨架，复现时必须回到代码补全数值。所有 CONFLICT/PARTIAL 项在 §89.11 歧义审计汇总表中再统一收口。
+
+---
+
+## 89.1d 技术树全景 ⭐⭐
+
+在逐节展开前，先用一张技术树看清 VBC 在学习型四足臂谱系中的位置。读者应当先看到森林，再看每棵树。
+
+```text
+感知行走（Miki 2022，深度→鲁棒 locomotion）
+   │  把"深度图 + 本体感知 + 教师-学生"范式带入腿足
+   ▼
+Deep-WBC（Fu 2022，统一低层全身策略，Advantage Mixing）
+   │  解决"目标已知时如何全身到达"，但目标仍需外部给定
+   ▼
+Visual-WBC（Liu 2024，本章）★ 里程碑
+   ├─ Stage 1 低层 goal-reaching：身体系球坐标目标 + 底盘速度 + ROA
+   ├─ Stage 2 特权教师：物体真值 + PointNet++ → 9D 高层动作（RL）
+   └─ Stage 3 深度图学生：分割深度 58×87 → DAgger 蒸馏教师
+   │  确立"低层 goal 契约"——高层可被任意目标生成器替换
+   ├──────────────┬───────────────────┐
+   ▼              ▼                   ▼
+RoboDuet       UMI-on-Legs         VLA / 零样本基础模型
+（双策略协作）  （任务帧 EE 轨迹）   （语义目标生成）
+```
+
+这条线的内在逻辑是**接口逐层上移**：感知行走把"视觉"接进腿足；Deep-WBC 把"全身控制"做成统一低层；VBC 在两者之上插入"视觉目标生成"，并把低层接口固化为球坐标 goal；再往上，UMI-on-Legs 把目标从"一个点"升级为"一段任务帧轨迹"，VLA 则把目标来源升级为"语义指令"。理解这条线，就理解了为什么 VBC 的 goal 接口设计是它最有复用价值的贡献。
+
+> **对比性思维（不是 X 而是 Y）**：VBC 在这条树上的角色，不是"又一个端到端视觉策略"，而是"第一个把视觉移动操作显式分解为可独立验证的三段、并开源了完整三段实现的工作"。它的价值在分解本身，而非某个单点网络的精巧。
 
 ---
 

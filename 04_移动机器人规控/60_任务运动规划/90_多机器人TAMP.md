@@ -2,7 +2,7 @@
 
 > **难度**: ⭐⭐⭐ ~ ⭐⭐⭐⭐ (本章是任务层的多机纵深，整体偏进阶到研究级)
 > **前置知识**: TAMP_T1（PDDL/FF、符号-几何鸿沟、TAMP 核心耦合）、TAMP_T2（MRTA 分类学、匈牙利/MILP、拍卖/CBBA、分配-规划耦合 §9）、TAMP_T3/T4（PDDLStream / LGP，单机集成范式）、多机器人协作线 Multi_03（MAPF/CBS）。无需多机控制（编队、分布式 MPC）——那是运动层，本章只讲任务层。
-> **核心参考**: Gerkey & Matarić (2004, IJRR 23(9)), MRTA 分类学; Korsah, Stentz & Dias (2013, IJRR 32(12)), iTax 依赖维度; Choi, Brunet & How (2009, IEEE T-RO 25(4)), CBBA; Schillinger, Bürger & Dimarogonas (2018, IJRR 37(7)), 时序逻辑下的同时分配与规划 (STAP); "Conflict-Based Task and Motion Planning for Multi-Robot, Multi-Goal Problems" (2024, ICRA); Sung, Shome & Stone (2024, ICRA), 异步任务计划精化的多机 TAMP; Motes et al. (2022, IEEE RA-L), 超图分解的多机 TAMP
+> **核心参考**: Gerkey & Matarić (2004, IJRR 23(9)), MRTA 分类学; Korsah, Stentz & Dias (2013, IJRR 32(12)), iTax 依赖维度; Choi, Brunet & How (2009, IEEE T-RO 25(4)), CBBA; Schillinger, Bürger & Dimarogonas (2018, IJRR 37(7)), 时序逻辑下的同时分配与规划 (STAP); "Conflict-Based Task and Motion Planning for Multi-Robot, Multi-Goal Problems" (2024, ICRA); Sung, Shome & Stone (2024, ICRA), 异步任务计划精化的多机 TAMP; Motes, Chen, Bretl, Morales & Amato (2023, IEEE T-RO), "Hypergraph-based Multi-Robot Task and Motion Planning"
 > **与既有章节的关系**: 本章把 TAMP_T2 §9（分配-规划耦合，仅 ⭐⭐⭐⭐ 一节的纲要）彻底打开，做成完整的多机联合规划方法论；它把 TAMP_T1-T4 的单机 TAMP **沿"执行者数量"这一轴推广到多机**，并在任务层与多机器人协作线（Multi_03 的 MAPF/CBS、Multi 线的分布式控制）划清边界——本章管"谁做什么、什么顺序、几何上可行吗"，运控层管"多机怎么无碰撞地动"。
 
 ---
@@ -968,7 +968,7 @@ CBBA 共识走查(任务 τ 被 R1 和 R3 都想要):
 
 第二类前沿针对状态空间爆炸。§7.2 说集中式的联合构型空间随机器人/物体数指数膨胀。超图分解的思路：**不在巨型联合空间里搜，而是把规划空间分解成若干"模式"的块，用超图组织它们之间的转移**。
 
-> **核心方法（Motes, Sandström, Adams et al., 2022, IEEE RA-L / 后续 DaSH 系列，"Hypergraph-based Multi-Robot Task and Motion Planning"）**：把规划空间分解为三类元素——**单独的机械臂**（manipulator alone）、**单独的物体**（object）、**机械臂持有物体**（manipulator holding object）。用一张**超图 (hypergraph)** 组织：顶点是这些分解后的子空间，超弧 (hyperarc) 是子空间之间的转移（如"机械臂抓起物体" = 从"臂 + 物体"两个顶点转移到"臂持物体"一个顶点）。关键收益在规模——**超图顶点数随机器人数或物体数线性增长、超弧数随机器人数二次/物体数线性增长，而朴素图表示是随机器人和物体数指数增长**。后续 Lazy-DaSH（2024）用惰性思想进一步把规模翻倍、求解快三个数量级。
+> **核心方法（Motes, Chen, Bretl, Morales & Amato (2023, IEEE T-RO), "Hypergraph-based Multi-Robot Task and Motion Planning"；后续 DaSH 系列）**：把规划空间分解为三类元素——**单独的机械臂**（manipulator alone）、**单独的物体**（object）、**机械臂持有物体**（manipulator holding object）。用一张**超图 (hypergraph)** 组织：顶点是这些分解后的子空间，超弧 (hyperarc) 是子空间之间的转移（如"机械臂抓起物体" = 从"臂 + 物体"两个顶点转移到"臂持物体"一个顶点）。关键收益在规模——**超图顶点数随机器人数或物体数线性增长、超弧数随机器人数二次/物体数线性增长，而朴素图表示是随机器人和物体数指数增长**。后续 Lazy-DaSH（2024）用惰性思想进一步把规模翻倍、求解快三个数量级。
 
 为什么分解能避免指数爆炸？因为大部分时间机器人和物体是**解耦**的（臂没抓物体时，臂的运动和物体无关）——只有"抓 / 放"的瞬间才耦合。超图显式地把"解耦态"和"耦合态"分开表示，只在耦合态（持物）付高维代价，解耦态用低维子空间，于是总规模线性而非指数。
 
@@ -1887,7 +1887,7 @@ MultiRobotLayer.solve 的一次成功运行(三机器人收拾仓库, 含一个�
 
 **多机 TAMP 前沿（研究方向，近五年）**：
 - Sung, Shome & Stone (2024), "Asynchronous Task Plan Refinement for Multi-Robot Task and Motion Planning," *ICRA*. ⭐⭐⭐⭐ —— 异步精化（隐式时间 + 最小协调），本章 §7.3。
-- Motes, Sandström, Adams et al. (2022), "Hypergraph-based Multi-Robot Task and Motion Planning," *IEEE RA-L*（及后续 DaSH / Lazy-DaSH, 2024）. ⭐⭐⭐⭐ —— 超图分解，规模指数→线性，本章 §7.4。
+- Motes, Chen, Bretl, Morales & Amato (2023), "Hypergraph-based Multi-Robot Task and Motion Planning," *IEEE T-RO* 39(5):4166-4186（及后续 DaSH / Lazy-DaSH, 2024）. ⭐⭐⭐⭐ —— 超图分解，规模指数→线性，本章 §7.4。
 - "Conflict-Based Task and Motion Planning for Multi-Robot, Multi-Goal Problems" (2024), *ICRA*. ⭐⭐⭐⭐ —— 冲突基 TAMP，本章 §7.5。
 
 **时序逻辑下的分配与规划（CD 形式化）**：
@@ -1993,7 +1993,7 @@ solution = routing.SolveWithParameters(params)
 | CBBA | Choi-Brunet-How 2009 (IEEE T-RO 25(4)) | 收敛 $O(n_tD)$ 轮，50% 界（子模） |
 | CBS | Sharon et al. 2015 (AIJ 219) | 约束树 + 单体 A*，本章只对接 |
 | 异步精化 | Sung-Shome-Stone 2024 (ICRA) | hybrid CSP，隐式时间，优于同步 makespan |
-| 超图分解 | Motes et al. 2022 (IEEE RA-L) + Lazy-DaSH 2024 | 规模指数→线性 |
+| 超图分解 | Motes et al. 2023 (IEEE T-RO) + Lazy-DaSH 2024 | 规模指数→线性 |
 | 冲突基 TAMP | ICRA 2024 | CBS 思想用于多机多目标 TAMP |
 | STAP | Schillinger-Bürger-Dimarogonas 2018 (IJRR 37(7)) | LTL→Büchi，分解 + 团队搜索，约快 25% |
 | 实时反应式 STAP | Chen-Kan 2025 (IJRR) | 大规模异构在线 STAP |
