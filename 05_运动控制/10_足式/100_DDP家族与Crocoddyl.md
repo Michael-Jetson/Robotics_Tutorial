@@ -158,7 +158,7 @@ $$V_k(\mathbf{x}) = \min_{\mathbf{u}} \left[ l_k(\mathbf{x}, \mathbf{u}) + V_{k+
 
 ```
 时间线:
-1970 ─ Jacobson & Mayne ─ 发明 DDP(连续时间)
+1966 ─ Mayne ─ 提出 DDP(连续时间); 1970 ─ Jacobson & Mayne 出版专著
         │
 2002 ─ Todorov ─ 把最优控制用于生物运动控制(Nature Neuroscience)
         │

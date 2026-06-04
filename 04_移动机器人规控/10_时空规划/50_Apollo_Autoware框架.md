@@ -749,7 +749,7 @@ EM Planner 让 speed 立即用刚算的 path,正是这个道理。
 ### 历史:OBCA 进入 Apollo
 
 Open Space 的核心算法,正是 T3 §T3.3 讲的 OBCA。
-OBCA(Optimization-Based Collision Avoidance)由 Xiaojing Zhang、Alexander Liniger、Francesco Borrelli(UC Berkeley MPC Lab + ETH)提出(arXiv 1711.03449,后发表于 IEEE Transactions on Control Systems Technology, 2021, 29(3):972-983)——用凸优化的强对偶,把非凸、不可微的避障约束,精确重构成光滑可微的约束,使标准 NLP 求解器能解。
+OBCA(Optimization-Based Collision Avoidance)由 Xiaojing Zhang、Alexander Liniger、Francesco Borrelli(UC Berkeley MPC Lab + ETH)提出(arXiv 1711.03449,后发表于 IEEE Transactions on Control Systems Technology, 2020, 29(3):972-983)——用凸优化的强对偶,把非凸、不可微的避障约束,精确重构成光滑可微的约束,使标准 NLP 求解器能解。
 其面向泊车的版本 **H-OBCA**(Hierarchical OBCA,Zhang-Liniger-Sakai-Borrelli,CDC 2018)确立了"Hybrid A\* 出粗解 warm-start → OBCA 精修"的两段式管线。
 Apollo 把这套方法工程化进了 Open Space 模块:`OpenSpaceTrajectoryOptimizer` 这个 Task,内部用 Hybrid A\* 做搜索、用 OBCA 思路(在 Apollo 里叫 `DistanceApproachProblem`,基于 CasADi + Ipopt)做优化。
 Apollo 还做了一个变体 **TDR-OBCA**(Trust-region & Dual-relaxation OBCA),用信赖域和对偶松弛改善 OBCA 的求解稳定性和速度——这是 Apollo 在 Berkeley 原始 OBCA 基础上的工程改进。
@@ -1805,7 +1805,7 @@ Apollo 做 TDR-OBCA(信赖域 + 对偶松弛)是为了**改善求解的稳定性
 
 ## 延伸阅读
 
-**核心论文**:Fan et al., *Baidu Apollo EM Motion Planner*, arXiv 1807.08048 (2018)——Apollo on-lane 规划的奠基论文,EM 迭代 + DP+QP 的来源;Zhang, Liniger, Borrelli, *Optimization-Based Collision Avoidance*, T-CST 2021 29(3):972-983(OBCA,Apollo Open Space 的算法核心);Zhang et al., *Autonomous Parking Using Optimization-Based Collision Avoidance*, CDC 2018(H-OBCA,泊车两段式)。
+**核心论文**:Fan et al., *Baidu Apollo EM Motion Planner*, arXiv 1807.08048 (2018)——Apollo on-lane 规划的奠基论文,EM 迭代 + DP+QP 的来源;Zhang, Liniger, Borrelli, *Optimization-Based Collision Avoidance*, T-CST 2020 29(3):972-983(OBCA,Apollo Open Space 的算法核心);Zhang et al., *Autonomous Parking Using Optimization-Based Collision Avoidance*, CDC 2018(H-OBCA,泊车两段式)。
 
 **官方资源**:Apollo 仓库 `ApolloAuto/apollo`(Apache-2.0,中文文档 + Dreamview 仿真)、其 `modules/planning` 是研究工业规划架构最好的公开代码;Autoware Universe `autowarefoundation/autoware_universe`(Apache-2.0)及其 mkdocs 文档(规范完整,各 planning 模块都有详细说明)、AWSIM/Planning Simulator 仿真。
 
@@ -1892,7 +1892,7 @@ Clone 仓库、按官方文档搭仿真环境(Apollo Dreamview / Autoware Planni
 | Autoware Universe | 持续迭代,ROS 2 | Apache-2.0,严格分层 + pluginlib |
 | autoware_diffusion_planner | 2025 合并入 universe | 扩散端到端,ROS 2 工业栈 |
 | EM Planner 论文 | arXiv 1807.08048(2018) | Apollo on-lane 规划奠基 |
-| OBCA / H-OBCA | T-CST 2021 / CDC 2018 | Apollo Open Space 算法核心 |
+| OBCA / H-OBCA | T-CST 2020 / CDC 2018 | Apollo Open Space 算法核心 |
 | OSQP / Ipopt / CasADi | 稳定 | 各 QP/NLP 的求解底座 |
 
 > 版本随时间变化,落地前请以各项目官方仓库为准。

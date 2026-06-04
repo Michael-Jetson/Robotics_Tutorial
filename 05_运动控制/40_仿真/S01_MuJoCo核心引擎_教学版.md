@@ -147,8 +147,9 @@ MuJoCo 的设计哲学源自 Emanuel Todorov、Tom Erez、Yuval Tassa 在 2012 �
 理解 MuJoCo 的历史有助于理解它为什么在 2025-2026 年仍然是机器人 RL 的核心引擎。
 
 - **2012 年**：Emanuel Todorov 在 IROS 发表 MuJoCo 论文。当时的设计目标不是"做一个更快的游戏引擎"，而是"做一个适合模型预测控制的接触仿真器"。这个动机决定了凸优化路线。
-- **2012-2021 年**：MuJoCo 是闭源商业软件（年许可费约 \$500）。尽管如此，DeepMind 和 OpenAI 的多项里程碑工作（DM Control Suite、OpenAI Gym 的 MuJoCo 环境、Dactyl 灵巧手）都基于 MuJoCo，因为其接触精度是独一无二的。
-- **2021 年 10 月**：Google DeepMind 收购 Roboti LLC（Todorov 的公司），将 MuJoCo 完全开源（Apache 2.0）。这一事件直接催生了后续的 GPU 加速路线——开源使得社区可以基于 MuJoCo 的核心算法进行 JAX/Warp 重实现。
+- **2015-2021 年**：MuJoCo 通过 Roboti LLC 作为闭源商业软件销售（年许可费约 \$500）。尽管如此，DeepMind 和 OpenAI 的多项里程碑工作（DM Control Suite、OpenAI Gym 的 MuJoCo 环境、Dactyl 灵巧手）都基于 MuJoCo，因为其接触精度是独一无二的。
+- **2021 年 10 月**：Google DeepMind 收购 Roboti LLC（Todorov 的公司），将 MuJoCo 免费开放（预编译二进制包）。
+- **2022 年 5 月**：MuJoCo v2.2.0 完整源代码在 GitHub 开源（Apache 2.0）。这一事件直接催生了后续的 GPU 加速路线——开源使得社区可以基于 MuJoCo 的核心算法进行 JAX/Warp 重实现。
 - **2023 年底**：MuJoCo 3.0 发布，引入 MJX（JAX 后端），首次实现 GPU 加速。
 - **2025 年**：MuJoCo Warp 发布，Newton 物理引擎将 MuJoCo 的接触算法带入 NVIDIA 原生生态。MuJoCo Playground 荣获 RSS 2025 Outstanding Demo Paper Award。
 

@@ -15,7 +15,7 @@ M13 BehaviorTree.CPP 深度 知识体系
 ├── §6 错误恢复策略 ⭐⭐ ──── Retry/Fallback/Recovery SubTree
 ├── §7 Groot2 可视化 ⭐⭐⭐ ──── 编辑/监控/日志回放
 ├── §8 MTC 集成与工业案例 ⭐⭐⭐
-└── §9 前沿展望 ⭐⭐⭐⭐ ──── BT.CPP v5 / LLM 驱动 / 形式化验证
+└── §9 前沿展望 ⭐⭐⭐⭐ ──── BT.CPP 演进 / LLM 驱动 / 形式化验证
 ```
 
 ### 前置知识桥接
@@ -82,7 +82,7 @@ BehaviorTree.CPP 深度
 │   └── 编辑/监控/回放三种模式
 ├── M13.8 MTC 集成与工业案例 ⭐⭐⭐ ─── BT+MTC 协作
 │   └── PCB 装配/CNC 上下料/码垛/焊接案例
-└── M13.9 前沿展望 ⭐⭐⭐⭐ ─── BT.CPP v5/LLM/形式化验证
+└── M13.9 前沿展望 ⭐⭐⭐⭐ ─── BT.CPP 演进/LLM/形式化验证
 ```
 
 **阅读路径建议**：
@@ -199,7 +199,7 @@ BT 用**树状结构 + 异步 tick** 替代 FSM 的**图状结构 + 状态转移
 
 ### 历史背景 ⭐
 
-行为树最初由游戏 AI 领域发展而来——2004 年 Halo 2 的 AI 系统使用了与 BT 结构相似的层次化决策架构。2005 年 Damian Isla 在 GDC（游戏开发者大会）上介绍了该系统的设计思路，推动了 BT 概念的普及。此后 BT 被 Unreal Engine（2012）等主流游戏引擎采纳为标准 AI 架构。
+行为树最初由游戏 AI 领域发展而来——2004 年 Halo 2 的 AI 系统使用了与 BT 结构相似的层次化决策架构。2005 年 Damian Isla 在 GDC（游戏开发者大会）上介绍了该系统的设计思路，推动了 BT 概念的普及。此后 BT 被 Unreal Engine 4（2014）等主流游戏引擎采纳为标准 AI 架构。
 
 机器人领域的采用较晚。2014 年 Michele Colledanchise 和 Petter Ögren 将 BT 引入机器人控制，发表了理论分析论文并出版了专著 "Behavior Trees in Robotics and AI"（2018）。2018 年 Davide Faconti 在 Eurecat 启动了 BT.CPP 库的开发（与 IIT 的 Colledanchise 合作），2019 年后逐步成熟并被 ROS2 的 Nav2 导航栈采用为顶层任务编排框架，从此在 ROS 生态中广泛普及。
 
@@ -1943,24 +1943,30 @@ class WaitForOperator : public BT::StatefulActionNode {
 
 ---
 
-## M13.9 前沿展望：BT.CPP v5、LLM 驱动的 BT 生成与形式化等价性 ⭐⭐⭐⭐
+## M13.9 前沿展望：BT.CPP 演进、LLM 驱动的 BT 生成与形式化等价性 ⭐⭐⭐⭐
 
-前八节建立了行为树从原理到工程的完整知识链。本节将目光投向行为树生态的下一步演进方向——BT.CPP v5 的架构升级、LLM 与行为树的融合、以及行为树与状态机的形式化等价关系。
+前八节建立了行为树从原理到工程的完整知识链。本节将目光投向行为树生态的下一步演进方向——BT.CPP 4.x 系列的持续演进、LLM 与行为树的融合、以及行为树与状态机的形式化等价关系。
 
-### BT.CPP v5 预览
+### BT.CPP 4.x 演进方向
 
-BT.CPP v5 是 Davide Faconti 规划中的下一个大版本。虽然截至 2026 年 5 月尚未正式发布稳定版，但已公开的设计意图和早期 RFC 讨论揭示了几个重要方向：
+BT.CPP 由 Davide Faconti 主导开发，截至 2026 年初最新稳定版为 **4.9.0**（2026-02-11 发布）。从 v3 到 v4 的大版本跃迁（Faconti 在 ROSCon 2022 和 CppCon 2023 做过专题分享）引入了 Blackboard 作用域隔离、SubTree 远程化等重大改变。v4.x 系列持续活跃演进，近几个版本的关键进展如下：
 
-**预期特性**：
+**v4.x 近期演进**：
 
-| 特性 | 说明 | 影响 |
-|------|------|------|
-| **原生协程支持** | 用 C++20 coroutines 替代当前的 StatefulActionNode 模型 | 异步节点的写法将更简洁，不再需要手动管理 onStart/onRunning/onHalted 三个回调 |
-| **类型化 Blackboard** | 编译期检查 Port 类型匹配（当前是运行时 `std::any_cast`） | 把"Port 类型不匹配导致运行时崩溃"提前到编译期发现 |
-| **多线程 tick** | 支持在不同线程池中 tick 树的不同分支 | Parallel 节点可以真正并行执行，而非当前的逻辑串行 |
-| **改进的 XML 模式** | 更丰富的 XML 验证和代码生成工具 | 减少 XML 与 C++ 之间的不一致错误 |
+| 版本 | 关键特性 | 工程影响 |
+|------|----------|----------|
+| **4.6** | 全局 Blackboard `@` 前缀、Stamped Entry 时间戳、新 Decorator（SkipUnlessUpdated 等） | Blackboard 跨子树共享数据更便捷，条件节点可感知数据新鲜度 |
+| **4.7** | 自动向量类型转换器生成、PreconditionNode 改进 | 减少手动编写 `convertFromString` 特化的样板代码 |
+| **4.8** | 内存泄漏修复、ASAN/TSAN 线程安全加固 | 长时间运行的产线系统稳定性大幅提升 |
+| **4.9** | `TryCatch` 控制节点、修复 60+ issue | 错误恢复模式与 C++ 异常处理语义对齐，生产环境可靠性显著增强 |
 
-> **反事实推理**：如果 BT.CPP v5 实现了原生协程支持会怎样？当前写一个异步 BT Action（如"移动到目标位姿"）需要实现三个回调函数（onStart/onRunning/onHalted），开发者必须手动管理内部状态（goal 发送了吗？结果收到了吗？被中断了吗？）。有了协程，同一个逻辑可以写成线性代码：`co_await send_goal(); co_await wait_result(); return result;`——`co_await` 自动处理挂起和恢复，BT 框架自动处理 halt 时的协程取消。代码量可能减少 40-60%，逻辑也更清晰。
+**社区活跃讨论方向**（GitHub Discussions，尚未纳入正式路线图）：
+
+- **Blackboard 类型安全增强**：当前端口类型匹配依赖运行时 `std::any_cast`，社区讨论过编译期类型检查的可能性，但因 XML DSL 的动态本质，完整的编译期方案仍面临技术挑战
+- **异步模型改进**：C++20 协程是否能简化 `StatefulActionNode` 的三回调模式（onStart/onRunning/onHalted），是社区反复出现的话题，但尚无官方采纳计划
+- **数据流与生命周期管理**：Blackboard 条目的所有权和生命周期语义在复杂树中容易引发微妙 bug，改进提案仍在讨论阶段
+
+> **反事实推理**：如果 BT.CPP 未来引入原生协程支持会怎样？当前写一个异步 BT Action（如"移动到目标位姿"）需要实现三个回调函数（onStart/onRunning/onHalted），开发者必须手动管理内部状态（goal 发送了吗？结果收到了吗？被中断了吗？）。有了协程，同一个逻辑可以写成线性代码：`co_await send_goal(); co_await wait_result(); return result;`——`co_await` 自动处理挂起和恢复，BT 框架自动处理 halt 时的协程取消。代码量可能减少 40-60%，逻辑也更清晰。不过，这仍是社区探讨而非已确认的开发计划。
 
 ### LLM 驱动的行为树生成（LLM-driven BT Generation）
 
@@ -1970,10 +1976,9 @@ BT.CPP v5 是 Davide Faconti 规划中的下一个大版本。虽然截至 2026 
 
 | 工作 | 年份 | 方法 |
 |------|------|------|
-| SayCan (Ahn et al.) | 2022 | LLM 生成 skill 序列，不是 BT 结构 |
-| ProgPrompt (Singh et al.) | 2023 | LLM 生成 Python 程序，包含 if/while 控制流 |
-| LLM+BT (Lykov et al.) | 2024 | LLM 直接生成 BT XML，带 Retry/Fallback |
-| RoboTree | 2025 | LLM 生成 BT + 自动验证安全约束 |
+| SayCan (Ahn et al.) | 2022 | LLM 评估 skill 可行性并排序，生成 skill 序列（CoRL 2022） |
+| ProgPrompt (Singh et al.) | 2023 | LLM 生成 Python 程序，包含 if/while 控制流（ICRA 2023） |
+| LLM-BRAIn (Lykov et al.) | 2023 | LLM 直接生成 BT XML，带 Retry/Fallback（arXiv:2305.19352） |
 
 **设计动机**：手动编写 BT XML 需要机器人工程师同时理解任务语义和 BT 语法——这是一个瓶颈。如果非技术人员（工厂操作员）能用自然语言描述任务，LLM 自动生成 BT，将大幅降低机器人编程的门槛。
 
@@ -1992,7 +1997,7 @@ BT.CPP v5 是 Davide Faconti 规划中的下一个大版本。虽然截至 2026 
 **形式化等价的意义**：
 
 1. **安全关键系统**：FSM 有成熟的模型检测工具（如 SPIN、NuSMV），可以形式化验证"系统是否会进入危险状态"。BT 的形式化验证工具较少——但由于 BT→FSM 的等价转换存在，理论上可以先将 BT 转换为 FSM，再用 FSM 工具验证
-2. **CONVINCE 项目**（EU Horizon 2020 资助）正在开发 BT 专用的形式化验证工具链，目标是直接在 BT 上做性质验证（而非转换为 FSM）
+2. **CONVINCE 项目**（EU Horizon Europe 资助，Grant No. 101070227）正在开发 BT 专用的形式化验证工具链，目标是直接在 BT 上做性质验证（而非转换为 FSM）
 3. **实践意义**：等价性告诉我们"选择 BT 还是 FSM 不是能力问题，而是工程效率问题"——对于复杂任务，BT 的模块化结构让维护成本从 O(N^2) 降到 O(N)
 
 **BT→FSM 转换的复杂度爆炸**：
@@ -2028,7 +2033,7 @@ BT.CPP v5 是 Davide Faconti 规划中的下一个大版本。虽然截至 2026 
 | M13.6 错误恢复策略 | Retry/Fallback/Recovery SubTree 三种模式 | ⭐⭐ |
 | M13.7 Groot2 可视化 | 编辑/监控/日志回放三种模式 | ⭐⭐⭐ |
 | M13.8 MTC 集成与工业案例 | BT+MTC 层次关系、PCB 装配/CNC 上下料/码垛案例 | ⭐⭐⭐ |
-| M13.9 前沿展望 | BT.CPP v5 协程/LLM 驱动 BT 生成/形式化等价性 | ⭐⭐⭐⭐ |
+| M13.9 前沿展望 | BT.CPP 4.x 演进/LLM 驱动 BT 生成/形式化等价性 | ⭐⭐⭐⭐ |
 
 ## 累积项目：本章新增模块
 
@@ -2063,7 +2068,7 @@ mini_manip_ws/
 | Colledanchise & Ogren (2018) "Behavior Trees in Robotics and AI" | ⭐⭐⭐ | 理论基础专著 |
 | CONVINCE 项目 | ⭐⭐⭐⭐ | BT 形式化验证研究前沿 |
 | Iovino et al. (2022) "A Survey of BT in Robotics and AI" | ⭐⭐⭐ | 综述论文 |
-| Lykov et al. (2024) "LLM+BT" | ⭐⭐⭐⭐ | LLM 直接生成 BT XML 的前沿工作 |
+| Lykov et al. (2023) "LLM-BRAIn" | ⭐⭐⭐⭐ | LLM 直接生成 BT XML 的前沿工作 |
 
 ## 本章与后续章节的关系
 
@@ -2140,8 +2145,8 @@ mini_manip_ws/
 | 工具 | 版本 | 安装 | 许可证 |
 |------|------|------|--------|
 | BT.CPP v4 | 4.6.x | `apt install ros-${DISTRO}-behaviortree-cpp` | MIT |
-| BT.ROS2 | 最新 | `apt install ros-${DISTRO}-behaviortree-ros2` | MIT |
-| Groot2 | 2.x | `groot2` 可执行文件 (AppImage/snap) | 免费（GUI）|
+| BT.ROS2 | 最新 | `apt install ros-${DISTRO}-behaviortree-ros2` | Apache-2.0 |
+| Groot2 | 2.x | `groot2` 可执行文件 (AppImage) | 商业（学术免费）|
 | Nav2 BT 节点 | Humble/Jazzy | `apt install ros-${DISTRO}-nav2-behavior-tree` | Apache-2.0 |
 
 > **版本注意**：BT.CPP v3 和 v4 的 API 不兼容——v4 引入了 `SyncActionNode`/`StatefulActionNode` 替代 v3 的 `ActionNodeBase`。新项目应直接使用 v4。Nav2 在 Humble 中使用 v3，在 Jazzy/Kilted 中迁移到 v4。

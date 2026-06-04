@@ -254,7 +254,7 @@ $$
 
 ### 这一节解决什么问题
 
-理解了因子图的数学原理后，现在要学习如何用 GTSAM 库在 C++ 中构建和求解因子图。GTSAM（Georgia Tech Smoothing and Mapping）是由 Frank Dellaert 团队开发的开源库（GitHub 3.1k+ stars，C++17），它是 LIO-SAM、LINS、SC-LIO-SAM 等主流 SLAM 系统的后端核心。
+理解了因子图的数学原理后，现在要学习如何用 GTSAM 库在 C++ 中构建和求解因子图。GTSAM（Georgia Tech Smoothing and Mapping）是由 Frank Dellaert 团队开发的开源库（GitHub 3.2k+ stars，C++），它是 LIO-SAM、LINS、SC-LIO-SAM 等主流 SLAM 系统的后端核心。
 
 ### Key 与 Symbol：变量的身份标识
 

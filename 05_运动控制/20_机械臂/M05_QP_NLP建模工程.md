@@ -370,7 +370,7 @@ $$\mu_i^* (Gx^* - h)_i = 0 \quad (\text{互补松弛条件})$$
 
 #### 2.3.1 ADMM（Alternating Direction Method of Multipliers）——OSQP 的算法内核
 
-**历史起源**：ADMM 最早可追溯到 1975 年 Gabay 和 Mercier 的工作，但真正让它在工程界走红的是 2011 年 Boyd 等人的综述论文《Distributed Optimization and Statistical Learning via the Alternating Direction Method of Multipliers》。这篇论文展示了 ADMM 在分布式优化、信号处理和机器学习中的广泛应用。OSQP 团队（Stellato, Banjac, Goulart, Bemporad, Boyd, 2020）将 ADMM 专门适配到 QP 上，做了大量工程优化。
+**历史起源**：ADMM 最早可追溯到 1975 年 Glowinski 和 Marrocco 以及 1976 年 Gabay 和 Mercier 的独立工作，但真正让它在工程界走红的是 2011 年 Boyd 等人的综述论文《Distributed Optimization and Statistical Learning via the Alternating Direction Method of Multipliers》。这篇论文展示了 ADMM 在分布式优化、信号处理和机器学习中的广泛应用。OSQP 团队（Stellato, Banjac, Goulart, Bemporad, Boyd, 2020）将 ADMM 专门适配到 QP 上，做了大量工程优化。
 
 **核心思想**：将 QP 分裂为两个容易求解的子问题，交替迭代。ADMM 的精髓是"把一个难问题拆成两个容易的子问题"——一个处理目标函数（二次的，有闭式解），一个处理约束（投影到约束集，逐元素操作）。
 
@@ -455,7 +455,7 @@ HPIPM 的 Riccati:     O(N * n^3)    ← 线性于时域步数 N, 常数极小!
 
 #### 2.3.4 近端增广拉格朗日法——ProxQP 的算法内核
 
-**历史起源**：ProxQP（Bambade, El-Kazdadi, Justin, Carpentier, 2022）结合了增广拉格朗日法和近端算子理论。增广拉格朗日法由 Hestenes（1969）和 Powell（1969）独立提出，近端算子理论由 Moreau（1965）奠基。ProxQP 的创新在于将两者融合，并针对机器人 QP 的特点（中小规模、密集、高精度）做了系统优化。
+**历史起源**：ProxQP（Bambade, El-Kazdadi, Taylor, Carpentier, 2022）结合了增广拉格朗日法和近端算子理论。增广拉格朗日法由 Hestenes（1969）和 Powell（1969）独立提出，近端算子理论由 Moreau（1965）奠基。ProxQP 的创新在于将两者融合，并针对机器人 QP 的特点（中小规模、密集、高精度）做了系统优化。
 
 **核心思想**：在增广拉格朗日框架下，用近端算子平滑化 KKT 条件，使得即使在约束不满足的情况下也能稳定迭代：
 
