@@ -1061,7 +1061,7 @@ $$\begin{bmatrix} \mathbf{M} & -\mathbf{J}_c^T \\ \mathbf{J}_c & \mathbf{0} \end
 
 ### 54.6.4 CostModelResidual:残差式代价 ⭐⭐
 
-Crocoddyl 2.0 引入了 **ResidualModel** 抽象:
+Crocoddyl v1.8.0（2021 年 7 月）引入了 **ResidualModel** 抽象:
 
 ```
 代价 = 激活函数 ∘ 残差

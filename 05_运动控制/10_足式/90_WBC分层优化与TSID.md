@@ -125,7 +125,7 @@ TSID 核心公式 (53.5) ──→ 实时内存约束 (53.6)
 | MPC 预测步数 | 20-50 | 预测未来 0.5-1 秒 |
 | **全时域决策变量** | **1200-3000** | 60 $\times$ 20~50 |
 
-> 💡 **概念澄清**:全维优化不是不可能——Cafe-MPC (Li & Wensing, T-RO 2024) 就用全身动力学做 MPC。但它需要极其高效的求解器(定制 iLQR),而且预测步数受限。**分层是工程上更可扩展的方案**。
+> 💡 **概念澄清**:全维优化不是不可能——Cafe-MPC (Li & Wensing, T-RO 2025) 就用全身动力学做 MPC。但它需要极其高效的求解器(定制 iLQR),而且预测步数受限。**分层是工程上更可扩展的方案**。
 
 **历史视角**:控制分层不是新想法。Honda ASIMO (2000) 就已经使用了"步态规划 -> ZMP 控制 -> 关节伺服"的三层架构。但那时的 WBC 很简单——只是逆动力学,没有 QP 优化。现代 WBC 从 2010 年代开始引入 QP,代表工作包括:
 
@@ -226,7 +226,7 @@ TSID 核心公式 (53.5) ──→ 实时内存约束 (53.6)
 
 **Whole-Body MPPI (Rapuano et al., 2024)**:首次成功将基于采样的全身 MPC(Model-Predictive Path Integral, MPPI)部署到真实四足机器人上。与基于梯度的方法不同,MPPI 通过大量并行采样来搜索最优控制序列,天然适合 GPU 加速,且对非凸代价函数和接触不连续性更鲁棒。
 
-**Cafe-MPC (Li & Wensing, T-RO 2024)**:提出了级联保真度(Cascaded-Fidelity)策略——预测时域近端使用高保真全身模型,远端使用简化模型,在时域内实现模型精度的渐进退化。这种设计兼顾了近端精度和远端覆盖范围。
+**Cafe-MPC (Li & Wensing, T-RO 2025)**:提出了级联保真度(Cascaded-Fidelity)策略——预测时域近端使用高保真全身模型,远端使用简化模型,在时域内实现模型精度的渐进退化。这种设计兼顾了近端精度和远端覆盖范围。
 
 这些工作的共同趋势是:**传统的严格分层架构正在向"柔性分层"演进**——MPC 层开始使用越来越完整的模型,WBC 层的独立性在降低。但在当前(2026 年)的工程实践中,MPC + WBC 的分层架构仍然是主流方案,特别是在嵌入式硬件和产品级系统中。
 
@@ -1684,7 +1684,7 @@ IIT 的 `robotology/bipedal-locomotion-framework` (BLF) 为 iCub 人形机器人
 
 #### 53.11.2 近期重要进展（2024-2026）
 
-3. **Cafe-MPC / VWBC (Li & Wensing, T-RO 2024)**: 提出了**VWBC (Value-function-based WBC)**:用 MPC 反向扫描得到的 action-value 函数 $Q(\delta x, \delta u)$ 作为 WBC 的代价函数,消除了 WBC 层的手动调参需求。$Q$ 函数编码了长时域代价-到-走(cost-to-go)信息,WBC 直接最小化 $Q$ 函数展开,在全身动力学和不等式约束下求解。实验在 MIT Mini Cheetah 上实现了跑步空翻(barrel roll)。
+3. **Cafe-MPC / VWBC (Li & Wensing, T-RO 2025)**: 提出了**VWBC (Value-function-based WBC)**:用 MPC 反向扫描得到的 action-value 函数 $Q(\delta x, \delta u)$ 作为 WBC 的代价函数,消除了 WBC 层的手动调参需求。$Q$ 函数编码了长时域代价-到-走(cost-to-go)信息,WBC 直接最小化 $Q$ 函数展开,在全身动力学和不等式约束下求解。实验在 MIT Mini Cheetah 上实现了跑步空翻(barrel roll)。
 
 VWBC 的数学形式可以写成:
 

@@ -86,7 +86,7 @@ MPPI 从概念验证到开源库，主线由 Georgia Tech 的 Theodorou/Rehg 组
 | 2017 | Williams, Aldrich, Theodorou, *MPPI: From Theory to Parallel Computation* | JGCD 40(2):344 | **GPU 工程篇**：register / shared / global 三级内存层级下的 rollout kernel 设计，本章 §2.2 的主要依据 |
 | 2018 | Williams 等, *Information-Theoretic MPC: Theory and Applications to Autonomous Driving* | IEEE T-RO 34(6):1603–1622 | **信息论统一**：自由能–KL 对偶的完整推导（见 Ch1 §1.3），并扩展到非仿射动力学 |
 | 2019 | Goldfain, Drews, You 等, *AutoRally: An Open Platform for Aggressive Autonomous Driving* | IEEE CSM 39(1):26–55 | **完整硬件平台**：1/5 比例越野车 + 板载 GPU + ROS，因子图状态估计 + CNN 可行驶区分割 |
-| 2024 | Vlahov, Gibson, Gandhi, Williams, Theodorou, *MPPI-Generic: A CUDA Library for Stochastic Trajectory Optimization* | arXiv:2409.07563 | **统一 C++/CUDA 库**：模板元编程把 dynamics / cost / sampler / controller 四维解耦，本章 §2.3 的精读对象 |
+| 2024 | Vlahov, Gibson, Gandhi, Theodorou, *MPPI-Generic: A CUDA Library for Stochastic Trajectory Optimization* | arXiv:2409.07563 | **统一 C++/CUDA 库**：模板元编程把 dynamics / cost / sampler / controller 四维解耦，本章 §2.3 的精读对象 |
 
 这条线的内在逻辑很清晰：2016 先证明"GPU 上的 MPPI 能开真车"，2017 把 GPU 工程化讲透，2018 把理论根基补完整（即 Ch1），2024 把这一切沉淀成一个任何人都能用的开源库。本章基本沿着这条脉络展开——§2.1 的算法细节散见于 2016/2017，§2.2 的 GPU 来自 2017，§2.3 来自 2024。
 
