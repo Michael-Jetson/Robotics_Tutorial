@@ -778,7 +778,7 @@ $$V(x) = \sup\{w(x) : w \text{ 是次解}, w \le \bar{v}\}$$
 1. $V$ 的上半连续包 $V^*$ 是次解（次解族的上确界的 USC 包仍为次解——关键引理）
 2. $V$ 的下半连续包 $V_*$ 是上解（由 Perron 定义和比较原理推出）
 3. 由比较原理：$V^* \le V_*$（次解 $\le$ 上解）
-4. 又显然 $V_* \le V^*$，故 $V^* = V_* = V$ 连续，且同时为次解和上解
+4. 由定义直接得 $V_* \le V^*$，故 $V^* = V_* = V$ 连续，且同时为次解和上解
 
 **消失粘性验证**：$-\varepsilon\Delta V^\varepsilon + F(x, V^\varepsilon, \nabla V^\varepsilon) = 0$ 的古典解 $V^\varepsilon$ 在 $\varepsilon \to 0$ 时局部一致收敛于唯一黏性解 $V$。这证实了"黏性解"名称的合理性——它确实是消失粘性极限。
 
@@ -1224,7 +1224,7 @@ $$V^+(x,t) = \inf_u \sup_d J$$
 
 $$V^-(x,t) = \sup_d \inf_u J$$
 
-显然 $V^- \le V^+$（后选者有信息优势）。
+由构造直接得 $V^- \le V^+$（后选者有信息优势）。
 
 ### Isaacs 方程
 
@@ -1640,7 +1640,7 @@ $$V|_{\text{boundary}} = \Phi|_{\text{boundary}}, \quad \nabla V|_{\text{boundar
 $$\bar{V}(x) = \limsup_{\varepsilon \to 0, y \to x} V^\varepsilon(y) \quad \text{（上半连续包络）}$$
 $$\underline{V}(x) = \liminf_{\varepsilon \to 0, y \to x} V^\varepsilon(y) \quad \text{（下半连续包络）}$$
 
-Barles-Perthame 1987 证明：$\bar{V}$ 是次解、$\underline{V}$ 是上解。由比较原理 $\bar{V} \le \underline{V}$，但显然 $\underline{V} \le \bar{V}$，所以 $\bar{V} = \underline{V} = V$（唯一黏性解），即 $V^\varepsilon$ 局部一致收敛。
+Barles-Perthame 1987 证明：$\bar{V}$ 是次解、$\underline{V}$ 是上解。由比较原理 $\bar{V} \le \underline{V}$，但由次解/上解定义直接得 $\underline{V} \le \bar{V}$，所以 $\bar{V} = \underline{V} = V$（唯一黏性解），即 $V^\varepsilon$ 局部一致收敛。
 
 这个结果的工程意义：**只要你的数值方法满足稳定性条件（解有界）和一致性条件（局部逼近正确的方程），收敛就是自动保证的**——不需要额外的收敛率估计。
 
@@ -1770,6 +1770,20 @@ $$|\nabla V| = 1, \quad V|_{\partial\Omega} = 0$$
 最优增益：$u^* = -Px = -0.618x$，闭环极点：$-(1+P) = -1.618 < 0$（稳定）。
 
 > 有趣的是，$P = \frac{\sqrt{5}-1}{2}$ 正是黄金比例的倒数！
+
+---
+
+### 本章常见误解汇总
+
+| 误解 | 正确理解 |
+|------|---------|
+| HJB 方程总有光滑（古典）解 | 大多数非线性最优控制问题的值函数不光滑（特征线交叉、bang-bang 切换），必须在黏性解框架下理解 |
+| 黏性解是"近似解"或"弱意义下的次优解" | 黏性解是精确的最优值函数，"黏性"指的是解的定义方式（通过光滑测试函数的接触），而非解的精度 |
+| PMP 和 HJB 是两套独立理论 | 两者存在精确对偶：PMP 的协态 $\lambda(t) = \nabla V(x^*(t), t)$，HJB 的特征线就是 Hamilton 正则方程，PMP 是 HJB 沿最优轨迹的"截面" |
+| 数值求解 HJB 可以处理任意高维问题 | 传统网格方法（Level-Set）受维数灾难限制在 $d \le 6$；高维需借助 DeepReach 等神经网络逼近或降维技巧 |
+| 验证定理（Verification Theorem）对所有情况都适用 | 验证定理要求值函数 $V \in C^1$，而这恰恰在最需要的非光滑情况下失效；黏性解理论正是为填补这个缺口而发展 |
+| 消失粘性法 $-\varepsilon \Delta V$ 只是数值技巧 | 消失粘性法揭示了黏性解的物理本质——它是确定性系统的"零噪声极限"，与随机最优控制的联系是深层的（Fleming 1969） |
+| Isaacs 条件（$\max\min = \min\max$）对所有微分博弈都成立 | Isaacs 条件是额外假设，仅在 Hamiltonian 关于控制/扰动可分离或满足凸-凹结构时才成立；不满足时上/下值函数不同 |
 
 ---
 

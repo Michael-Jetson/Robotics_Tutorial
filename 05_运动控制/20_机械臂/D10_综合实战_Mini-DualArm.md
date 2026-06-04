@@ -12,6 +12,48 @@
 
 ---
 
+## 知识导航
+
+```
+本章知识结构全景：
+
+D10 综合实战——Mini-DualArm 从零搭建
+│
+├─ D10.1  系统架构设计 ⭐⭐                ← 顶层设计：模块划分与接口定义
+│         （Command Arbiter、三模式统一架构）
+├─ D10.2  阶段式开发路线 ⭐⭐              ← 工程方法：Alpha/Beta 路线 + 每日检查点
+├─ D10.3  MuJoCo 仿真环境搭建 ⭐⭐        ← 基础设施：DualFrankaEnv 完整实现
+│         （actuator 映射、type 校验、PD 增益）
+├─ D10.4  MoveIt2 集成验证 ⭐⭐            ← 模式 1：MoveIt2 规划 + 执行
+├─ D10.5  Object Impedance 双臂搬运 ⭐⭐⭐ ← 模式 2：Grasp Matrix 力分配
+│         （前馈补偿、三阶段调参法）
+├─ D10.6  遥操作数据采集 ⭐⭐              ← 数据管线：ALOHA-HDF5 + canonical adapter
+├─ D10.7  ACT 策略训练与部署 ⭐⭐⭐        ← 模式 3：学习型策略
+│         （LeRobot ACTConfig、训练流程）
+├─ D10.8  三方法性能对比 ⭐⭐⭐            ← 评估框架：Benchmark 类 + 5 项指标
+│         （MoveIt2 vs Impedance vs ACT）
+├─ D10.9  开源项目对比矩阵 ⭐⭐            ← 生态视野：ALOHA/LeRobot/robosuite 对比
+├─ D10.10 Troubleshooting 手册 ⭐⭐        ← 工程实用：50+ 条按四类分组
+├─ D10.11 Docker/版本兼容 ⭐⭐             ← 部署保障：可复现环境
+└─ D10.12 Handover 与长期维护 ⭐⭐         ← 工程文化：交接清单与 CI/CD
+```
+
+**推荐阅读路径**：
+- **首次学习（推荐）**：D10.1 → D10.2 → D10.3 → D10.4 → D10.5 → D10.6 → D10.7 → D10.8 → D10.10（按阶段式开发顺序）
+- **快速搭建环境**：D10.1 → D10.3 → D10.4（最小可运行系统）
+- **学习型策略方向**：D10.3 → D10.6 → D10.7 → D10.8（从数据采集到策略部署）
+- **工程参考/调试**：D10.10 → D10.11 → D10.12（Troubleshooting + 部署 + 维护）
+- **项目汇报/对比**：D10.8 → D10.9（性能评估 + 生态对比）
+
+**预计阅读时间**：
+| 模式 | 时间 | 说明 |
+|------|------|------|
+| 精读（含动手实现） | 20-30 小时 | 逐节阅读 + 搭建完整 Mini-DualArm 系统 |
+| 速读（仅理论和代码） | 6-8 小时 | 阅读架构设计和核心代码，跳过部署细节 |
+| 速查（查表参考） | 30-45 分钟 | 仅查阅 Troubleshooting 手册、性能对比表、版本兼容表 |
+
+---
+
 ## 前置自测 ⭐
 
 > 📋 **答不出 >= 3 题 → 先回前置章节复习，本章是综合实战，需要全面的前置知识**
@@ -1148,6 +1190,8 @@ def hdf5_frame_to_lerobot(h5, t):
 from lerobot.configs.types import FeatureType, PolicyFeature
 from lerobot.policies.act.modeling_act import ACTPolicy
 from lerobot.policies.act.configuration_act import ACTConfig
+# 注意：以下 API 基于 LeRobot v0.5.x，LeRobot 项目更新活跃，
+# ACTConfig 的字段名和类路径可能随版本变化，请查阅当前版本文档。
 
 # 配置
 config = ACTConfig(
@@ -1554,7 +1598,9 @@ Step 5: 全速 + 数据采集 + 策略部署
 
 ## D10.9 开源参考项目详细对比 ⭐⭐
 
-| 项目 | Stars | 与本项目关系 | 精读文件 | 优势 | 局限 |
+> Stars 数据截至 2026-01，实际数字随时间增长，仅供量级参考。
+
+| 项目 | Stars（截至 2026-01） | 与本项目关系 | 精读文件 | 优势 | 局限 |
 |------|-------|------------|---------|------|------|
 | tonyzhaozh/aloha | ~1200 | 遥操作 + ACT 原始实现 | `robot_utils.py`, `record_episodes.py` | 端到端验证，社区活跃 | Dynamixel 限定，6-DOF |
 | huggingface/lerobot | ~8000+ | 数据格式 + 训练框架 | `policies/act/`, `datasets/` | 标准化数据格式，多策略 | 实时部署支持弱 |
@@ -1758,18 +1804,217 @@ services:
 
 ---
 
+## D10.9 跨章综合练习与能力验证 ⭐⭐⭐
+
+### 综合练习 1：端到端双臂系统搭建
+
+**目标**：从零搭建一个完整的双臂协同搬运系统，覆盖 D01-D10 全部知识。
+
+**任务分解**：
+
+| 阶段 | 任务 | 预计时间 | 涉及章节 |
+|------|------|---------|---------|
+| 1 | 用 Xacro 创建双 Franka URDF（左右 prefix） | 2h | D09.1, P01 |
+| 2 | 配置 SRDF（left_arm / right_arm / both_arms 三个 planning group） | 1h | D09.2 |
+| 3 | 搭建 MuJoCo 仿真环境（双臂 + 桌面 + 目标物体） | 3h | D10.3, P02 |
+| 4 | 配置 ros2_control（14D JTC 方案） | 2h | D09.6 |
+| 5 | 实现 Object Impedance 双臂搬运控制器 | 4h | D03 |
+| 6 | 集成 MoveIt2 规划（pick-lift-transport-place） | 3h | D09.3-D09.5 |
+| 7 | 实现 GELLO 式遥操作并采集 50 条 episode | 3h | D08 |
+| 8 | 用 ACT 训练搬运策略（100 epoch） | 2h（GPU 训练） | D04 |
+| 9 | 部署 ACT 策略并与 MoveIt2 方案对比 | 2h | D10.7 |
+| 10 | 撰写性能对比报告 | 2h | D10.8 |
+
+**验收标准**：
+- 仿真环境稳定运行 1000 步无崩溃
+- MoveIt2 方案搬运成功率 $> 80\%$
+- ACT 策略搬运成功率 $> 60\%$（50 条训练数据下的合理预期）
+- 性能对比报告包含定量指标（成功率、耗时、力矩峰值）
+
+### 综合练习 2：模式切换状态机
+
+**目标**：实现一个 ROS2 Lifecycle 管理器，支持三种操作模式的无缝切换。
+
+**核心挑战**：模式切换时必须保证（1）无"控制空窗期"（机器人不会因无控制而下落）；（2）新模式启动时的初始目标与当前状态一致（不会跳变）。
+
+```python
+# 模式切换的核心安全协议
+class ModeTransitionProtocol:
+    """
+    模式切换安全协议：
+    1. 新模式预加载（但不激活）
+    2. 旧模式输出渐变到 hold_position 模式
+    3. 新模式从当前 hold_position 状态启动
+    4. 旧模式卸载
+    
+    整个过程中，机器人始终处于某种控制之下。
+    """
+
+    def __init__(self, controller_manager):
+        self.cm = controller_manager
+        self.transition_timeout = 2.0  # 秒
+        self.hold_controller = "joint_state_broadcaster"
+
+    async def switch_mode(self, from_mode, to_mode):
+        """安全切换操作模式"""
+        import asyncio
+
+        # Step 1: 激活 hold 控制器（保持当前位置）
+        await self.cm.switch_controller(
+            activate=[self.hold_controller],
+            deactivate=[from_mode],
+            strictness=1  # BEST_EFFORT
+        )
+
+        # Step 2: 等待稳定（500ms）
+        await asyncio.sleep(0.5)
+
+        # Step 3: 读取当前关节状态作为新模式的初始目标
+        current_state = await self.cm.get_joint_states()
+
+        # Step 4: 配置新模式的初始状态
+        await self.configure_initial_state(to_mode, current_state)
+
+        # Step 5: 激活新模式
+        await self.cm.switch_controller(
+            activate=[to_mode],
+            deactivate=[self.hold_controller],
+            strictness=1
+        )
+
+        return True
+```
+
+### 综合练习 3：双臂系统的性能基准测试
+
+**目标**：建立一套标准化的双臂操作性能评估框架。
+
+**评估指标体系**：
+
+| 类别 | 指标 | 计算方法 | 目标值 |
+|------|------|---------|--------|
+| **成功率** | Task Success Rate | 成功次数 / 总尝试次数 | $> 80\%$ |
+| **效率** | Task Completion Time | 从开始到物体放置稳定的时间 | $< 15\text{s}$ |
+| **平滑度** | Jerk Norm | $\|\dddot{q}\|_2$ 的时间平均值 | $< 100 \text{ rad/s}^3$ |
+| **安全性** | Max Effort Ratio | $\max(\tau / \tau_{limit})$ | $< 0.8$ |
+| **协调度** | Sync Error | $\|x_{left} - x_{right} - x_{desired\_offset}\|$ | $< 5\text{ mm}$ |
+| **鲁棒性** | Success under Perturbation | 加 DR 后的成功率下降幅度 | $< 15\%$ |
+
+**评估协议**：
+
+1. 每种方法运行 50 次独立试验
+2. 记录完整的关节轨迹和力矩数据
+3. 对比三种方法（MoveIt2 / Impedance / ACT）
+4. 用 box plot 展示结果分布
+
+```python
+import numpy as np
+from dataclasses import dataclass, field
+
+@dataclass
+class EpisodeMetrics:
+    """单次 episode 的评估指标"""
+    success: bool = False
+    completion_time: float = 0.0
+    max_effort_ratio: float = 0.0
+    mean_jerk: float = 0.0
+    sync_error_mean: float = 0.0
+    sync_error_max: float = 0.0
+
+
+def compute_jerk(joint_positions, dt):
+    """
+    计算关节 jerk（位置的三阶导数）。
+    
+    Args:
+        joint_positions: (T, n_joints) 时间序列
+        dt: 采样周期
+    Returns:
+        mean_jerk: 平均 jerk 范数
+    """
+    vel = np.diff(joint_positions, axis=0) / dt
+    acc = np.diff(vel, axis=0) / dt
+    jerk = np.diff(acc, axis=0) / dt
+    jerk_norms = np.linalg.norm(jerk, axis=1)
+    return float(np.mean(jerk_norms))
+
+
+def compute_sync_error(left_ee_positions, right_ee_positions,
+                       desired_offset):
+    """
+    计算双臂同步误差：左右末端的相对偏移与期望偏移的差。
+    
+    Args:
+        left_ee_positions: (T, 3) 左臂末端位置序列
+        right_ee_positions: (T, 3) 右臂末端位置序列
+        desired_offset: (3,) 期望相对偏移（如物体宽度方向）
+    Returns:
+        mean_error, max_error
+    """
+    actual_offset = left_ee_positions - right_ee_positions
+    errors = np.linalg.norm(
+        actual_offset - desired_offset[np.newaxis, :], axis=1)
+    return float(np.mean(errors)), float(np.max(errors))
+```
+
+> **⚠️ 陷阱：评估时的随机性控制**
+>
+> 每种方法的 50 次试验必须使用**相同的初始条件集**（相同的物体初始位置、相同的随机种子）。如果不控制初始条件，方法间的差异可能被初始条件的随机性淹没。MuJoCo 通过 `mj_resetData()` 后设置固定的 `data.qpos` 来控制初始状态；在加入域随机化时，使用固定的随机种子序列。
+
+---
+
+## 本章常见误解汇总
+
+| 误解 | 正确理解 |
+|------|---------|
+| "双臂就是两个单臂独立控制" | 双臂协同操作需要**共享物体级别的约束**：内力控制、同步时序、碰撞避让。两个独立控制器无法保证物体不掉落 |
+| "MoveIt2 的 both_arms 组可以完美协调" | MoveIt2 的 both_arms 在**关节空间**做 14D 联合规划，但不直接建模物体约束。对于共持操作，仍需自定义约束或后处理 |
+| "ACT 策略训练数据越多越好" | ACT 对数据**质量**比数量更敏感。50 条高质量示范往往比 200 条低质量示范效果好。关键是示范的一致性和任务覆盖度 |
+| "遥操作采集只是记录关节角" | 完整的遥操作采集需要同步记录：关节状态、图像帧、夹爪状态、时间戳，且所有数据的**时间对齐**精度要求在 $< 20\text{ ms}$ |
+| "Docker 容器会增加控制延迟" | 使用 `--network=host` 模式时，ROS2 DDS 通信不经过容器网络栈，延迟增加可忽略（$< 0.1\text{ ms}$）。GPU 渲染的延迟主要来自 CUDA context 初始化，与 Docker 无关 |
+| "仿真中成功率高=真机也行" | 仿真到真机的成功率衰减通常在 10-30%。主要原因是接触动力学差异（摩擦、刚度）和感知噪声。必须通过域随机化和渐进部署来缩小 gap |
+
+---
+
 ## 本章小结
 
-| 知识点 | 核心内容 | 难度 | 综合的前置章节 |
-|--------|---------|------|-------------|
-| 系统架构 | 三模式统一设计、微服务类比 | ⭐⭐ | D01-D09 全部 |
-| 环境搭建 | MuJoCo + ros2_control 桥接 | ⭐⭐ | D09.7, P02 |
-| MoveIt2 集成 | 双臂配置验证与规划测试 | ⭐⭐ | D09.1-D09.6 |
-| Object Impedance | 双臂共持搬运、内力控制 | ⭐⭐⭐ | D03 力控 |
-| 遥操作采集 | GELLO 式镜像 + LeRobot 录制 | ⭐⭐ | D08 |
-| ACT 部署 | 训练 → 推理节点 → 部署 | ⭐⭐⭐ | D04, D08 |
-| 性能对比 | 三方法定量评估框架 | ⭐⭐ | — |
-| Docker/版本兼容 | Humble→Jazzy 迁移、Docker Compose 部署 | ⭐⭐ | — |
+### 术语速查表
+
+| 术语 | 英文 | 一句话定义 |
+|------|------|-----------|
+| Object Impedance | Object Impedance Control | 双臂在物体空间定义阻抗，同时控制物体运动和内力 |
+| 内力回路 | Internal Force Loop | 控制双臂施加在物体上的挤压力（不影响物体运动的力） |
+| GELLO | GELLO Teleoperation | 关节镜像式遥操作方案，使用与目标机器人同构的低成本臂 |
+| ACT | Action Chunking with Transformers | 用 Transformer 预测动作序列块的模仿学习方法 |
+| LeRobot | LeRobot Data Format | Hugging Face 定义的机器人学习数据标准格式 |
+| MTC | MoveIt Task Constructor | MoveIt2 的多阶段任务编排框架 |
+| both_arms | both_arms Planning Group | SRDF 中定义的 14D 联合规划组（左臂 7D + 右臂 7D） |
+
+### 知识点总表
+
+| 编号 | 知识点 | 核心内容 | 难度 | 综合的前置章节 |
+|------|--------|---------|------|-------------|
+| 1 | 系统架构 | 三模式统一设计、微服务类比 | ⭐⭐ | D01-D09 全部 |
+| 2 | 环境搭建 | MuJoCo + ros2_control 桥接 | ⭐⭐ | D09.7, P02 |
+| 3 | MoveIt2 集成 | 双臂配置验证与规划测试 | ⭐⭐ | D09.1-D09.6 |
+| 4 | Object Impedance | 双臂共持搬运、内力控制 | ⭐⭐⭐ | D03 力控 |
+| 5 | 遥操作采集 | GELLO 式镜像 + LeRobot 录制 | ⭐⭐ | D08 |
+| 6 | ACT 部署 | 训练 → 推理节点 → 部署 | ⭐⭐⭐ | D04, D08 |
+| 7 | 性能对比 | 三方法定量评估框架 | ⭐⭐ | — |
+| 8 | Docker/版本兼容 | Humble→Jazzy 迁移、Docker Compose 部署 | ⭐⭐ | — |
+| 9 | 安全模式切换 | Lifecycle 管理、hold 控制器过渡、初始状态同步 | ⭐⭐ | D10.1 |
+| 10 | 性能基准测试 | 标准化评估指标体系（成功率/平滑度/安全性/协调度） | ⭐⭐ | D10.9 |
+
+## 本章常见误解汇总
+
+| 误解 | 正确理解 |
+|------|---------|
+| "综合实战就是把代码拼起来" | 系统集成的难度在于接口匹配、时序协调、错误传播 |
+| "ACT 成功率低一定是训练数据不够" | 90% 的失败根因在底层环境（关节映射/PD 增益/接触参数） |
+| "三种模式可以同时发送指令" | 必须通过 Command Arbiter 仲裁，防止多源指令竞争 |
+| "Object Impedance 不需要力传感器" | 刚性物体内力闭环需要 F/T 传感器或仿真接触 wrench |
+| "仿真中调好的参数真机直接可用" | sim-to-real gap 需要真机低速验证 + 参数微调 |
+| "Handover 只需要控制夹爪开闭时间" | 交接点选择（操作性最大化）和力反馈触发是关键 |
 
 ## 累积项目：本章是终点
 
@@ -1789,6 +2034,28 @@ D10: 综合实战 ✓
   └─ 三方法性能对比报告 ✓
 ```
 
+## 符号表
+
+| 符号 | 含义 | 首次出现 |
+|------|------|---------|
+| $\mathbf{q}$ | 14D 关节角度向量（左 7 + 右 7） | D10.3 |
+| $K_o$ | 物体空间阻抗刚度矩阵 (N/m, Nm/rad) | D10.5 |
+| $D_o$ | 物体空间阻抗阻尼矩阵 | D10.5 |
+| $f_{\text{int}}$ | 内力标量 (N)，双臂挤压力 | D10.5 |
+| $G$ | Grasp Matrix，抓取矩阵 (6x12) | D10.5 |
+| $\mathbf{p}_h$ | Handover 交接点位置 (m) | D10.12 |
+| $w_i(\mathbf{p})$ | 臂 $i$ 在点 $\mathbf{p}$ 处的 Yoshikawa 操作性指数 | D10.12 |
+| RMS Jerk | 轨迹平滑度指标 (rad/$\text{s}^3$) | D10.8 |
+
+## 本章与后续章节的关系
+
+| 后续方向 | 关系 | 扩展内容 |
+|---------|------|---------|
+| 足式机器人方向 | 方法论复用 | Object Impedance 框架适用于足式/手-脚协调 |
+| VLA 方向 | 策略升级 | ACT 可替换为 VLA（视觉-语言-动作）模型 |
+| 人形机器人方向 | 系统架构复用 | CRISP 架构 (P02.6) 直接适用于人形双臂 |
+| 工业部署 | 安全扩展 | 需增加 ISO 10218 合规的安全层 |
+
 ## 延伸阅读
 
 | 资源 | 难度 | 说明 |
@@ -1798,6 +2065,14 @@ D10: 综合实战 ✓
 | Cadena et al. (2025) "LeRobot: State-of-the-art Machine Learning for Real-World Robotics" | ⭐⭐ | 数据 + 训练框架 |
 | robosuite TwoArmLift documentation | ⭐⭐⭐ | 双臂 RL 环境的标准参考 |
 | Siciliano & Khatib (2016) "Springer Handbook of Robotics", Ch. 30 Dual-Arm Manipulation | ⭐⭐⭐⭐ | 双臂协作的经典理论 |
+| RoboTwin Dual-Arm Collaboration Challenge (CVPR 2025) | ⭐⭐⭐ | 双臂协作基准测试竞赛，包含标准化评估协议 |
+| Agility A2 Dual-Arm Research Platform | ⭐⭐ | 基于 OpenArm 的双臂研究平台，ROS2 原生支持 |
+
+### 研究实践建议
+
+- **初学者**（第 1 周）：先独立运行 MoveIt2 双臂示例（D09 的基础配置），确保环境正常
+- **进阶**（第 2 周）：搭建 MuJoCo 仿真环境并实现 Object Impedance 搬运，这是双臂系统的核心能力
+- **高级**（第 3 周）：完成遥操作采集、ACT 训练和三方法对比实验，形成完整的实验报告
 
 ## 🔧 故障排查手册
 

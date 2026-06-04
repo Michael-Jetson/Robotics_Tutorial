@@ -711,7 +711,7 @@ $$\text{prox}_{\lambda\|\cdot\|_*}(V) = U \cdot \text{diag}((\sigma_i - \lambda)
 
 1. 从软阈值公式出发，用 Moreau 分解（下一节）推导 $\ell_\infty$ 球投影的公式。
 2. 验证：对 $v = (3, -1, 0.5)^\top$ 和 $\lambda = 1$，手动计算 $\text{prox}_{\lambda\|\cdot\|_1}(v)$ 和 $\text{prox}_{\lambda\|\cdot\|_2}(v)$。
-3. 实现 SVT 并对随机矩阵验证：$\text{prox}_{\lambda\|\cdot\|_*}(V)$ 的奇异值确实是 $(σ_i - λ)_+$。
+3. 实现 SVT 并对随机矩阵验证：$\text{prox}_{\lambda\|\cdot\|_*}(V)$ 的奇异值确实是 $(\sigma_i - \lambda)_+$。
 
 ---
 
@@ -1417,12 +1417,12 @@ $$x_{k+1} = x_k + y_{k+1} - \text{prox}_f(x_k)$$
 ### 算子分裂方法族谱
 
 ```
-单调包含 0 ∈ (A + B)(x)
+单调包含 0 in (A + B)(x)
 ├── Forward-Backward (A Lipschitz, B maximal monotone)
-│   ├── Proximal Gradient (A = ∇f, B = ∂g)
-│   │   ├── ISTA (g = λ‖·‖₁)
+│   ├── Proximal Gradient (A = grad f, B = subdiff g)
+│   │   ├── ISTA (g = lam*||x||_1)
 │   │   └── FISTA (加速版)
-│   └── 投影梯度法 (g = δ_C)
+│   └── 投影梯度法 (g = delta_C)
 ├── Douglas-Rachford (A, B 都是 maximal monotone)
 │   └── ADMM (对偶版本)
 ├── Peaceman-Rachford (Douglas-Rachford 的"全步"版)
@@ -1616,6 +1616,21 @@ $$\nabla \text{prox}_f(v) = (I + \nabla^2 f(\text{prox}_f(v)))^{-1}$$
 
 ---
 
+## 本章常见误解汇总
+
+| 误解 | 正确理解 |
+|------|---------|
+| "共轭的共轭一定回到原函数" | $f^{**} = f$ 仅当 $f$ 是 proper + closed + convex 时成立。非凸 $f$ 的 $f^{**}$ 只是 $f$ 的闭凸包 |
+| "共轭函数和 proximal 算子是一回事" | 共轭 $f^*$ 是函数变换（输入函数，输出函数），proximal 是点映射（输入点，输出点）。二者通过 Moreau 分解联系但概念不同 |
+| "PPO 的 proximal 就是 Moreau 意义的 prox" | PPO 的"proximal"来自 KL trust region / clipped surrogate，与 Moreau-Yosida proximal 算子没有直接数学关系 |
+| "范数和范数平方的 prox 差不多" | $\text{prox}_{\lambda\|\cdot\|_2}$ 是块软阈值（有死区），$\text{prox}_{\lambda\|\cdot\|^2/2}$ 是简单缩放（无死区）。混淆两者是 ADMM 实现中最常见的 bug |
+| "prox 没有闭式解就不能用近端方法" | 很多没有闭式 prox 的函数可以用 Newton 法在 3-5 步内求解 prox 子问题（因为子问题强凸）。关键是 prox 代价相对于梯度代价的比值 |
+| "强凸和光滑是两个独立概念" | 共轭变换揭示了深刻的对偶关系：$f$ $\mu$-强凸 $\Leftrightarrow$ $f^*$ $1/\mu$-光滑。条件数在共轭下不变 |
+| "Moreau 包络改变了最优解" | Moreau 包络 $M_f^\lambda$ 与原函数 $f$ 有相同的最小值点和最小值。它只是把函数"光滑化"了，没有改变优化的目标 |
+| "ADMM 是凭空发明的算法" | ADMM 等价于 Douglas-Rachford splitting 作用在对偶问题上（Eckstein-Bertsekas 1992）。理解这个等价性是理解 ADMM 收敛的关键 |
+
+---
+
 ## 本章小结
 
 | 概念 | 核心陈述 | 难度 | 关键应用 |
@@ -1659,9 +1674,9 @@ $$\nabla \text{prox}_f(v) = (I + \nabla^2 f(\text{prox}_f(v)))^{-1}$$
 │   └── 不动点解释 → 算法设计出发点
 ├── Moreau 理论 (§2.6-2.7)
 │   ├── Moreau 包络 → 通用光滑化 / GNC
-│   ├── 梯度公式 → (v - prox)/λ
-│   ├── Moreau 分解 → prox_f + prox_{f*} = id
-│   └── Infimal 卷积 → (f□g)* = f* + g*
+│   ├── 梯度公式 $\nabla M_f^\lambda(v) = (v - \text{prox}_{\lambda f}(v))/\lambda$
+│   ├── Moreau 分解 $\text{prox}_f(v) + \text{prox}_{f^*}(v) = v$
+│   └── Infimal 卷积 $(f \square g)^* = f^* + g^*$
 ├── 收敛理论 (§2.8)
 │   ├── Firmly nonexpansive → prox 的核心性质
 │   ├── Averaged operator → Krasnosel'skii-Mann
@@ -2003,5 +2018,22 @@ log-sum-exp $f(x) = \log\sum e^{x_i}$ 是概率论中 "自由能" 的离散版�
 4. **Natural gradient**：mirror descent（Bregman proximal）在 Fisher 信息度量下做策略优化
 
 **反事实推理**：如果没有 proximal 理论，深度学习中的这些技术就缺乏理论保证。例如，为什么 $\ell_1$ 正则化训练能产生稀疏网络？答案是 proximal gradient（ISTA）的收敛性 + 软阈值的稀疏性质——两者都是本章建立的理论。
+
+### 符号表
+
+| 符号 | 含义 | 首次出现 |
+|------|------|---------|
+| $f^*(y)$ | $f$ 的 Legendre-Fenchel 共轭函数 | §2.1 |
+| $\partial f(x)$ | $f$ 在 $x$ 处的次微分（次梯度集合） | §前置自测 |
+| $\sigma_C(y)$ | 凸集 $C$ 的支撑函数 $\sup_{x \in C}\langle y, x \rangle$ | §前置自测 |
+| $\delta_C(x)$ | 凸集 $C$ 的指示函数（$x \in C$ 时为 $0$，否则 $+\infty$） | §2.1（例 3） |
+| $\operatorname{prox}_f(v)$ | $f$ 的 proximal 算子 $\arg\min_x [f(x) + \frac{1}{2}\|x-v\|^2]$ | §2.4 |
+| $M_f^\lambda(v)$ | $f$ 的 Moreau 包络（Moreau-Yosida 正则化） | §2.6 |
+| $\mu$ | 强凸参数 | §2.3 |
+| $L$ | Lipschitz 光滑参数 | §2.3 |
+| $\kappa$ | 条件数 $\kappa = L / \mu$ | §2.3 |
+| $\mathcal{S}_\lambda(\cdot)$ | 软阈值算子 $\operatorname{prox}_{\lambda\|\cdot\|_1}$ | §2.5 |
+| $f^{**}$ | $f$ 的双共轭（二次 Legendre-Fenchel 变换） | §2.2 |
+| $\rho$ | ADMM 的惩罚参数 | §ADMM 收敛诊断 |
 
 ---

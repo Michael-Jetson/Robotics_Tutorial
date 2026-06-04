@@ -2,6 +2,38 @@
 
 # M13 BehaviorTree.CPP 深度
 
+### 本章知识导航
+
+```
+M13 BehaviorTree.CPP 深度 知识体系
+│
+├── §1 BT vs FSM ⭐⭐ ──── 本质差异与选型决策
+├── §2 异步 Ticking ⭐⭐ ──── 三态语义、四种节点、Reactive
+├── §3 Blackboard + Port ⭐⭐ ──── 类型安全数据流
+├── §4 XML DSL 与工厂 ⭐⭐ ──── 行为与实现分离
+├── §5 ROS2 Action 集成 ⭐⭐ ──── RosActionNode 基类
+├── §6 错误恢复策略 ⭐⭐ ──── Retry/Fallback/Recovery SubTree
+├── §7 Groot2 可视化 ⭐⭐⭐ ──── 编辑/监控/日志回放
+├── §8 MTC 集成与工业案例 ⭐⭐⭐
+└── §9 前沿展望 ⭐⭐⭐⭐ ──── BT.CPP v5 / LLM 驱动 / 形式化验证
+```
+
+### 前置知识桥接
+
+**回顾设计模式**：Composite Pattern 用统一接口处理叶子和容器节点——BT 的树状结构正是 Composite Pattern 的经典应用。BT.CPP 的 `TreeNode` 基类统一了 Action/Condition/Control/Decorator 四种节点。
+
+**回顾 ROS2 Action**：Action 由 Goal/Feedback/Result 三部分组成，支持长时间异步任务。BT.CPP 的 `RosActionNode` 将 BT 的 RUNNING 状态映射到 Action 的 Feedback 阶段，SUCCESS/FAILURE 映射到 Result。
+
+### 预计阅读时间
+
+| 模式 | 时间 | 适合人群 |
+|------|------|---------|
+| 速查 | 30 分钟 | 只需了解 BT vs FSM 的选型 |
+| 精读 | 4-5 小时 | 需要掌握 BT.CPP v4 的完整 API |
+| 精读 + 实践 | 8 小时 | 需要编写自定义 BT Action 并集成 ROS2 |
+
+---
+
 ## 前置自测
 
 📋 **前置自测**（答不出 $\ge$ 2 题 → 先回 `02_C++基础与进阶/10_C++语言核心` / `02_C++基础与进阶/30_软件工程` / `02_C++基础与进阶/50_ROS2工程化` 复习）
@@ -21,6 +53,64 @@
 4. **设计** 包含错误恢复的完整 pick-and-place 行为树
 5. **理解** BT.CPP 与 ROS2 Action Server 的集成模式
 6. **使用** Groot2 进行可视化编辑和日志回放调试
+7. **掌握** 工业场景中的五级错误恢复体系和 BT+MTC 集成模式
+
+### 本章知识导航
+
+```
+BehaviorTree.CPP 深度
+├── M13.1 BT vs FSM ⭐⭐ ─── 选型决策的起点
+│   └── 理解两者的本质差异（全局转移 vs 局部组合）
+├── M13.2 异步 Ticking 执行模型 ⭐⭐ ─── 执行引擎的核心
+│   ├── 三态语义（SUCCESS/FAILURE/RUNNING）
+│   ├── 四种节点类型（Control/Action/Condition/Decorator）
+│   └── Reactive 模式（实时安全条件监控）
+├── M13.3 Blackboard + Port ⭐⭐ ─── 节点间数据流
+│   ├── 类型安全机制（std::any + convertFromString）
+│   ├── Stamped API（时间戳和序列号）
+│   └── SubTree Blackboard 隔离
+├── M13.4 XML DSL 与工厂注册 ⭐⭐ ─── 行为与实现分离
+│   ├── 三种注册方式（静态/插件/Lambda）
+│   ├── SubTree 四种复用模式
+│   └── Groot2 调试实战流程
+├── M13.5 ROS2 Action 集成 ⭐⭐ ─── BT↔ROS2 桥接
+│   └── RosActionNode 基类 vs 手动实现
+├── M13.6 错误恢复策略 ⭐⭐ ─── BT 最大价值所在
+│   ├── 三种恢复模式（Retry/Fallback/Recovery SubTree）
+│   └── 五级工业恢复体系
+├── M13.7 Groot2 可视化 ⭐⭐⭐ ─── 调试基础设施
+│   └── 编辑/监控/回放三种模式
+├── M13.8 MTC 集成与工业案例 ⭐⭐⭐ ─── BT+MTC 协作
+│   └── PCB 装配/CNC 上下料/码垛/焊接案例
+└── M13.9 前沿展望 ⭐⭐⭐⭐ ─── BT.CPP v5/LLM/形式化验证
+```
+
+**阅读路径建议**：
+- **必修主干**：M13.1 → M13.2 → M13.3 → M13.4 → M13.5 → M13.6（按顺序，每节依赖前一节）
+- **调试工具**：M13.7 可在任意时刻阅读，越早掌握越好
+- **工业深度**：M13.8 需要先了解 M14 的 MTC 基础
+- **前沿跟踪**：M13.9 可选阅读
+
+### 前置知识桥接
+
+本章建立在以下前置知识之上：
+
+- **Composite Pattern**（`02_C++基础与进阶/30_软件工程/10_设计模式与高级惯用法`）：BT.CPP 的节点体系是 Composite Pattern 的典型应用——`TreeNode` 是 Component，`ControlNode`/`DecoratorNode` 是 Composite/Decorator，`ActionNode`/`ConditionNode` 是 Leaf。理解这个模式是理解 BT 节点组合机制的关键。
+- **pluginlib 动态加载**（`02_C++基础与进阶/50_ROS2工程化/40_硬件集成与RL部署`）：BT.CPP 的插件加载机制（`registerFromPlugin`）使用 `dlopen` 在运行时加载节点共享库。这与 ros2_control 加载硬件插件的机制类似，但 BT.CPP 有自己的 `BT_REGISTER_NODES` 宏，不直接依赖 ROS pluginlib。
+- **ROS2 Action**（`02_C++基础与进阶/50_ROS2工程化/40_硬件集成与RL部署`）：BT Action 节点内部通常调用 ROS2 Action Server（如 MoveIt2 的 MoveGroup）。Action 的三阶段（Goal→Feedback→Result）与 BT 的三态（onStart→onRunning→onHalted）完美对应——M13.5 详细讲解这个映射。
+
+### 如果跳过本章会怎样
+
+1. **无法编排复杂的机器人操作任务**：M14 的 MTC 解决「怎么做」（运动规划），但「什么时候做什么」「失败了怎么办」需要 BT 编排。没有 BT 层，你的系统只能执行固定的线性流程，无法处理现实中的各种异常。
+2. **无法理解 Nav2 的架构**：ROS2 导航栈 Nav2 的顶层任务编排完全基于 BT.CPP。不理解 BT 就无法定制 Nav2 的行为（如自定义 recovery behavior）。
+
+### 预计阅读时间
+
+| 模式 | 时间 | 覆盖内容 |
+|------|------|---------|
+| 精读 | 4-5 小时 | 全部内容 + 练习 + 代码实验 |
+| 速读 | 2 小时 | M13.1-M13.6 正文 + 陷阱专栏 |
+| 速查 | 20 分钟 | 知识导航 + 小结表格 + 故障排查手册 |
 
 ---
 
@@ -1141,6 +1231,133 @@ factory.registerNodeType<MoveToTarget>("MoveToTarget", params);
           Action 可能需要几秒才完成，但 BT 每 100ms 就检查一次状态。
 ```
 
+### 手动实现 vs RosActionNode 基类：完整代码对比 ⭐⭐⭐
+
+为了让读者深刻理解 `RosActionNode` 基类封装了哪些繁琐逻辑，下面给出手动实现同等功能的代码——对比之下基类的价值一目了然。
+
+**手动实现**（使用 `StatefulActionNode` + 自行管理 ActionClient）：
+
+```cpp
+#include <behaviortree_cpp/action_node.h>
+#include <rclcpp/rclcpp.hpp>
+#include <rclcpp_action/rclcpp_action.hpp>
+#include <moveit_msgs/action/move_group.hpp>
+
+class MoveToTargetManual : public BT::StatefulActionNode {
+  using ActionT = moveit_msgs::action::MoveGroup;
+  using GoalHandleT = rclcpp_action::ClientGoalHandle<ActionT>;
+
+public:
+  MoveToTargetManual(const std::string& name,
+                     const BT::NodeConfig& config)
+    : BT::StatefulActionNode(name, config) {}
+
+  static BT::PortsList providedPorts() {
+    return {
+      BT::InputPort<geometry_msgs::msg::PoseStamped>(
+        "target_pose"),
+      BT::InputPort<std::string>(
+        "action_server", "/move_action"),
+      BT::InputPort<double>("timeout_sec", "10.0"),
+    };
+  }
+
+  BT::NodeStatus onStart() override {
+    // 1. 获取或创建 ActionClient
+    auto server_name =
+      getInput<std::string>("action_server").value();
+    if (!action_client_) {
+      action_client_ =
+        rclcpp_action::create_client<ActionT>(
+          node_, server_name);
+    }
+
+    // 2. 等待 Action Server（阻塞！）
+    if (!action_client_->wait_for_action_server(
+          std::chrono::seconds(3))) {
+      RCLCPP_ERROR(node_->get_logger(),
+        "Action server '%s' not available",
+        server_name.c_str());
+      return BT::NodeStatus::FAILURE;
+    }
+
+    // 3. 构造 Goal
+    auto target = getInput<geometry_msgs::msg::PoseStamped>(
+      "target_pose");
+    if (!target) return BT::NodeStatus::FAILURE;
+
+    ActionT::Goal goal;
+    goal.request.group_name = "manipulator";
+    // ... 设置 goal_constraints ...
+
+    // 4. 发送 Goal（非阻塞）
+    auto send_opts =
+      rclcpp_action::Client<ActionT>::SendGoalOptions();
+    send_opts.feedback_callback =
+      [this](GoalHandleT::SharedPtr,
+             const std::shared_ptr<const ActionT::Feedback> fb) {
+        last_feedback_ = fb;  // 缓存最新 Feedback
+      };
+    auto future = action_client_->async_send_goal(goal, send_opts);
+
+    // 5. 等待 Goal 被接受
+    if (rclcpp::spin_until_future_complete(
+          node_, future, std::chrono::seconds(3))
+        != rclcpp::FutureReturnCode::SUCCESS) {
+      return BT::NodeStatus::FAILURE;
+    }
+    goal_handle_ = future.get();
+    if (!goal_handle_) return BT::NodeStatus::FAILURE;
+
+    start_time_ = std::chrono::steady_clock::now();
+    return BT::NodeStatus::RUNNING;
+  }
+
+  BT::NodeStatus onRunning() override {
+    // 6. 检查超时
+    auto timeout = getInput<double>("timeout_sec").value();
+    auto elapsed = std::chrono::steady_clock::now() - start_time_;
+    if (std::chrono::duration<double>(elapsed).count() > timeout) {
+      action_client_->async_cancel_goal(goal_handle_);
+      return BT::NodeStatus::FAILURE;
+    }
+
+    // 7. 检查结果
+    auto result_future =
+      action_client_->async_get_result(goal_handle_);
+    if (rclcpp::spin_until_future_complete(
+          node_, result_future, std::chrono::milliseconds(10))
+        == rclcpp::FutureReturnCode::SUCCESS) {
+      auto result = result_future.get();
+      if (result.code == rclcpp_action::ResultCode::SUCCEEDED) {
+        return BT::NodeStatus::SUCCESS;
+      }
+      return BT::NodeStatus::FAILURE;
+    }
+    return BT::NodeStatus::RUNNING;
+  }
+
+  // 8. 被中断时必须取消 Goal
+  void onHalted() override {
+    if (goal_handle_) {
+      action_client_->async_cancel_goal(goal_handle_);
+    }
+  }
+
+private:
+  rclcpp::Node::SharedPtr node_;
+  rclcpp_action::Client<ActionT>::SharedPtr action_client_;
+  GoalHandleT::SharedPtr goal_handle_;
+  std::shared_ptr<const ActionT::Feedback> last_feedback_;
+  std::chrono::steady_clock::time_point start_time_;
+};
+// 总计 ~90 行
+```
+
+对比前面 M13.5 中使用 `RosActionNode` 基类的实现（~30 行），手动实现需要处理的额外问题包括：ActionClient 生命周期管理、Server 可用性等待、Goal 接受确认、Feedback 回调注册、超时计时、以及 halt 时的 Goal 取消。基类把这些全部封装了。
+
+> **本质洞察**：`RosActionNode` 基类的价值不仅是减少代码量——更重要的是它消除了一类常见 bug（忘记取消 Goal、忘记检查超时、ActionClient 重复创建等）。当你的项目有 10-20 个 BT Action 节点时，每个节点省 60 行代码意味着少 600-1200 行潜在 bug 来源。
+
 ### 练习
 
 1. **[A 型]** 实现一个 BT Action 节点调用 MoveIt2 MoveGroup Action。将目标位姿通过 Blackboard 传入。
@@ -1332,6 +1549,70 @@ BT::Groot2Publisher groot_publisher(tree);
 
 > **跨领域类比**：这种「从一开始就把可观测性内建到框架里」的思想类似于 Kubernetes 的 Prometheus metrics + Grafana dashboard——不是事后才加日志，而是框架本身就提供了结构化的观测能力。在 BT.CPP 中，这意味着你永远不需要手动在每个节点里加 `cout` 调试——Logger 自动记录所有状态转换。
 
+### Groot2 工程实践：从安装到产线部署 ⭐⭐⭐
+
+**安装方式**：
+
+Groot2 提供 AppImage（Linux）和安装包（Windows/macOS）。对于 ROS2 用户，推荐从 Groot2 官网下载 AppImage，无需 ROS 依赖即可运行：
+
+```bash
+# Linux AppImage 方式
+chmod +x Groot2-*.AppImage
+./Groot2-*.AppImage
+
+# 也可通过 apt（如果 ROS 仓库包含 groot2）
+sudo apt install ros-${ROS_DISTRO}-groot
+```
+
+**编辑模式的工作流**：
+
+1. **新建项目**：创建空白树或导入已有 XML
+2. **节点面板**：左侧面板列出所有已注册的节点类型（从 XML 的 `<TreeNodesModel>` 读取），可直接拖拽到画布
+3. **连线**：将子节点拖到父节点下方自动连接
+4. **Port 编辑**：点击节点，在右侧面板编辑 Port 绑定（`{key}` 语法）
+5. **导出 XML**：保存为标准 BT.CPP v4 格式 XML
+
+**监控模式的网络配置**：
+
+```cpp
+// 应用端：启动 Groot2Publisher（默认 ZMQ 端口 1666）
+BT::Groot2Publisher groot_pub(tree, 1666);
+
+// 如果在 Docker 容器或远程机器上运行：
+// 1. 确保端口 1666 已暴露
+// 2. Groot2 中输入 IP:1666 连接
+// 3. 跨网络时考虑 ZMQ 的防火墙和延迟
+```
+
+**回放模式的高级分析技巧**：
+
+| 技巧 | 操作 | 适用场景 |
+|------|------|---------|
+| **逐 tick 步进** | 用箭头按钮或滑块逐 tick 前进 | 定位第一个 FAILURE 出现的精确时刻 |
+| **跳转到指定 tick** | 直接输入 tick 编号 | 已知大致失败时间，快速定位 |
+| **状态颜色编码** | 观察颜色突变模式 | 绿→红：该节点失败；蓝→红：RUNNING 中被中断 |
+| **节点过滤** | 点击特定节点高亮其状态历史 | 分析单个节点的行为模式 |
+| **对比两次执行** | 打开两个回放窗口对比 | 分析"为什么昨天行今天不行" |
+
+**产线部署中的日志策略**：
+
+在工业产线中，SqliteLogger 的 `.db3` 文件是最重要的诊断数据。推荐的管理策略：
+
+```cpp
+// 日志文件命名包含时间戳，便于追溯
+auto timestamp = std::chrono::system_clock::now();
+auto t = std::chrono::system_clock::to_time_t(timestamp);
+std::stringstream ss;
+ss << "bt_log_" << std::put_time(std::localtime(&t),
+    "%Y%m%d_%H%M%S") << ".db3";
+BT::SqliteLogger sqlite_log(tree, ss.str());
+
+// 日志轮转：单个文件限制大小（如 100MB），
+// 超过后创建新文件，保留最近 N 天的日志
+```
+
+> **反事实推理**：如果产线上不启用 SqliteLogger 会怎样？当机器人在凌晨 3 点出现故障时，值班人员只能描述"机器人停了"，工程师无法复现问题。有了日志文件，第二天用 Groot2 回放就能精确定位到"第 1247 个 tick 时 DetectObject 节点连续 3 次 FAILURE 后 Fallback 耗尽所有恢复策略"——从模糊描述变成精确诊断。
+
 ### ⚠️ 常见陷阱
 
 ```
@@ -1342,11 +1623,21 @@ BT::Groot2Publisher groot_publisher(tree);
           通过日志回放逐 tick 观察状态变化，比读文本日志高效 10 倍。
 ```
 
+```
+⚠️ 编程陷阱：Groot2Publisher 与 SqliteLogger 同时创建时的日志文件权限
+   错误做法：在只读文件系统上创建 SqliteLogger
+   现象：程序启动时抛出 SQLite "unable to open database file" 异常
+   根本原因：嵌入式平台的 rootfs 可能是只读的
+   正确做法：将日志路径指向可写分区（如 /tmp 或挂载的 USB 存储）
+```
+
 ### 练习
 
 1. **[A 型]** 用 SqliteLogger 记录一次执行，Groot2 回放找到每个节点第一次返回 RUNNING 的 tick 编号。
 
 2. **[思考题]** Groot2 通过 ZMQ 与运行中的 BT 通信。这种架构有什么延迟和带宽开销？在 100 Hz tick 频率、100 节点的树中，每次 tick 需要发送多少状态数据？
+
+3. **[A 型]** 配置 Groot2 远程监控：在 Docker 容器中运行 BT 应用（启动 Groot2Publisher），在宿主机上用 Groot2 连接监控。记录从宿主机发起连接到看到节点状态的延迟。
 
 ---
 
@@ -1461,6 +1752,47 @@ BT.CPP (顶层)
 - **力控安全**：ReactiveSequence + ForceCheck 实时监控插入力
 - **模块化**：每个连接器的装配逻辑封装在 SubTree 中
 - **超时保护**：全局 Timeout 确保不会无限执行
+
+**工业案例：码垛工站（Palletizing Station）**
+
+码垛是 BT 在物流行业中的高频应用。与上面 PCB 装配案例的区别在于：码垛的操作重复性极高（同一动作执行数百次），但每次放置位置不同（托盘上的网格坐标）。
+
+```xml
+<root BTCPP_format="4">
+  <BehaviorTree ID="PalletizeStation">
+    <Sequence>
+      <ScanPallet pallet_id="{pallet}"
+                  grid_layout="{layout}"/>
+      <!-- 循环抓取传送带上的箱子 -->
+      <WhileDoElse>
+        <IsPalletNotFull layout="{layout}"/>
+        <Sequence>
+          <WaitForConveyor timeout="30000"/>
+          <RetryUntilSuccessful num_attempts="3">
+            <SubTree ID="PickFromConveyor"
+                     object="box" pose="{box_pose}"/>
+          </RetryUntilSuccessful>
+          <ComputePlacePosition layout="{layout}"
+                                place_pose="{place_target}"/>
+          <SubTree ID="PlaceOnPallet"
+                   target="{place_target}"/>
+          <UpdatePalletLayout layout="{layout}"/>
+        </Sequence>
+        <!-- else: 托盘已满 → 通知叉车换托盘 -->
+        <Sequence>
+          <SignalForklift action="swap_pallet"/>
+          <WaitForSignal signal="new_pallet_ready"
+                         timeout="120000"/>
+          <ScanPallet pallet_id="{pallet}"
+                      grid_layout="{layout}"/>
+        </Sequence>
+      </WhileDoElse>
+    </Sequence>
+  </BehaviorTree>
+</root>
+```
+
+码垛场景的独特工程要点：放置精度要求严格（箱子间距 <5mm 才能堆叠稳定），MTC 的 approach 方向必须严格垂直向下以避免挤歪相邻箱子；传送带速度与机器人节拍必须匹配（通常用 `WaitForConveyor` 节点同步），否则箱子堆积或机器人空等。
 
 ### 工业错误恢复的五级体系 ⭐⭐⭐
 
@@ -1669,6 +2001,21 @@ BT.CPP v5 是 Davide Faconti 规划中的下一个大版本。虽然截至 2026 
 
 ---
 
+## 本章常见误解汇总
+
+| 误解 | 正确理解 |
+|------|---------|
+| "BT 比 FSM 更先进，应该总是用 BT" | BT 和 FSM 在计算能力上等价。FSM 在简单线性流程（3-5 状态）、安全关键系统（有成熟的形式化验证工具）和底层硬件协议中仍然更合适。两者经常共存——BT 编排顶层任务，底层硬件用 FSM 管理状态 |
+| "BT 只适合游戏 AI，不适合工业机器人" | BT 最初来自游戏 AI，但 2014 年后被系统性引入机器人领域。ROS2 Nav2 导航栈、MoveIt Pro 等主流框架都采用 BT 作为顶层任务编排。工业案例包括 PCB 装配、CNC 上下料、码垛、焊接等 |
+| "BT 比 FSM 运行更慢" | BT.CPP 单次 tick 遍历 100 个节点耗时约 10ms（每节点 0.1ms），对 10 Hz tick 频率只占 10% CPU。运行时开销远小于规划和感知计算 |
+| "Parallel 节点是多线程并发" | BT.CPP 的 Parallel 是逻辑并行——同一轮 tick 中按顺序 tick 所有子节点。真正的并发来自异步 Action 节点内部自己启动的线程或 ROS Action 回调 |
+| "Blackboard 就是全局变量" | 每个 TreeNode 只能访问它通过 Port 声明的 Blackboard 键。SubTree 有独立的 Blackboard，需要通过 port remapping 显式暴露数据 |
+| "XML 热加载可以改变节点实现" | XML 只定义拓扑结构。节点的 C++ 实现在编译时确定。热加载可以改变组合方式和参数，不能改变内部逻辑 |
+| "tick 频率越高越好" | tick 频率决定了反应速度与 CPU 开销的平衡。10 Hz 适合大多数操作任务，盲目提高频率只会浪费 CPU |
+| "BT 可以替代 MTC" | 两者层次不同。BT 负责任务级决策，MTC 负责运动级规划。MTC 的 Stage 抽象专为运动规划设计 |
+| "RetryUntilSuccessful 可以解决所有失败" | Retry 只适合偶发性失败。持续性失败应该用 Fallback 切换策略或上升到更高层级处理 |
+| "Groot2 只是画图工具" | Groot2 的最大价值是日志回放。50+ 节点的 BT 通过日志回放逐 tick 分析状态变化，比阅读文本日志高效 10 倍 |
+
 ## 本章小结
 
 | 知识点 | 核心内容 | 难度 |
@@ -1680,7 +2027,8 @@ BT.CPP v5 是 Davide Faconti 规划中的下一个大版本。虽然截至 2026 
 | M13.5 ROS2 Action 集成 | RosActionNode 基类、RUNNING↔Feedback 映射 | ⭐⭐ |
 | M13.6 错误恢复策略 | Retry/Fallback/Recovery SubTree 三种模式 | ⭐⭐ |
 | M13.7 Groot2 可视化 | 编辑/监控/日志回放三种模式 | ⭐⭐⭐ |
-| M13.8 MTC 集成与工业案例 | BT+MTC 层次关系、PCB 装配案例 | ⭐⭐⭐ |
+| M13.8 MTC 集成与工业案例 | BT+MTC 层次关系、PCB 装配/CNC 上下料/码垛案例 | ⭐⭐⭐ |
+| M13.9 前沿展望 | BT.CPP v5 协程/LLM 驱动 BT 生成/形式化等价性 | ⭐⭐⭐⭐ |
 
 ## 累积项目：本章新增模块
 
@@ -1715,6 +2063,15 @@ mini_manip_ws/
 | Colledanchise & Ogren (2018) "Behavior Trees in Robotics and AI" | ⭐⭐⭐ | 理论基础专著 |
 | CONVINCE 项目 | ⭐⭐⭐⭐ | BT 形式化验证研究前沿 |
 | Iovino et al. (2022) "A Survey of BT in Robotics and AI" | ⭐⭐⭐ | 综述论文 |
+| Lykov et al. (2024) "LLM+BT" | ⭐⭐⭐⭐ | LLM 直接生成 BT XML 的前沿工作 |
+
+## 本章与后续章节的关系
+
+| 后续章节 | 关系 | 本章铺垫的知识点 |
+|---------|------|----------------|
+| M14 MoveIt2+MTC 工业集成 | BT 编排层调用 MTC 规划层 | M13.5 ROS2 Action 集成（BT 节点调用 MTC Task）、M13.8 BT+MTC 层次关系 |
+| M12 ros2_control | BT 通过 Action 触发控制器执行轨迹 | M13.5 中 MoveGroup Action 间接触发 JTC 执行 |
+| Nav2 导航栈 | Nav2 的顶层任务编排完全基于 BT.CPP | M13.1-M13.6 的全部内容直接适用于 Nav2 BT Navigator |
 
 ## 🔧 故障排查手册
 
@@ -1726,3 +2083,256 @@ mini_manip_ws/
 | ReactiveSequence 不中断 | 条件节点始终 SUCCESS | 1. StdCoutLogger 打印状态 2. 检查条件逻辑 3. 检查 Blackboard 数据 | M13.2 |
 | Groot2 无法连接 | ZMQ 端口占用 | 1. 检查端口 1666 2. 确认 Groot2Publisher 已创建 3. 检查防火墙 | M13.7 |
 | SubTree 读不到父树数据 | Blackboard 隔离 | 1. 检查 SubTree 的 port remapping 2. 使用 `_autoremap` | M13.3 |
+| BT tick 频率过低导致反应迟钝 | tick 间隔设置过大 | 1. 减小 tick 间隔 (100ms→10ms) 2. 检查 Action 节点是否阻塞了 tick 线程 3. 使用异步 Action | M13.2 |
+| Groot2 显示 XML 与运行时不一致 | XML 修改后未重新加载 | 1. 重启 BT 执行器 2. 确认 Groot2 连接的是正确进程 3. 检查 XML 文件路径 | M13.7 |
+| 多个 Fallback 子节点同时运行 | 误用 Parallel 替代 Fallback | 1. 区分 Fallback (尝试直到成功) 和 Parallel (同时运行) 2. 检查节点类型 | M13.2 |
+
+---
+
+## 本章常见误解汇总
+
+| 误解 | 正确理解 | 相关章节 |
+|------|---------|---------|
+| "BT 比 FSM 更强大" | BT 和 FSM 在计算能力上等价（Theorem 2, Colledanchise 2018）——BT 的优势在可维护性 | §1, §9 |
+| "BT 节点必须同步执行" | BT.CPP v4 支持异步 ticking——Action 节点返回 RUNNING，下次 tick 继续检查 | §2 |
+| "Blackboard 是全局变量" | Blackboard 通过 Port 的输入/输出接口控制数据流向——比全局变量更安全 | §3 |
+| "BT 只适合简单任务" | BT 通过 SubTree 嵌套和 Decorator 组合可以表达任意复杂的任务逻辑 | §4 |
+| "LLM 可以直接生成可靠的 BT" | LLM 生成的 BT 可能遗漏安全检查——必须经过验证工具检查 | §9 |
+| "BT 不需要状态机" | BT 和 FSM 可以混合使用——复杂系统的底层用 FSM，高层用 BT 编排 | §1 |
+| "Groot2 只是可视化工具" | Groot2 支持编辑/监控/日志回放三种模式——是完整的 BT IDE | §7 |
+
+### 术语速查表
+
+| 术语 | 英文 | 一句话定义 |
+|------|------|-----------|
+| BT | Behavior Tree | 行为树——用树状结构组织机器人任务逻辑的框架 |
+| FSM | Finite State Machine | 有限状态机——用状态和转移边组织控制逻辑 |
+| tick | 滴答 | BT 的最小执行单元——从根节点开始，逐层向下传播 |
+| Sequence | 序列节点 | 从左到右依次执行子节点，全部 SUCCESS 才返回 SUCCESS |
+| Fallback | 回退节点 | 从左到右依次尝试子节点，任一 SUCCESS 就返回 SUCCESS |
+| Blackboard | 黑板 | BT 节点间共享数据的键值存储 |
+| Port | 端口 | BT 节点的输入/输出接口，连接到 Blackboard |
+| Groot2 | Groot 2.0 | BT.CPP 的可视化编辑器和运行时监控工具 |
+| MTC | MoveIt Task Constructor | MoveIt2 的多阶段任务编排框架 |
+
+## 本章与后续章节的关系
+
+| 后续章节 | 关系 | 本章铺垫的知识点 |
+|---------|------|----------------|
+| M14 MoveIt2 集成 | BT + MTC 的层次关系 | BT 编排高层任务流程，MTC 处理运动规划子任务 |
+
+## 研究实践建议
+
+### 入门级
+1. 用 BT.CPP v4 编写一个简单的 "检测→抓取→放置" 行为树
+2. 用 Groot2 可视化运行时的节点状态变化
+
+### 进阶级
+1. 实现带 **错误恢复** 的完整 pick-and-place BT（Retry + Fallback）
+2. 将 BT 节点与 ROS2 Action Server 集成
+
+### 研究级
+1. 评估 **LLM 驱动的 BT 生成**——给 GPT-4/Claude 自然语言描述，生成 BT XML
+2. 研究 BT 的 **形式化验证**——CONVINCE 项目的 BT 安全性证明
+
+## 版本信息速查
+
+| 工具 | 版本 | 安装 | 许可证 |
+|------|------|------|--------|
+| BT.CPP v4 | 4.6.x | `apt install ros-${DISTRO}-behaviortree-cpp` | MIT |
+| BT.ROS2 | 最新 | `apt install ros-${DISTRO}-behaviortree-ros2` | MIT |
+| Groot2 | 2.x | `groot2` 可执行文件 (AppImage/snap) | 免费（GUI）|
+| Nav2 BT 节点 | Humble/Jazzy | `apt install ros-${DISTRO}-nav2-behavior-tree` | Apache-2.0 |
+
+> **版本注意**：BT.CPP v3 和 v4 的 API 不兼容——v4 引入了 `SyncActionNode`/`StatefulActionNode` 替代 v3 的 `ActionNodeBase`。新项目应直接使用 v4。Nav2 在 Humble 中使用 v3，在 Jazzy/Kilted 中迁移到 v4。
+
+---
+
+## BT.CPP v4 核心 API 速查 ⭐⭐
+
+### 节点注册
+
+```cpp
+// 方式 1: 直接注册
+factory.registerNodeType<MyAction>("MyAction");
+
+// 方式 2: 从 XML 注册 (ROS2 pluginlib)
+factory.registerFromPlugin("my_bt_plugin.so");
+
+// 方式 3: ROS2 包方式注册
+factory.registerFromROSPlugins(ament_index);
+```
+
+### 四种节点基类
+
+| 基类 | 用途 | 关键回调 |
+|------|------|---------|
+| `SyncActionNode` | 同步（一次完成） | `tick()` → SUCCESS/FAILURE |
+| `StatefulActionNode` | 异步（多次 tick） | `onStart()` → `onRunning()` → `onHalted()` |
+| `ConditionNode` | 条件检查 | `tick()` → SUCCESS/FAILURE |
+| `DecoratorNode` | 修饰子节点行为 | `tick()` 包装子节点的返回值 |
+
+### Blackboard 读写
+
+```cpp
+// 在 providedPorts() 中声明
+static PortsList providedPorts() {
+    return {
+        InputPort<geometry_msgs::msg::PoseStamped>("target_pose"),
+        OutputPort<bool>("grasp_success")
+    };
+}
+
+// 在 tick() 中读写
+auto target = getInput<geometry_msgs::msg::PoseStamped>("target_pose");
+if (!target) throw RuntimeError("missing target_pose");
+setOutput("grasp_success", true);
+```
+
+### ROS2 Action 集成
+
+```cpp
+// 继承 RosActionNode<MoveToPose>
+class MoveToTarget : public RosActionNode<MoveToPose> {
+    bool setGoal(Goal& goal) override {
+        auto target = getInput<PoseStamped>("target");
+        goal.target_pose = target.value();
+        return true;
+    }
+    NodeStatus onResultReceived(const WrappedResult& wr) override {
+        return wr.code == rclcpp_action::ResultCode::SUCCEEDED
+            ? NodeStatus::SUCCESS : NodeStatus::FAILURE;
+    }
+    NodeStatus onFeedback(const Feedback::SharedPtr fb) override {
+        setOutput("distance_remaining", fb->distance);
+        return NodeStatus::RUNNING;
+    }
+};
+```
+
+---
+
+## BT 设计模式与最佳实践 ⭐⭐⭐
+
+### 模式 1：Guard + Action (安全检查)
+
+```xml
+<Sequence>
+  <CheckBatteryLevel min_level="20%"/>  <!-- Guard -->
+  <PickObject/>                          <!-- Action -->
+</Sequence>
+```
+
+每次执行动作前先检查前置条件。如果电量低于 20%，整个 Sequence 返回 FAILURE，不执行抓取。
+
+### 模式 2：Retry with Escalation (递进重试)
+
+```xml
+<Fallback>
+  <!-- Level 1: 直接重试 -->
+  <RetryUntilSuccessful num_attempts="3">
+    <PickObject strategy="default"/>
+  </RetryUntilSuccessful>
+
+  <!-- Level 2: 换策略重试 -->
+  <RetryUntilSuccessful num_attempts="2">
+    <Sequence>
+      <RecomputeGraspPose/>
+      <PickObject strategy="alternative"/>
+    </Sequence>
+  </RetryUntilSuccessful>
+
+  <!-- Level 3: 请求人工介入 -->
+  <RequestHumanAssistance/>
+</Fallback>
+```
+
+### 模式 3：Reactive Safety Monitor (反应式安全监控)
+
+```xml
+<ReactiveSequence>
+  <!-- 条件节点在每次 tick 都检查 -->
+  <IsEmergencyStopInactive/>
+  <IsForceWithinLimits max_force="50N"/>
+
+  <!-- 动作节点只有条件都满足时才继续 -->
+  <ExecuteTrajectory/>
+</ReactiveSequence>
+```
+
+ReactiveSequence 在每次 tick 都重新检查条件节点——如果急停被触发或力超限，立即中断 ExecuteTrajectory。
+
+> **跨领域类比**：BT 的三种设计模式分别对应软件工程中的三种经典模式——Guard 对应**前置条件检查**（Design by Contract），Retry 对应**重试策略**（Circuit Breaker），Reactive Monitor 对应**看门狗**（Watchdog Timer）。掌握这三种模式，你就能设计出覆盖 90% 工业场景的行为树。
+
+### 模式 4：SubTree 复用 (模块化)
+
+```xml
+<!-- 定义可复用的 SubTree -->
+<BehaviorTree ID="DetectAndGrasp">
+  <Sequence>
+    <DetectObject target="{object_name}"/>
+    <PlanGrasp/>
+    <ExecuteGrasp/>
+  </Sequence>
+</BehaviorTree>
+
+<!-- 在主树中复用 -->
+<BehaviorTree ID="MainTask">
+  <Sequence>
+    <SubTree ID="DetectAndGrasp" object_name="red_cup"/>
+    <MoveToPlace/>
+    <PlaceObject/>
+    <SubTree ID="DetectAndGrasp" object_name="blue_box"/>
+    <MoveToPlace/>
+    <PlaceObject/>
+  </Sequence>
+</BehaviorTree>
+```
+
+**SubTree 的 Blackboard 隔离**——子树有自己的 Blackboard，通过 port remapping 与父树通信。这防止了全局变量污染，使模块化复用成为可能。
+
+---
+
+## 跨章综合练习 ⭐⭐⭐
+
+**题目**：综合 M13（BT）+ M14（MoveIt2 MTC）+ M12（ros2_control），实现完整的"BT 编排 + MTC 规划 + 执行"管线：
+
+1. 用 BT.CPP v4 编写 pick-and-place 行为树（包含错误恢复）
+2. BT 的 Action 节点调用 MTC 完成运动规划
+3. MTC 的规划结果通过 ros2_control 执行
+4. 在 Gazebo 中仿真验证——包含至少一次"抓取失败→重新检测→重试"的场景
+5. 用 Groot2 录制行为树执行日志，回放分析错误恢复的时序
+
+---
+
+## BT 与 FSM 的工程选型决策树 ⭐⭐
+
+```
+你的任务有多复杂？
+│
+├── 线性流程（无分支、无错误恢复）
+│   └── FSM 或简单状态机足够
+│       例: 开机→校准→就绪→运行→关机
+│
+├── 有分支和错误恢复（<10 个动作）
+│   └── BT 和 FSM 都可以
+│       BT 更易维护，FSM 更易理解
+│
+├── 复杂任务（>10 个动作、多级错误恢复）
+│   └── BT 是正确选择
+│       FSM 的状态数和转移数会爆炸
+│
+└── 安全关键系统（需要形式化验证）
+    └── FSM + 模型检测 (SPIN/NuSMV)
+        BT 的形式化验证工具尚不成熟
+```
+
+### BT 实际部署经验——常见错误和教训 ⭐⭐
+
+| 常见错误 | 后果 | 正确做法 |
+|---------|------|---------|
+| 所有逻辑写在一个大 BT 中 | 难以调试和维护 | 用 SubTree 模块化，每个 SubTree <10 个节点 |
+| 不处理 RUNNING 状态 | 行为树卡住不响应 | 为异步 Action 加 Timeout Decorator |
+| Blackboard 键名拼写不一致 | 运行时 `any_cast` 失败 | 用常量字符串或 enum 定义所有键名 |
+| 不测试错误恢复路径 | 生产环境中错误恢复失败 | 用 mock Action 节点注入失败，测试所有 Fallback 路径 |
+| 过度使用 ReactiveSequence | CPU 占用高，条件检查过频 | 只在安全关键监控中使用 Reactive，一般任务用 Sequence |

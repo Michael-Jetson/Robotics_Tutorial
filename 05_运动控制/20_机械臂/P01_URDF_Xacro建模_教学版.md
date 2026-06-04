@@ -15,6 +15,60 @@
 
 ---
 
+## 知识导航
+
+```
+本章知识结构全景：
+
+P01 URDF / Xacro 机器人建模
+│
+├─ P01.1  URDF XML Schema ⭐                    ← 基础：link/joint 语义与六种关节类型
+│         （最小 2-link 实例、visual/collision/inertial 三子树）
+├─ P01.2  Xacro 四大机制 ⭐                      ← 工具：property/macro/include/conditional
+│         （消除重复、参数化模板）
+├─ P01.3  惯性参数三级精度路径 ⭐⭐               ← 物理：几何近似 → CAD 导出 → SysId
+│         （三角不等式是合法性底线）
+├─ P01.4  多格式转换 ⭐⭐                         ← 生态：URDF → SDF / MJCF / USD
+│         （Mesh LOD 策略、DAE vs STL）
+├─ P01.5  ros2_control 标签桥接 ⭐⭐              ← 控制：hardware/command/state 三层接口
+├─ P01.6  URDF 设计哲学与局限性 ⭐                ← 洞察：三个关键设计决策及其后果
+├─ P01.7  Xacro 高级技巧 ⭐⭐                     ← 进阶：条件分支/load_yaml/数学表达式
+│         （参数化 7-DOF 完整示例）
+├─ P01.8  惯性张量物理详解 ⭐⭐⭐                 ← 深入：主轴/平行轴定理/特征值分解
+│         （三角不等式检测代码）
+├─ P01.9  ros2_control 标签完整解剖 ⭐⭐          ← 深入：三种部署模式/7-DOF 完整配置
+├─ P01.10 URDF 验证自动化 ⭐⭐                    ← 工程：validate_urdf.py + CI/CD 集成
+└─ P01.11 闭链与 URDF 局限性专题 ⭐⭐             ← 边界：mimic vs 闭环约束
+```
+
+**推荐阅读路径**：
+- **零基础入门**：P01.1 → P01.2 → P01.3 → P01.4 → P01.5（核心基础，约 4 小时）
+- **已有 ROS1 URDF 经验**：P01.5 → P01.6 → P01.9 → P01.10（ROS2 新增内容）
+- **仿真开发者**：P01.3 → P01.4 → P01.8（惯性参数和格式转换）
+- **工程化/CI/CD**：P01.10 → P01.7（自动化验证和高级 Xacro 技巧）
+
+**预计阅读时间**：
+| 模式 | 时间 | 说明 |
+|------|------|------|
+| 精读（含练习） | 8-10 小时 | 逐节阅读 + 完成 7 道练习（含手算惯性） |
+| 速读（仅理论） | 3-4 小时 | 阅读正文和代码注释，跳过练习和推导 |
+| 速查（查表参考） | 20-30 分钟 | 仅查阅关节类型表、格式对比表、故障排查手册 |
+
+## 版本兼容表
+
+| 工具/库 | 推荐版本 | 兼容范围 | 说明 |
+|---------|---------|---------|------|
+| ROS2 | Jazzy Jalisco (2024) | Humble ~ Rolling | Humble 是 LTS；Jazzy 为当前推荐发行版 |
+| xacro | 2.0.9+ | 2.0.x | `xacro:arg` 和条件分支需 2.0+；`load_yaml` 需 2.0.8+ |
+| MuJoCo | 3.1+ | 2.3 ~ 3.x | URDF 直接导入需 2.3+；`from_xml_path` 推荐 3.0+ |
+| Gazebo | Harmonic (gz-sim 8) | Harmonic / Rolling | Gazebo Classic 已于 2025-01 EOL，不再推荐 |
+| MoveIt2 | Jazzy 分支 | Humble ~ Rolling | `robot_model_loader` 和 `robot_description` 话题一致 |
+| check_urdf | urdfdom 4.0+ | 3.x ~ 4.x | ROS2 Jazzy 自带；独立安装 `sudo apt install liburdfdom-tools` |
+| robot_state_publisher | 3.x | 3.x | ROS2 标准组件，随 ROS2 发行版更新 |
+| meshlab (可选) | 2022.02+ | 2020+ | 用于检查 mesh bounding box 和单位 |
+
+---
+
 ## 前置自测
 
 > 答不出 >= 2 题 → 先回 ROS2 基础章节复习
@@ -634,18 +688,276 @@ URDF 描述的是机器人的几何和物理属性。控制器还需要知道：
 
 ---
 
+## P01.11 URDF 调试工作流与命名规范 ⭐⭐
+
+### 系统化调试流程
+
+URDF 建模中 80% 的时间花在调试上。新手常见的调试方式是"改一点→加载→看看对不对"，这种 trial-and-error 效率极低。下面给出一个系统化的调试流程，每一步都有明确的检查目标和工具：
+
+**Step 1：静态语法检查（10 秒级）**
+
+```bash
+# 第一道防线：Xacro 展开 + URDF 语法验证
+xacro robot.urdf.xacro > /tmp/robot.urdf 2>&1
+# 如果 xacro 报错，通常是 ${} 表达式语法错误或 include 路径不对
+
+check_urdf /tmp/robot.urdf
+# 输出示例：
+#   robot name is: my_robot
+#   ---------- Successfully Parsed XML ---------------
+#   root Link: base_link has 1 child(ren)
+#   ...
+#   8 links, 7 joints
+```
+
+如果 `check_urdf` 报告的 link/joint 数量与预期不符，说明某些 Xacro 条件分支的逻辑有误，或某个 macro 调用被跳过了。此时应直接检查展开后的纯 URDF 文件。
+
+**Step 2：拓扑结构可视化（1 分钟级）**
+
+```bash
+urdf_to_graphviz /tmp/robot.urdf
+# 生成 my_robot.gv 和 my_robot.pdf
+# PDF 中以树状图展示 link → joint → link 的连接关系
+```
+
+用 Graphviz 输出的拓扑图检查：
+- 根节点是否是 `base_link`（或 `world` → `base_link`）
+- 所有 link 是否都连通（没有孤立的 link）
+- 关节层级是否符合预期的运动链结构
+
+**Step 3：RViz 几何验证（5 分钟级）**
+
+```bash
+ros2 launch my_robot_description display.launch.py
+```
+
+在 RViz 中逐一检查：
+1. 开启 `RobotModel` 显示，确认所有 mesh 正确加载（无白色占位框）
+2. 开启 `TF` 显示，确认坐标轴方向符合 REP-103（X 红/Y 绿/Z 蓝）
+3. 使用 `joint_state_publisher_gui` 滑块逐个关节拖动，确认旋转轴方向和范围
+4. 开启 `Mass Properties` 显示，确认惯量椭球形状合理
+
+**Step 4：物理仿真验证（10 分钟级）**
+
+```bash
+# Gazebo 自由落体测试
+ros2 launch my_robot_description sim.launch.py
+# 移除固定底座约束，观察机器人在重力下是否正常下落
+# 异常表现：link 飞散（惯量错误）、穿透地面（碰撞几何缺失）、
+#           抖动（阻尼过小）、不动（effort=0）
+```
+
+**Step 5：跨格式一致性验证（15 分钟级）**
+
+```python
+# 用 Pinocchio 或 Drake 加载同一 URDF，对比零位 FK 结果
+import pinocchio as pin
+
+model = pin.buildModelFromUrdf("/tmp/robot.urdf")
+data = model.createData()
+q0 = pin.neutral(model)
+pin.forwardKinematics(model, data, q0)
+pin.updateFramePlacements(model, data)
+
+# 打印末端执行器位置，与 RViz 中的 TF 对比
+ee_frame_id = model.getFrameId("tool0")
+print(f"EE position at q=0: {data.oMf[ee_frame_id].translation}")
+```
+
+> **本质洞察**：URDF 调试的核心原则是"从静态到动态、从局部到全局"。先确保语法正确（静态），再确保几何正确（可视化），最后确保物理正确（仿真）。跳过前面步骤直接在仿真中调试，等于在一个充满未知的环境中寻找 bug——你不知道问题出在语法层、几何层还是物理层。
+
+### URDF / Xacro 命名规范
+
+良好的命名规范是大型机器人项目可维护性的基石。以下规范综合了 REP-105（ROS 坐标系约定）、Universal Robots ROS2 Description 和 Franka ROS2 的实践：
+
+| 元素 | 命名规则 | 正确示例 | 错误示例 |
+|------|---------|---------|---------|
+| **Link** | `{prefix}{描述性名称}` | `left_upper_arm`, `camera_link` | `link1`, `L_UA`, `my_link_3` |
+| **Joint** | `{prefix}{parent描述}_{child描述}_joint` | `shoulder_pan_joint`, `wrist_roll_joint` | `j1`, `joint_between_1_and_2` |
+| **Frame** | `{prefix}{语义名称}` | `tool0`, `camera_optical_frame` | `end_effector`, `ee` |
+| **Prefix** | 用于多实例区分 | `left_`, `right_`, `arm_` | `l_`, `r_`（太短，易混淆） |
+
+**关键规则**：
+
+1. **Link 名称描述位置或功能**，不用编号。`upper_arm` 比 `link2` 好，因为读者不需要记忆编号含义
+2. **Joint 名称编码运动类型**。`shoulder_pan_joint`（pan = 水平旋转）比 `shoulder_joint` 更精确，因为肩关节可能有多个自由度
+3. **固定使用 `base_link` 作为机器人根 frame**（REP-105）。移动机器人还需要 `base_footprint`（投影到地面的 frame）
+4. **传感器 frame 使用 `_link` 后缀**，光学传感器额外添加 `_optical_frame`（Z 前、X 右、Y 下，符合计算机视觉约定）
+5. **Prefix 用于多实例**。双臂机器人用 `left_` / `right_`，多机器人用 `robot1_` / `robot2_`。Prefix 通过 Xacro 的 macro 参数传入，不硬编码
+
+```xml
+<!-- 双臂配置中的 prefix 使用示例 -->
+<xacro:macro name="arm" params="prefix parent_link reflect">
+  <link name="${prefix}upper_arm"/>
+  <joint name="${prefix}shoulder_pan_joint" type="revolute">
+    <parent link="${parent_link}"/>
+    <child link="${prefix}upper_arm"/>
+    <origin xyz="0 ${reflect * 0.3} 0"/>
+    <axis xyz="0 0 1"/>
+    <!-- ... -->
+  </joint>
+</xacro:macro>
+
+<xacro:arm prefix="left_"  parent_link="torso_link" reflect="1"/>
+<xacro:arm prefix="right_" parent_link="torso_link" reflect="-1"/>
+```
+
+> **反事实推理**：如果不使用统一命名规范会怎样？在一个多人协作的机器人项目中，开发者 A 用 `link1/link2`，开发者 B 用 `arm_upper/arm_lower`，开发者 C 用 `L1/L2`。当需要在 MoveIt2 SRDF 中定义碰撞对时，你必须翻遍所有源文件才能找到正确的 link 名称。更糟糕的是，`ros2 control list_hardware_interfaces` 输出的 joint 名称与你在 controller YAML 中配置的名称不匹配（大小写或下划线差异），控制器默默无法找到关节，日志里看不到明显错误。
+
+### URDF 验证自动化脚本
+
+生产项目中应将 URDF 验证集成到 CI/CD 流水线，防止错误的模型文件被合并：
+
+```bash
+#!/bin/bash
+# validate_urdf.sh -- URDF 全自动验证脚本
+# 用法: ./validate_urdf.sh robot.urdf.xacro [config1 config2 ...]
+
+set -euo pipefail
+
+XACRO_FILE="$1"
+shift
+CONFIGS="${@:-default}"
+
+FAIL=0
+
+for cfg in $CONFIGS; do
+    echo "=== 验证配置: $cfg ==="
+
+    # Step 1: Xacro 展开
+    EXPANDED="/tmp/robot_${cfg}.urdf"
+    if [ "$cfg" = "default" ]; then
+        xacro "$XACRO_FILE" > "$EXPANDED" 2>&1
+    else
+        xacro "$XACRO_FILE" config:="$cfg" > "$EXPANDED" 2>&1
+    fi
+
+    # Step 2: check_urdf
+    if ! check_urdf "$EXPANDED"; then
+        echo "[FAIL] check_urdf 失败: $cfg"
+        FAIL=1
+        continue
+    fi
+
+    # Step 3: 惯性参数三角不等式检查
+    python3 - "$EXPANDED" <<'PYEOF'
+import sys, xml.etree.ElementTree as ET
+
+tree = ET.parse(sys.argv[1])
+for link in tree.getroot().findall('link'):
+    inertial = link.find('inertial')
+    if inertial is None:
+        continue
+    I = inertial.find('inertia')
+    if I is None:
+        continue
+    ixx = float(I.get('ixx', 0))
+    iyy = float(I.get('iyy', 0))
+    izz = float(I.get('izz', 0))
+    name = link.get('name')
+
+    # 三角不等式检查
+    if ixx + iyy < izz * 0.999:
+        print(f"[FAIL] {name}: Ixx+Iyy={ixx+iyy:.6e} < Izz={izz:.6e}")
+        sys.exit(1)
+    if ixx + izz < iyy * 0.999:
+        print(f"[FAIL] {name}: Ixx+Izz={ixx+izz:.6e} < Iyy={iyy:.6e}")
+        sys.exit(1)
+    if iyy + izz < ixx * 0.999:
+        print(f"[FAIL] {name}: Iyy+Izz={iyy+izz:.6e} < Ixx={ixx:.6e}")
+        sys.exit(1)
+
+    # 数量级合理性检查
+    mass_el = inertial.find('mass')
+    if mass_el is not None:
+        mass = float(mass_el.get('value', 0))
+        if mass > 0 and ixx > 0:
+            # 典型机械臂 link: I/m 在 1e-4 到 1e-1 范围
+            ratio = ixx / mass
+            if ratio < 1e-8 or ratio > 1e2:
+                print(f"[WARN] {name}: Ixx/mass={ratio:.2e} 可能单位错误")
+
+print("[OK] 惯性参数检查通过")
+PYEOF
+
+    if [ $? -ne 0 ]; then
+        FAIL=1
+    fi
+
+    echo "---"
+done
+
+exit $FAIL
+```
+
+这个脚本可以集成到 GitHub Actions / GitLab CI 中：
+
+```yaml
+# .github/workflows/urdf_check.yml
+name: URDF Validation
+on: [pull_request]
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    container: ros:jazzy
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          apt-get update && apt-get install -y liburdfdom-tools python3-lxml
+          ./scripts/validate_urdf.sh urdf/robot.urdf.xacro 7dof gripper dual
+```
+
+---
+
+## 本章常见误解汇总
+
+| 误解 | 正确理解 |
+|------|---------|
+| "URDF 可以描述任何机器人" | URDF 只能描述**树状结构**的刚体系统。闭链机构、柔性体、肌腱驱动都无法直接表达 |
+| "visual 和 collision 用同一个 mesh 就行" | visual 用高精度 mesh（DAE，5k-50k 面片）追求视觉效果；collision 必须用简化凸包（STL，500-2k 面片）保证碰撞检测性能。两者分离是性能与精度的核心权衡 |
+| "惯性参数随便填个大概值就行" | 惯性参数的准确性直接决定仿真物理行为。违反三角不等式会导致仿真爆炸；数量级错误会导致 link 表现异常。惯性参数是仿真质量的**第一瓶颈** |
+| "Xacro 只是 URDF 的简写" | Xacro 是完整的**预处理语言**，支持变量、宏、文件包含、条件分支、Python 表达式。它不仅减少重复，更实现了参数化配置和多模式切换——这是 URDF 本身做不到的 |
+| "`<transmission>` 标签控制电机" | 在 ROS2 中，`<transmission>` 已被 `<ros2_control>` 标签替代。`<ros2_control>` 声明硬件接口契约，真正的电机控制由 hardware interface 插件实现 |
+| "URDF 转 MJCF 是无损的" | URDF → MJCF 转换会丢失 ROS 特有信息（`<gazebo>` 插件、`<ros2_control>` 标签），同时 MJCF 会用自己的默认值填充 URDF 中未定义的参数（如接触刚度、阻尼）。转换后必须人工检查关键参数 |
+| "所有仿真器解析 URDF 的方式相同" | 不同仿真器对 URDF 有不同的解释。例如 MuJoCo 的 `balanceinertia` 选项会自动修正不合法的惯量；Gazebo 对 `<dynamics damping>` 的实现方式与 MuJoCo 不同。同一份 URDF 在不同仿真器中的行为可能有显著差异 |
+| "`check_urdf` 通过就万事大吉" | `check_urdf` 只验证 XML 语法和拓扑结构的合法性，不检查惯性参数的物理合理性、mesh 路径的可达性、或关节限位的合理性。通过语法检查只是最低门槛 |
+
+---
+
 ## 本章小结
 
-| 知识点 | 核心要点 |
-|--------|---------|
-| URDF 定位 | ROS 生态的 single source of truth，所有工具链的起点 |
-| `<link>` | visual / collision / inertial 三子树，分离渲染与碰撞几何 |
-| `<joint>` | 6 种类型；`revolute` 最常用；effort/velocity 设为 0 会阻止运动 |
-| Xacro | property / macro / include / conditional 四大机制消除重复 |
-| 惯性参数 | 几何近似 → CAD 导出 → SysId 三级精度；三角不等式是合法性底线 |
-| Mesh 管理 | visual(DAE) vs collision(STL) 分离；注意 m/mm 单位转换 |
-| 多格式转换 | URDF → SDF(gz sdf) / MJCF(mujoco)；URDF 不支持闭链 |
-| ros2_control | `<hardware><plugin>` 决定后端；Xacro 条件分支实现 sim/real 切换 |
+### 术语速查表
+
+| 术语 | 英文 | 一句话定义 |
+|------|------|-----------|
+| URDF | Unified Robot Description Format | ROS 生态的机器人描述 XML 格式，描述 link、joint、惯性属性 |
+| Xacro | XML Macro | URDF 的预处理器，提供变量、宏、条件分支等机制消除重复 |
+| Link | Link | URDF 中的刚体元素，包含 visual/collision/inertial 三个子树 |
+| Joint | Joint | 连接两个 link 的运动约束，定义运动类型和限位 |
+| SDF | Simulation Description Format | Gazebo 的原生格式，比 URDF 支持更多特性（闭链、场景） |
+| MJCF | MuJoCo XML Format | MuJoCo 的原生格式，支持执行器模型、肌腱、接触参数等 |
+| USD | Universal Scene Description | Pixar 开发的场景描述格式，Isaac Sim 的原生格式 |
+| REP-103 | ROS Enhancement Proposal 103 | ROS 坐标系约定：右手系，X 前 Y 左 Z 上，SI 单位 |
+| 惯性张量 | Inertia Tensor | $3 \times 3$ 对称正定矩阵，描述刚体对旋转的抵抗程度 |
+| 三角不等式 | Triangle Inequality | 惯性张量合法性的必要条件：$I_{xx}+I_{yy} \geq I_{zz}$ 等 |
+| ros2_control | ros2_control | ROS2 的控制框架，通过 `<hardware>` 插件实现 sim/mock/real 切换 |
+
+### 知识点总表
+
+| 编号 | 知识点 | 核心要点 | 对应节 | 难度 |
+|------|--------|---------|--------|------|
+| 1 | URDF 定位 | ROS 生态的 single source of truth，所有工具链的起点 | P01.1, P01.6 | ⭐ |
+| 2 | `<link>` 元素 | visual / collision / inertial 三子树，分离渲染与碰撞几何 | P01.1 | ⭐ |
+| 3 | `<joint>` 元素 | 6 种类型；`revolute` 最常用；effort/velocity 设为 0 会阻止运动 | P01.1 | ⭐ |
+| 4 | Xacro 宏系统 | property / macro / include / conditional 四大机制消除重复 | P01.2, P01.7 | ⭐⭐ |
+| 5 | 惯性参数 | 几何近似 → CAD 导出 → SysId 三级精度；三角不等式是合法性底线 | P01.3, P01.8 | ⭐⭐ |
+| 6 | Mesh 管理 | visual(DAE) vs collision(STL) 分离；注意 m/mm 单位转换 | P01.3 | ⭐ |
+| 7 | 多格式转换 | URDF → SDF(gz sdf) / MJCF(mujoco)；URDF 不支持闭链 | P01.4 | ⭐⭐ |
+| 8 | ros2_control | `<hardware><plugin>` 决定后端；Xacro 条件分支实现 sim/real 切换 | P01.5, P01.9 | ⭐⭐ |
+| 9 | URDF 设计哲学 | 树结构限制、单一坐标约定、纯描述性定位的设计权衡 | P01.6 | ⭐ |
+| 10 | 惯性张量物理 | 主轴/惯性椭球/平行轴定理/正定性检查的完整理论 | P01.8 | ⭐⭐⭐ |
+| 11 | 调试工作流 | 静态语法 → 拓扑可视化 → RViz 几何 → 仿真物理 → 跨格式一致性 | P01.11 | ⭐⭐ |
+| 12 | 命名规范 | REP-105 + 描述性命名 + prefix 多实例 + CI 自动验证 | P01.11 | ⭐ |
 
 **下一章预告**：P02 sim-to-real 资产管道——从 CAD 到仿真到真机的完整管线，Domain Randomization，Docker 多阶段构建。
 
@@ -692,6 +1004,19 @@ mini-manip/
 | P02 sim-to-real | 添加域随机化配置、CI/CD 格式转换管线 |
 | M01 Pinocchio | 用 Pinocchio 加载同一 URDF，验证 FK/ID |
 | M04 碰撞检测 | 为 URDF 添加碰撞对优化、生成 SRDF |
+
+---
+
+## 常见误解汇总
+
+| # | 误解 | 正确理解 |
+|---|------|---------|
+| 1 | "URDF 的 `<visual>` 和 `<collision>` 应该用同一个 mesh" | 应该分离：`<visual>` 用高精度 DAE/OBJ mesh 做渲染，`<collision>` 用简化的 STL 凸包做碰撞检测。共用高精度 mesh 会让碰撞检测极慢；共用简化 mesh 会让渲染效果很差 |
+| 2 | "`<limit effort=\"0\">` 是安全的默认值" | `effort=0` 表示关节最大力矩为零——物理引擎会阻止任何运动，机器人在仿真中完全不动。这是最常见的"仿真不动"原因之一 |
+| 3 | "惯性张量只要正定就行" | 正定是必要但不充分条件。还必须满足三角不等式（$I_{xx}+I_{yy} \geq I_{zz}$ 等三组），否则对应的刚体在物理上不存在。违反三角不等式的仿真可能"爆炸" |
+| 4 | "Xacro 宏的 `${...}` 和 ROS launch 的 `$(arg ...)` 是同一阶段展开的" | 完全不同：Xacro 在 **编译阶段**（`xacro` 命令行工具）展开为纯 URDF XML；launch 参数在 **运行时** 由 ROS2 launch 系统解析。两者不可混用 |
+| 5 | "URDF 可以描述闭链机构（如平行四边形连杆）" | URDF 仅支持树结构（每个 link 恰好一个 parent joint），不支持闭链。`<mimic>` 只是关节角度的代数关系，不等于位置级闭环约束。闭链请用 MJCF 的 `<equality>` 或 SDF 的约束 |
+| 6 | "MuJoCo 可以直接加载 DAE mesh" | MuJoCo 只接受 STL 和 OBJ 格式的 mesh。如果 URDF 中的 `<collision>` 使用了 DAE，需要先转换为 STL/OBJ 再导入 |
 
 ---
 
@@ -1805,6 +2130,261 @@ def sample_workspace(n_samples=50000):
     plt.savefig('workspace.png', dpi=150)
     plt.show()
 ```
+
+---
+
+## P01.11 URDF 验证自动化与 CI/CD 集成 ⭐⭐
+
+### 动机——手动验证不可扩展
+
+当项目包含多个机器人配置（如 6-DOF、7-DOF、双臂、带夹爪等变体）时，手动运行 `check_urdf` 并在 RViz 中目视检查每个变体变得不可行。错误的惯性参数、遗漏的碰撞几何、不匹配的关节限位——这些问题在手动检查中极容易遗漏，但在仿真或真机部署时会导致严重后果。
+
+### 自动化验证脚本
+
+```python
+#!/usr/bin/env python3
+# scripts/validate_urdf.py — 全自动 URDF 验证
+"""
+验证内容：
+1. XML 语法和 URDF 结构合法性
+2. 所有惯性张量满足三角不等式
+3. 所有关节限位非零（effort > 0, velocity > 0）
+4. 所有 mesh 文件存在且可读
+5. 质量和惯性的数量级合理性检查
+"""
+
+import subprocess
+import sys
+import xml.etree.ElementTree as ET
+import numpy as np
+from pathlib import Path
+
+class URDFValidator:
+    def __init__(self, urdf_path: str):
+        self.path = Path(urdf_path)
+        self.errors = []
+        self.warnings = []
+    
+    def validate_all(self) -> bool:
+        """运行所有验证，返回是否全部通过"""
+        self._check_urdf_tool()
+        tree = ET.parse(self.path)
+        root = tree.getroot()
+        self._check_inertia(root)
+        self._check_joint_limits(root)
+        self._check_mesh_files(root)
+        self._check_mass_magnitude(root)
+        
+        # 报告
+        for w in self.warnings:
+            print(f"[WARN] {w}")
+        for e in self.errors:
+            print(f"[ERROR] {e}")
+        
+        if self.errors:
+            print(f"\nFAILED: {len(self.errors)} error(s)")
+            return False
+        print(f"\nPASSED ({len(self.warnings)} warning(s))")
+        return True
+    
+    def _check_urdf_tool(self):
+        """调用 check_urdf 验证基本结构"""
+        result = subprocess.run(
+            ['check_urdf', str(self.path)],
+            capture_output=True, text=True)
+        if result.returncode != 0:
+            self.errors.append(
+                f"check_urdf failed: {result.stderr.strip()}")
+    
+    def _check_inertia(self, root):
+        """验证所有 link 的惯性张量"""
+        for link in root.findall('link'):
+            name = link.get('name')
+            inertial = link.find('inertial')
+            if inertial is None:
+                # 无惯性的 link 可能是 world 或纯视觉 link
+                continue
+            
+            inertia = inertial.find('inertia')
+            if inertia is None:
+                self.errors.append(
+                    f"Link '{name}': <inertial> without <inertia>")
+                continue
+            
+            ixx = float(inertia.get('ixx', 0))
+            iyy = float(inertia.get('iyy', 0))
+            izz = float(inertia.get('izz', 0))
+            ixy = float(inertia.get('ixy', 0))
+            ixz = float(inertia.get('ixz', 0))
+            iyz = float(inertia.get('iyz', 0))
+            
+            I = np.array([
+                [ixx, ixy, ixz],
+                [ixy, iyy, iyz],
+                [ixz, iyz, izz]])
+            eigvals = np.linalg.eigvalsh(I)
+            
+            if eigvals[0] <= 0:
+                self.errors.append(
+                    f"Link '{name}': non-positive-definite inertia "
+                    f"(min eigenvalue={eigvals[0]:.2e})")
+            
+            # 三角不等式
+            I1, I2, I3 = sorted(eigvals)
+            if I1 + I2 < I3 * (1 - 1e-6):
+                self.errors.append(
+                    f"Link '{name}': triangle inequality violated "
+                    f"({I1:.2e}+{I2:.2e} < {I3:.2e})")
+    
+    def _check_joint_limits(self, root):
+        """验证关节限位"""
+        for joint in root.findall('joint'):
+            jtype = joint.get('type')
+            name = joint.get('name')
+            
+            if jtype in ('revolute', 'prismatic'):
+                limit = joint.find('limit')
+                if limit is None:
+                    self.errors.append(
+                        f"Joint '{name}' ({jtype}): missing <limit>")
+                    continue
+                
+                effort = float(limit.get('effort', 0))
+                velocity = float(limit.get('velocity', 0))
+                
+                if effort <= 0:
+                    self.errors.append(
+                        f"Joint '{name}': effort={effort} <= 0 "
+                        "(will block all motion)")
+                if velocity <= 0:
+                    self.errors.append(
+                        f"Joint '{name}': velocity={velocity} <= 0")
+    
+    def _check_mesh_files(self, root):
+        """检查 mesh 文件引用"""
+        for mesh in root.iter('mesh'):
+            filename = mesh.get('filename', '')
+            if filename.startswith('package://'):
+                # package:// 路径在运行时通过 ament_index 解析
+                # 这里只检查格式合法性
+                if not filename.endswith(('.stl', '.dae', '.obj',
+                                         '.STL', '.DAE', '.OBJ')):
+                    self.warnings.append(
+                        f"Unusual mesh format: {filename}")
+            elif filename.startswith('/'):
+                self.warnings.append(
+                    f"Absolute mesh path (not portable): {filename}")
+    
+    def _check_mass_magnitude(self, root):
+        """检查质量数量级合理性"""
+        for link in root.findall('link'):
+            name = link.get('name')
+            inertial = link.find('inertial')
+            if inertial is None:
+                continue
+            
+            mass_elem = inertial.find('mass')
+            if mass_elem is None:
+                continue
+            mass = float(mass_elem.get('value', 0))
+            
+            if mass < 1e-4:
+                self.warnings.append(
+                    f"Link '{name}': mass={mass:.2e} kg "
+                    "(suspiciously small, possible unit error)")
+            if mass > 500:
+                self.warnings.append(
+                    f"Link '{name}': mass={mass:.1f} kg "
+                    "(suspiciously large for a robot link)")
+
+if __name__ == '__main__':
+    if len(sys.argv) < 2:
+        print("Usage: validate_urdf.py <urdf_file>")
+        sys.exit(1)
+    
+    validator = URDFValidator(sys.argv[1])
+    ok = validator.validate_all()
+    sys.exit(0 if ok else 1)
+```
+
+### CI/CD 集成——GitHub Actions 工作流
+
+```yaml
+# .github/workflows/urdf_ci.yml
+name: URDF Validation
+on:
+  push:
+    paths: ['urdf/**', 'meshes/**', 'config/*.yaml']
+  pull_request:
+    paths: ['urdf/**', 'meshes/**', 'config/*.yaml']
+
+jobs:
+  validate:
+    runs-on: ubuntu-22.04
+    container:
+      image: ros:humble
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install tools
+        run: |
+          apt-get update
+          apt-get install -y liburdfdom-tools python3-numpy
+          pip3 install mujoco trimesh
+      
+      - name: Expand all Xacro variants
+        run: |
+          for config in 7dof gripper dual; do
+            xacro urdf/robot.urdf.xacro config:=$config \
+              > /tmp/robot_${config}.urdf
+            echo "Expanded $config variant"
+          done
+      
+      - name: Validate URDF structure
+        run: |
+          for f in /tmp/robot_*.urdf; do
+            echo "=== Validating $f ==="
+            check_urdf "$f"
+            python3 scripts/validate_urdf.py "$f"
+          done
+      
+      - name: MuJoCo import test
+        run: |
+          python3 -c "
+          import mujoco
+          for config in ['7dof', 'gripper', 'dual']:
+              path = f'/tmp/robot_{config}.urdf'
+              try:
+                  m = mujoco.MjModel.from_xml_path(path)
+                  print(f'{config}: OK ({m.njnt} joints)')
+              except Exception as e:
+                  print(f'{config}: FAIL ({e})')
+                  exit(1)
+          "
+```
+
+> **跨领域类比——URDF CI 与代码编译**：URDF 验证在机器人项目中的角色，等同于编译检查在软件项目中的角色。没有人会跳过编译直接部署 C++ 代码，但很多机器人团队跳过 URDF 验证直接在 Gazebo 中"试试看"。URDF CI 的成本极低（几秒钟），但它能在最早阶段捕获惯性错误、限位错误、mesh 引用错误——这些错误如果到仿真阶段才发现，调试成本会高出 10-100 倍。
+
+### ⚠️ 常见陷阱
+
+```
+⚠️ 编程陷阱：CI 中 Xacro 展开使用了错误的参数
+   错误做法：只用默认参数展开一个变体，忽略其他配置
+   现象：默认配置通过验证，但 dual 配置的 SRDF 缺失导致 MoveIt2 启动失败
+   正确做法：CI 中遍历所有支持的参数组合，逐一展开并验证
+   每新增一个 xacro:arg，CI 矩阵中应同步增加对应的测试配置
+
+💡 概念误区：认为"check_urdf 通过就万事大吉"
+   新手想法："check_urdf 没报错，URDF 就是对的"
+   实际上：check_urdf 只验证 XML 结构和拓扑一致性。
+   它不检查惯性参数物理合法性、mesh 文件是否存在、
+   单位是否正确、限位是否合理。完整验证需要 check_urdf + 自定义脚本。
+```
+
+### 练习
+
+1. **[编程]** 运行 `validate_urdf.py` 对你在 P01.7 中编写的 7-DOF 臂 URDF 进行验证。故意引入一个三角不等式违反（修改某个 $I_{zz}$ 使其大于 $I_{xx} + I_{yy}$），确认脚本能检测到错误。
+2. **[编程]** 在本地搭建 GitHub Actions 等效的 CI 流程（使用 `act` 工具或手动脚本），对三种 Xacro 配置（7dof/gripper/dual）自动化验证。
 
 ---
 

@@ -8,6 +8,36 @@
 
 ---
 
+### 本章知识导航
+
+```
+M09 GPU加速运动规划 知识体系
+│
+├── §1 为什么需要 GPU ⭐ ──── 碰撞检测是绝对瓶颈 (80-95%)
+├── §2 cuRobo 架构 ⭐⭐ ──── GPU-FK → 碰撞 → 轨迹优化 → 运动生成
+├── §3 GPU 碰撞检测 ⭐⭐ ──── 球体近似 + CUDA kernel
+├── §4 VAMP SIMD ⭐⭐⭐ ──── 手写 AVX2/NEON intrinsics
+├── §5 选型与实时重规划 ⭐⭐ ──── GPU vs SIMD vs 传统
+├── §6 局限性与未来 ⭐⭐ ──── 球体精度/许可证/约束支持
+└── §7 本章小结与累积项目
+```
+
+### 前置知识桥接
+
+**回顾 M07/M08**：CPU 上的 OMPL + STOMP 管线端到端延迟 100ms-1s。对于静态环境离线规划足够，但动态环境（人员走动）要求 50-100ms 重规划。M07.5 已证明碰撞检测占规划时间 80-95%——加速碰撞检测就是加速整个管线。
+
+**回顾 M04**：FCL/Coal 的 GJK/EPA 碰撞检测是精确的（mesh 级别），但每次检查约 50 $\mu$s。cuRobo 用球体近似替代 mesh，单次碰撞检查降至 0.1 $\mu$s——精度换速度。
+
+### 预计阅读时间
+
+| 模式 | 时间 | 适合人群 |
+|------|------|---------|
+| 速查 | 30 分钟 | 只需了解 cuRobo/VAMP 的定位和选型 |
+| 精读 | 5-6 小时 | 需要理解 GPU 碰撞检测原理和性能基准 |
+| 精读 + 实践 | 10 小时 | 需要在 MoveIt2 中集成 cuMotion 插件 |
+
+---
+
 ## M09.0 前置自测
 
 开始本章之前，请独立回答以下 5 题。若答不出 3 题以上，建议先回顾 M07 和 M04。
@@ -83,14 +113,30 @@
 
 > **本质洞察**: cuRobo 和 VAMP 加速的核心都是**碰撞检测**——前者用 GPU 的数千核心并行检查数百个构型，后者用 CPU 的 SIMD 寄存器一次检查 8 个球对。它们不改变 RRT/优化的算法逻辑——只是让每次碰撞检查从 50 us 变成 0.1 us。这印证了 M07.5 的判断：**碰撞检测是性能瓶颈，加速碰撞检测等于加速整个规划管线**。
 
-### 性能代际跃迁 (2023-2025) ⭐⭐
+### 性能代际跃迁 (2018-2026) ⭐⭐
 
-| 系统 | 年份 | 全栈延迟 | 硬件 |
-|------|------|---------|------|
-| OMPL + FCL + KDL | ~2018 | 500 ms - 1 s | CPU |
-| MoveIt2 + OMPL + STOMP | ~2022 | 100-500 ms | CPU |
-| **cuRobo** (NVIDIA) | 2023 | **30 ms** (GPU) / 100 ms (Jetson) | GPU |
-| **VAMP** (Kavraki Lab) | 2024 | **35 us** (中位, 仅采样规划) | CPU (AVX2) |
+| 系统 | 年份 | 全栈延迟 | 硬件 | 关键创新 |
+|------|------|---------|------|---------|
+| OMPL + FCL + KDL | ~2018 | 500 ms - 1 s | CPU | 采样规划基线 |
+| MoveIt2 + OMPL + STOMP | ~2022 | 100-500 ms | CPU | 链式管线 |
+| **cuRobo** (NVIDIA) | 2023 | **30 ms** (GPU) / 100 ms (Jetson) | GPU | GPU 并行多种子优化 |
+| **VAMP** (Kavraki Lab) | 2024 | **35 us** (中位, 仅采样规划) | CPU (AVX2) | 手写 SIMD intrinsics |
+| cuRobo V2 | 2026 | ~25 ms (GPU) | GPU | B-spline + 动力学感知 |
+
+**性能提升的量化分解**：
+
+从 2018 年到 2026 年，全栈运动生成延迟从 ~500 ms 降到 ~25 ms——20 倍加速。这个加速来自哪里？
+
+| 加速来源 | 贡献估算 | 具体手段 |
+|---------|---------|---------|
+| 碰撞检测加速 | 10x | 球体近似替代 GJK mesh（100x 单次加速 $\times$ 并行） |
+| FK 批量计算 | 5x | GPU 并行 512 组 FK vs CPU 串行 |
+| 多种子并行 | 3x | 512 个优化种子 vs CPU 4-8 个 |
+| 轨迹表示优化 | 1.5x | B-spline（少变量） vs 路径点（多变量） |
+| CUDA Graph | 1.2x | 消除 kernel 启动开销 |
+| **综合** | **~20x** | — |
+
+注意这些因素是**相乘**关系——每个环节的小加速累积为整体的大幅提升。这也解释了为什么单独优化某一个环节（如只换碰撞检测库）往往只得到 2-3 倍加速——需要全栈优化才能达到数量级的性能跃迁。
 
 > **反事实推理**: 如果不做加速会怎样？每次规划需要 200ms+，在 30Hz 控制循环中只能每 6 个周期规划一次，其余时间盲目执行。30ms 全栈运动生成意味着可以在**每个控制周期**重新规划——机器人变成"实时反应式"系统，可以跟踪移动目标、避让走动的人员。未来 2-3 年，GPU 加速规控从"差异化能力"变为"标配"。
 
@@ -204,6 +250,26 @@ cuRobo 的工程架构是"现代 ML+机器人混合栈"的典型形态：
 
 > **跨领域类比**: cuRobo 的 C++/Python 分层架构类似于 PyTorch 自身——性能关键路径用 C++/CUDA 实现，用户面对的 API 是 Python 薄封装。这是"让用户写 Python 脚本，让底层跑 CUDA kernel"的工程范式。Pinocchio 的 eigenpy 绑定（回顾 M01）采用类似思路，但 cuRobo 更进一步——用 PyTorch 张量作为统一数据容器，天然支持 GPU 内存管理和自动微分。
 
+### cuRobo 的轨迹优化器：L-BFGS vs SQP ⭐⭐⭐
+
+cuRobo 内部使用 **L-BFGS** 而非 SQP（TrajOpt 的选择）作为轨迹优化器。这个选择值得深入理解。
+
+**为什么选 L-BFGS？**
+
+| 维度 | SQP (TrajOpt) | L-BFGS (cuRobo) |
+|------|-------------|----------------|
+| 约束处理 | 硬约束（QP 不等式） | **软约束**（惩罚项） |
+| 每步计算 | 求解 QP（需要 QP 求解器） | 矩阵-向量乘法（纯浮点运算） |
+| GPU 友好度 | **差**（QP 求解器难以并行化） | **极好**（纯 SIMT 计算） |
+| 碰撞安全 | 保证约束满足 | 不保证（依赖惩罚权重） |
+| 并行度 | 低（每个 SQP 实例是串行的） | 高（512 个实例完全独立并行） |
+
+**核心权衡**：SQP 更精确（硬约束），但 QP 求解器的条件分支和迭代结构在 GPU 上效率极低（warp divergence）。L-BFGS 的每步是纯矩阵-向量乘法——完美的 SIMT 操作，所有 thread 走相同路径。cuRobo 用"大量并行 L-BFGS 实例 + 软约束"替代"单个精确 SQP + 硬约束"——用并行度弥补单个实例的精度不足。
+
+**L-BFGS 的 GPU 实现特点**：
+
+L-BFGS 需要存储最近 $m$ 步的梯度和更新方向（"历史"）。cuRobo 使用 $m = 10$（经验值），每个优化种子的历史存储在 GPU 寄存器或 shared memory 中——避免 global memory 的高延迟访问。
+
 ### Warp Kernel 代码生成 ⭐⭐⭐
 
 cuRobo 的一些 kernel 是"半编译期生成"——运行时根据机器人 DOF 数量决定 kernel 形态，然后用 NVIDIA Warp 框架把 Python DSL 转为 CUDA 代码并即时编译(JIT)。
@@ -230,6 +296,36 @@ def fk_kernel(
 - **缓存**: `CUROBO_USE_LRU_CACHE=1` 缓存已编译 kernel，后续启动秒级
 
 这种 JIT 思想是 Pinocchio 的 `CppADCodeGen`（编译期代码生成）在 GPU 侧的对应物。
+
+### cuRobo 的 Fallback 策略 ⭐⭐
+
+cuRobo 的规划不是"一步到位"——它有完善的 fallback 策略：
+
+```
+cuRobo 规划 Fallback 链:
+
+  尝试 1: 纯轨迹优化 (L-BFGS, 12 种子, 快)
+       │
+       ├── 成功 → 返回最优轨迹
+       │
+       └── 失败 → Fallback
+                    │
+  尝试 2: 图搜索 + 轨迹优化 (PRM graph + L-BFGS)
+       │
+       ├── 成功 → 返回轨迹
+       │
+       └── 失败 → Fallback
+                    │
+  尝试 3: 增加种子数 / 降低约束容差
+       │
+       ├── 成功 → 返回轨迹
+       │
+       └── 失败 → 报告 FAIL
+```
+
+**为什么需要图搜索 fallback？** 纯轨迹优化是局部方法——如果所有种子的初始路径都绕障碍物的同一侧，可能全部陷入同一个局部最优。图搜索（类 PRM）在 GPU 上预计算的路标图中搜索多条路径，提供不同拓扑的初始解——类似 M08.1 中"采样找拓扑 + 优化提质量"的思想，但全部在 GPU 上完成。
+
+> **反事实推理**：如果 cuRobo 没有图搜索 fallback 会怎样？在窄通道场景中，纯轨迹优化的成功率可能从 99% 降到 80-85%——因为直线或随机初始路径可能全部穿过障碍物，L-BFGS 无法将它们拉出来。图搜索 fallback 在这些困难场景中贡献了约 10-15% 的额外成功率。
 
 ### CUDA Graph 优化 ⭐⭐⭐
 
@@ -482,6 +578,45 @@ plan_config = MotionGenPlanConfig(
     need_graph_success=False,  # 是否必须图搜索成功
 )
 ```
+
+### cuRobo 的调试技巧 ⭐⭐
+
+GPU 运动规划的调试比 CPU 版本困难。以下是实践中总结的调试方法论：
+
+**1. 先在 CPU 模式验证正确性**
+
+```python
+# cuRobo 支持 CPU fallback (虽然慢)
+tensor_args = TensorDeviceType(device="cpu")  # 改为 CPU
+# 先在 CPU 上验证逻辑正确, 再切 GPU 验证性能
+```
+
+**2. 球体模型可视化验证**
+
+```python
+# 可视化球体模型, 确认覆盖完整
+# 在 RViz / Isaac Sim 中渲染每个 link 的球体
+# 重点检查: 夹爪、腕部、近基座粗壮 link
+# 常见问题: 球体遗漏夹持器尖端 → 夹爪穿过物体
+```
+
+**3. 逐阶段延迟分析**
+
+```python
+# 使用 CUDA events 精确计时每个阶段
+import torch
+start_event = torch.cuda.Event(enable_timing=True)
+end_event = torch.cuda.Event(enable_timing=True)
+start_event.record()
+# ... 规划调用 ...
+end_event.record()
+torch.cuda.synchronize()
+elapsed_ms = start_event.elapsed_time(end_event)
+```
+
+**4. 种子数对成功率的影响分析**
+
+建议在目标场景中做种子数扫描：分别用 4、8、12、16、24 个种子运行 100 次规划，绘制成功率曲线。通常存在一个"拐点"——超过该种子数后成功率增长放缓，继续增加种子只增加延迟不增加成功率。
 
 ### 许可证与商业化考量 ⭐⭐
 
@@ -748,6 +883,43 @@ SoA (友好):    [b0_s0_x, b1_s0_x, b2_s0_x, ..., b0_s0_y, ...]
 
 合并访问 vs 非合并访问的性能差距可达 10-30 倍（取决于 L2 cache 命中率）。cuRobo 在 FK kernel 输出时就按 SoA 布局存储球心坐标，避免后续碰撞 kernel 中的非合并访问。
 
+### GPU 碰撞检测的线程映射策略 ⭐⭐⭐
+
+cuRobo 的碰撞检测 kernel 面临一个非平凡的线程映射问题：如何将 `(batch, sphere, obstacle)` 三维索引映射到一维的 CUDA thread ID？
+
+**方案 1：一维展平（cuRobo V1 的方式）**
+
+```
+total_pairs = batch_size × num_spheres × num_obstacles
+thread_id = blockIdx.x * blockDim.x + threadIdx.x
+batch = thread_id / (num_spheres * num_obstacles)
+sphere = (thread_id / num_obstacles) % num_spheres
+obstacle = thread_id % num_obstacles
+```
+
+优点：简单。缺点：当 `num_obstacles` 很小时（如 3 个 box），连续 thread 处理同一 batch 的不同 sphere——球心坐标访问不连续。
+
+**方案 2：二维 grid（性能更优）**
+
+```
+grid.x = (batch_size + blockDim.x - 1) / blockDim.x
+grid.y = num_spheres
+
+batch = blockIdx.x * blockDim.x + threadIdx.x
+sphere = blockIdx.y
+// 每个 thread 处理该 (batch, sphere) 对的所有 obstacles（内层循环）
+```
+
+优点：连续 thread 处理连续 batch → 球心坐标的合并访问。缺点：内层循环（遍历 obstacles）可能负载不均。
+
+cuRobo 实际上根据 `num_obstacles` 的大小动态选择策略——障碍物少时用方案 2（减少原子操作冲突），障碍物多时用方案 1（最大化并行度）。
+
+**原子操作的性能影响**：
+
+碰撞检测的最终目标是找到每个 batch 的最小碰撞距离（`min_distances[batch]`）。多个 thread 同时写同一个 `min_distances[batch]`，需要原子操作。CUDA 的 `atomicMin` 不支持浮点数——cuRobo 用 CAS (Compare-And-Swap) 循环模拟（见前文代码）。
+
+CAS 循环的性能取决于竞争程度：如果同一 batch 的所有 sphere-obstacle 对同时写入，竞争激烈，CAS 重试次数增多。cuRobo 的优化策略是让每个 thread 先在寄存器中累积局部最小值（遍历多个 obstacle），最后只做一次原子写入——减少原子操作次数 10-100 倍。
+
 ### 与 nvblox 的感知管线 ⭐⭐
 
 对于需要处理真实点云/深度图的场景，cuRobo 与 NVIDIA nvblox 联动：
@@ -974,6 +1146,60 @@ void simd_forward_kinematics_8(
 
 VAMP 的采样也用 SIMD 加速（`impl/vamp/random/halton.hh`）：一次生成 8 个维度的 Halton 低差异序列样本。Halton 序列比伪随机数在高维空间中分布更均匀——减少"聚团"现象，提高采样效率。
 
+**为什么 Halton 序列比伪随机数更适合运动规划？**
+
+| 采样方式 | 覆盖均匀性 | 高维表现 | SIMD 友好度 |
+|---------|-----------|---------|-----------|
+| 伪随机（std::mt19937） | 中等（有聚团） | 随维度增加退化 | 差（生成过程有状态依赖） |
+| Halton 序列 | 高（低差异） | 7-DOF 以内表现好 | 好（确定性计算，可向量化） |
+| Sobol 序列 | 极高 | 高维也好 | 中（需要方向数表） |
+
+Halton 序列的第 $n$ 个样本在第 $d$ 维的值是 $n$ 的 $p_d$ 进制翻转（其中 $p_d$ 是第 $d$ 个素数）。这个计算是纯算术——没有分支、没有内存查找——完美适合 SIMD 向量化。VAMP 一次生成 8 组 Halton 样本（AVX2 的 8 宽向量），吞吐率约为伪随机数的 5 倍。
+
+**Halton 序列在 RRT-Connect 中的优势**：
+
+RRT-Connect 的效率高度依赖采样点的分布质量。伪随机采样可能在某些区域过度采样而在其他区域欠采样——导致树的生长不均匀。Halton 序列的低差异特性保证了构型空间的均匀覆盖——树在所有方向上均匀生长，减少了"死角"（采样不到的区域），提高了窄通道的穿越概率。
+
+> **反事实推理**：如果 VAMP 用伪随机数而非 Halton 序列会怎样？对于 7-DOF Panda 在简单场景中的 RRT-Connect，采样方式对规划时间的影响约 10-20%——不大。但在窄通道场景中，Halton 的均匀覆盖使窄通道被采样到的概率提高 2-3 倍——规划时间可能从 200 us 降到 80 us。VAMP 论文中的 35 us 中位规划时间部分归功于 Halton 采样的高效覆盖。
+
+### VAMP 的完整规划管线 ⭐⭐⭐
+
+VAMP 内部的规划管线与传统 OMPL RRT-Connect 的流程相似，但每个步骤都经过了 SIMD 深度优化：
+
+```
+VAMP RRT-Connect 规划管线:
+
+  1. 初始化: 构建机器人 SIMD 模型 (编译时确定 DOF → 模板特化)
+  2. 采样:   Halton 序列 SIMD 生成 (8 个样本/指令)
+       │
+       ▼
+  3. FK:     SIMD 正运动学 (8 个构型的所有球心同时计算)
+       │
+       ▼
+  4. 碰撞:   SIMD 碰撞检测 (8 对球的距离同时比较)
+       │
+       ▼
+  5. 近邻:   CAPT 无分支最近邻 (RSS 2024)
+       │
+       ▼
+  6. 连接:   树生长 + EXTEND/CONNECT 操作
+       │
+       ▼
+  7. 输出:   路径点序列 (仍需后续 STOMP/TOPP-RA 后处理)
+```
+
+**关键点**：步骤 2-5 都被 SIMD 加速，但步骤 6（树的连接逻辑）仍是串行的——因为"新节点能否加入树"取决于碰撞检测结果，而碰撞检测结果依赖于 FK，形成串行依赖链。VAMP 的贡献是让这条依赖链中每个环节的延迟降到极低——使串行的总延迟也能控制在微秒级。
+
+**VAMP 的输出格式**：
+
+VAMP 输出的是与 OMPL 类似的路径点序列（关节角数组），不包含时间信息和轨迹优化。要得到可执行轨迹，后续还需要：
+
+1. 路径简化（去除冗余路径点）
+2. 轨迹优化（STOMP/CHOMP 平滑，M08）
+3. 时间参数化（TOPP-RA/Ruckig，M10）
+
+这就是为什么 VAMP 35 us 的采样规划不能直接与 cuRobo 30 ms 的全栈运动生成公平对比——后者包含了步骤 1-3 的全部工作。
+
 ### 编译器自动向量化为什么不够? ⭐⭐⭐
 
 一个常见疑问：既然编译器（GCC/Clang -O3 -march=native）可以自动向量化，为什么 VAMP 还要手写 intrinsics？
@@ -990,7 +1216,26 @@ VAMP 的采样也用 SIMD 加速（`impl/vamp/random/halton.hh`）：一次生�
 
 ### CAPT 数据结构 (RSS 2024) ⭐⭐⭐⭐
 
-Thomason et al. 在 RSS 2024 论文中提出 CAPT (Collision-Affording Point Tree)——专为 SIMD 友好设计的最近邻数据结构，加速碰撞检测 inner loop 中的空间查询。
+Ramsey et al. (RSS 2024) 在论文 "Collision-Affording Point Trees: SIMD-Amenable Nearest Neighbors for Fast Collision Checking" 中提出 CAPT (Collision-Affording Point Tree)——专为 SIMD 友好设计的最近邻数据结构，加速碰撞检测 inner loop 中的空间查询。
+
+**CAPT 的核心设计思想**：
+
+传统 KD-tree 的最近邻搜索涉及大量条件分支（左子树还是右子树？剪枝还是继续？），这在 SIMD 执行中是致命的——分支导致向量化路径分裂，无法高效利用 SIMD 寄存器。CAPT 的设计目标是把最近邻查询变成**无分支的向量化操作**。
+
+**CAPT 的关键创新**：
+
+| 设计选择 | 传统 KD-tree | CAPT |
+|---------|-------------|------|
+| 树遍历 | 递归 + 剪枝（大量分支） | **固定深度遍历**（无分支） |
+| 数据布局 | 节点包含左右孩子指针 | **BFS 序数组**（缓存友好） |
+| SIMD 利用 | 几乎无法向量化 | **8 个查询点同时遍历** |
+| 碰撞判定 | 逐点比较 | **向量化比较 + movemask** |
+
+CAPT 将环境障碍物的碰撞几何预处理为一棵固定深度的点树（Point Tree），树的每一层按 BFS 顺序存储在连续内存中。查询时，8 个球心同时（AVX2 的 8 宽向量）遍历同一层——所有 8 个查询走相同的遍历路径（无分支），只是在最终判定时用 `_mm256_movemask_ps` 提取哪些球发生碰撞。
+
+**性能影响**：CAPT 使 VAMP 在杂乱环境（50+ 障碍物）中的碰撞检测吞吐率比无 CAPT 的版本提升约 2-4 倍。在简单环境中提升较小——因为障碍物少时，暴力遍历已经足够快。CAPT 的价值在障碍物数量 $> 20$ 时开始凸显。
+
+> **跨领域类比**：CAPT 的设计哲学类似于 GPU 上的 BVH（Bounding Volume Hierarchy）加速结构在光线追踪中的作用——将不规则的空间查询转化为规则的数据并行操作。不同的是，BVH 面向 GPU 的 SIMT 模型，CAPT 面向 CPU 的 SIMD 模型。两者的共同原则是：**让数据结构适配硬件的执行模式，而非反过来**。
 
 ### VAMP 性能数据 ⭐⭐
 
@@ -1011,9 +1256,62 @@ VAMP 使用 **nanobind**（pybind11 的后继项目）提供 Python 接口。nan
 
 这使得 VAMP 既可以作为 C++ 库嵌入实时系统，也可以通过 Python 快速原型验证。VAMP 和 Ruckig（时间最优轨迹生成，M10 将讲）是 nanobind 在机器人库中的标杆采用者。
 
+**VAMP 的机器人模型注册机制**：
+
+VAMP 不使用 URDF 直接加载机器人——它需要在编译时生成特定机器人的 SIMD 优化代码。当前仓库预置了 Panda、UR5、Fetch 等常见机器人的 SIMD 模型。添加新机器人需要：
+
+1. 提供 URDF + 球体碰撞近似参数
+2. 运行代码生成工具，生成该机器人的 SIMD FK 函数（编译时展开循环、内联 DH 参数）
+3. 重新编译 VAMP 库
+
+这种"编译时特化"的设计是性能极致的代价——每换一个机器人就需要重新编译。相比之下，cuRobo 用 JIT（Warp 运行时编译）实现了类似的特化效果，但代价是首次 warmup 需要 30-60 秒。
+
+> **"不是X而是Y"句式**：VAMP 和 cuRobo 的机器人模型加载差异不是"谁更方便"的问题——而是**编译时特化 vs 运行时 JIT**的架构选择。编译时特化（VAMP）产生最优代码但牺牲灵活性；运行时 JIT（cuRobo）保持灵活性但有启动延迟。两者各有适用场景：工厂产线（固定机器人）→ VAMP 的编译时特化；研究实验室（频繁换机器人）→ cuRobo 的 JIT。
+
 ### VAMP-MR: 多臂协同规划 ⭐⭐⭐
 
-VAMP 团队在 AAAI 2026 WoMAPF 上提出 VAMP-MR——将 SIMD 加速扩展到**多臂协同规划**。当多臂共享工作空间时，需要检测臂间碰撞——碰撞对数从 $O(N^2)$（N = 单臂球体数）增长到 $O(M^2 N^2)$（M = 臂数）。VAMP-MR 用 SIMD 并行化这些检测，碰撞检查+规划+后处理加速两个数量级。
+VAMP 团队在 AAAI 2026 WoMAPF 上提出 VAMP-MR (Vector-Accelerated Motion Planning for Multi-Robot Arms)——将 SIMD 加速扩展到**多臂协同规划**。当多臂共享工作空间时，需要检测臂间碰撞——碰撞对数从 $O(N^2)$（$N$ = 单臂球体数）增长到 $O(M^2 N^2)$（$M$ = 臂数）。VAMP-MR 用 SIMD 并行化这些检测，碰撞检查+规划+后处理加速两个数量级。
+
+**多臂碰撞检测的组合爆炸**：
+
+考虑双臂系统（$M = 2$），每臂 50 个球体。需要检测的碰撞对：
+
+- 单臂自碰撞：$C(50, 2) \approx 1225$ 对 $\times 2$ 臂 = 2450 对
+- 臂间互碰撞：$50 \times 50 = 2500$ 对
+- 环境碰撞：$100 \times$ OBB 数 $\times 2$ 臂
+- **总计**：数千到上万对
+
+如果每对碰撞检测需要 10 ns（传统串行），总检测时间约 50-100 us——单次碰撞检测已经比 VAMP 单臂的整个规划时间（35 us）还长。VAMP-MR 用 SIMD 将每 8 对碰撞并行检测，吞吐率维持在 50M+ checks/sec 的水平。
+
+**VAMP-MR 的工程价值**：在半导体制造、电子装配等需要双臂或多臂协同的场景中，传统 OMPL 的多臂规划时间可达秒级。VAMP-MR 将其压缩到毫秒级——使实时多臂协调成为可能。
+
+### GPU vs CPU 加速的工程权衡深度分析 ⭐⭐⭐
+
+选择 GPU 加速（cuRobo）还是 CPU SIMD 加速（VAMP）不仅是性能对比——还涉及系统架构、部署约束和长期维护的深层权衡。
+
+**功耗效率对比**：
+
+| 平台 | 规划延迟 | 功耗 | 能效（规划/焦耳） |
+|------|---------|------|----------------|
+| i7-12700 + VAMP | 35 us | ~65W (CPU TDP) | 极高 |
+| RTX 4090 + cuRobo | 30 ms | ~350W (GPU TDP) | 中 |
+| Jetson Orin + cuRobo | 100 ms | ~15-60W | 中高 |
+| ARM Cortex-A78 + VAMP | ~150 us | ~5W | 高 |
+
+在嵌入式机器人（如移动操作平台）中，功耗预算通常 < 30W。VAMP 在 ARM CPU 上的功耗效率远优于需要独立 GPU 的 cuRobo——除非平台自带 GPU（如 Jetson 系列）。
+
+**开发和调试复杂度**：
+
+| 维度 | VAMP (CPU SIMD) | cuRobo (GPU CUDA) |
+|------|----------------|-------------------|
+| 编译环境 | 标准 C++20 编译器 | 需要 CUDA Toolkit + PyTorch |
+| 调试工具 | GDB/LLDB + Valgrind | cuda-gdb + Nsight（学习曲线陡峭） |
+| 单元测试 | 标准 GoogleTest | 需要 GPU 环境才能跑测试 |
+| CI/CD | 标准 GitHub Actions | 需要 GPU runner（成本高） |
+| 错误诊断 | 标准 core dump | GPU kernel 崩溃难以定位 |
+| 可移植性 | 任意 x86/ARM | 仅 NVIDIA GPU |
+
+> **"不是X而是Y"句式**：GPU vs CPU SIMD 的选择不是"哪个更快"的问题——在各自的最佳场景中，两者的延迟差距不大（VAMP 35 us 采样规划 vs cuRobo 30 ms 全栈）。真正的决策因素是**系统架构约束**：有没有 GPU？功耗预算多少？需不需要全栈运动生成？团队有没有 CUDA 经验？这些工程因素往往比性能数字更决定选型结果。
 
 ### OMPL / MoveIt 工作流中的 VAMP 集成边界 ⭐⭐
 
@@ -1032,7 +1330,7 @@ OMPL 2.x 本身也在演进新的状态空间和约束规划能力；这些能�
    看起来差近 1000 倍——但它们解决的问题规模不同:
    - VAMP: 仅采样规划 (几何路径, 不含轨迹优化/时间参数化)
    - cuRobo: 完整运动生成 (IK + 碰撞 + 轨迹优化 + 时间参数化)
-   公平对比: VAMP 35us + STOMP 50ms ≈ 50ms (后端仍在 CPU)
+   公平对比: VAMP 35us + STOMP 50ms 约为 50ms (后端仍在 CPU)
             cuRobo 30ms (全部在 GPU)
    两者是互补的, 不是竞争关系:
      有 GPU → cuRobo; 无 GPU → VAMP + CPU 优化
@@ -1139,6 +1437,29 @@ OMPL 2.x 本身也在演进新的状态空间和约束规划能力；这些能�
 
 > **本质洞察**: cuRobo 的策略是"用暴力并行弥补单次碰撞检测的精度不足"——球体近似不如 GJK 精确，但 GPU 上可以并行检测百万级球对。这在困难场景中尤其有效：多种子覆盖了多种拓扑路径，即使部分种子因为球体过度保守而失败，其他种子仍可能成功。
 
+### GPU 加速的内存管理策略 ⭐⭐⭐
+
+GPU 规划中内存管理是一个容易被忽视但影响很大的工程问题。cuRobo 的内存使用模式分析：
+
+| 数据类型 | 大小估算 (Panda 7-DOF, 512 batch) | 生命周期 | 存储位置 |
+|---------|----------------------------------|---------|---------|
+| 关节角输入 | 512 $\times$ 7 $\times$ 4 bytes = 14 KB | 每次规划 | GPU Global Memory |
+| 球心坐标 | 512 $\times$ 80 $\times$ 3 $\times$ 4 = 480 KB | FK 输出 → 碰撞输入 | GPU Global Memory |
+| OBB 参数 | 50 $\times$ 10 $\times$ 4 = 2 KB | 世界模型（长期） | GPU Constant Memory |
+| 碰撞距离 | 512 $\times$ 4 = 2 KB | 碰撞输出 → 优化器输入 | GPU Global Memory |
+| L-BFGS 历史 | 12 种子 $\times$ 32 点 $\times$ 7 DOF $\times$ 10 历史 = 100 KB | 优化期间 | GPU Global Memory |
+| ESDF 体素网格 | $200^3 \times 4$ = 32 MB | 感知更新（周期） | GPU Global Memory |
+
+**总 GPU 内存占用**：约 **2-4 GB**（包含 PyTorch 运行时、CUDA Context 和数据缓冲区）。
+
+**内存优化策略**：
+
+1. **预分配 + 复用**：cuRobo 在 `warmup()` 时一次性分配所有缓冲区，运行时零内存分配——这是实时系统的基本要求
+2. **OBB 参数放 Constant Memory**：CUDA Constant Memory 有 64KB 限制但缓存命中率极高，OBB 参数被所有 thread 共享读取，完美适合
+3. **ESDF 的多分辨率策略**：近距离（机器人周围 1m）用高分辨率（1cm）、远距离用低分辨率（5cm）——总内存从 32 MB 降到 ~8 MB
+
+> **反事实推理**：如果 cuRobo 每次规划都动态分配 GPU 内存会怎样？`cudaMalloc` 的延迟约 1-10 ms——对 30 ms 总预算的规划器来说是不可接受的。预分配策略将内存管理开销从毫秒级降到零——这与 Ruckig 的零堆分配（M10）是相同的实时系统设计原则。
+
 ### Isaac Sim 中的 GPU 规划 ⭐⭐
 
 NVIDIA Isaac Sim 将 cuRobo 深度集成：
@@ -1222,7 +1543,7 @@ def blend_trajectories(old_traj, new_traj, t_blend_start, window=0.1):
         elif t > t_blend_start + window:
             return new_traj(t)
         else:
-            # 余弦混合 (C¹ 连续)
+            # 余弦混合 ($C^1$ 连续)
             alpha = 0.5 * (1 - np.cos(np.pi *
                     (t - t_blend_start) / window))
             return (1 - alpha) * old_traj(t) + alpha * new_traj(t)
@@ -1402,13 +1723,38 @@ cuRobo 自 2023 年发布以来经历了快速迭代。截至 2026 年的主要�
 | 版本/里程碑 | 时间 | 关键更新 |
 |------------|------|---------|
 | cuRobo 0.7 | 2024 Q1 | 多种子轨迹优化稳定性改进、MoveIt2 cuMotion 插件发布 |
-| cuRobo 0.8 | 2024 Q3 | 初步约束规划支持（末端朝向约束）、CUDA Graph 自动调优 |
+| cuRobo 0.7.5-0.7.6 | 2024 Q4 | 位姿到达精度 10x 提升（固定终端动作）、Planning-to-Grasp API |
+| cuRobo 0.8 (V2) | 2026 Q2 | **完全重写**：B-spline 轨迹表示、动力学感知优化、GPU 原生 ESDF 感知、可扩展至高 DOF 人形 |
+| TSDF Mapper 优化 | 2026 Q2 | 特征通道集成、TSDF 映射性能从 1.5ms 提升到 0.5ms |
 | Isaac Manipulator | 2025 | 整合 cuRobo + Isaac Sim + Perception 的端到端操控框架 |
-| cuRobo 2.0（预期） | 2025-2026 | 多臂支持、接触感知规划、Transformer 运动策略集成 |
+
+**cuRobo V2 的架构变化**：
+
+cuRobo V2 是对 V1 的完全重写，核心变化包括：
+
+| 维度 | V1 (0.7.x) | V2 (0.8+) |
+|------|-----------|-----------|
+| 轨迹表示 | 路径点序列 | **B-spline**（连续性更好、参数更少） |
+| 优化目标 | 运动学（jerk + 碰撞） | **动力学感知**（力矩可行性纳入优化） |
+| 适用范围 | 单臂 6-7 DOF | **可扩展至人形等高 DOF 系统** |
+| 感知集成 | 外部 ESDF | **GPU 原生 ESDF**（更低延迟） |
+| TSDF 性能 | 1.5 ms | **0.5 ms**（3x 提速） |
+
+B-spline 表示相比路径点序列的优势在于：控制点数量少于路径点（如 10 个控制点可表示 100 个路径点的平滑曲线），优化变量维度降低；B-spline 天然保证一定阶数的连续性（4 阶 B-spline 通常保证 $C^2$ 连续），不需要额外的平滑性惩罚项。
+
+> **反事实推理**：如果 cuRobo V2 不切换到 B-spline 表示会怎样？路径点序列表示中，每个路径点都是独立优化变量——100 个路径点 $\times$ 7 DOF = 700 个变量。B-spline 用 10 个控制点 $\times$ 7 DOF = 70 个变量表达同等复杂度的路径。变量数减少 10 倍意味着 Hessian 矩阵从 $700 \times 700$ 缩减到 $70 \times 70$——L-BFGS 的每步计算量大幅降低。这也是 Drake 从一开始就使用 B-spline 参数化的原因（回顾 M08.7）。
+
+**cuRobo 在工业拓展 DOF 系统中的应用**：
+
+2025 年的研究（arxiv 2508.04146）将 cuRobo 从标准 7-DOF 机械臂扩展到工业场景中的扩展 DOF 系统（如带外部轴的焊接机器人、多臂系统）。关键发现：
+
+- cuRobo 的 GPU 几何规划器在扩展 DOF 系统上比 OMPL RRT-Connect（Tesseract 实现）平均快 **101 倍**
+- 在 Jetson Orin MAXN 模式下仍有 **23 倍**加速，15W 功耗模式下有 **17 倍**加速
+- 工业级应用中，cuRobo 实现约 3.1$\pm$0.15 秒的平均循环时间，成功率 98.5%；MoveIt 方案为 4-16 秒且波动大
 
 **Isaac Manipulator** 是 NVIDIA 在 2025 年推出的面向工业部署的操控框架，将 cuRobo 的 GPU 运动生成与 FoundationPose（6D 位姿估计）和 nvblox（3D 重建）整合为端到端管线——从 RGBD 图像直接到可执行轨迹。对工业用户而言，这意味着不再需要手动拼接感知和规划模块。
 
-> **本质洞察**：cuRobo 的演进方向不是"更快的采样规划"，而是"GPU 上的端到端运动生成"。传统管线（感知 → 场景理解 → 规划 → 优化 → 执行）中的每个环节都在 GPU 上并行化，最终目标是将整个管线压缩到一个 CUDA Graph 中，实现 10 ms 级别的从传感器到执行器的延迟。
+> **本质洞察**：cuRobo 的演进方向不是"更快的采样规划"，而是"GPU 上的端到端运动生成"。传统管线（感知 → 场景理解 → 规划 → 优化 → 执行）中的每个环节都在 GPU 上并行化，最终目标是将整个管线压缩到一个 CUDA Graph 中，实现 10 ms 级别的从传感器到执行器的延迟。cuRobo V2 的 B-spline + 动力学感知 + 高 DOF 扩展，标志着从"运动规划加速器"到"通用运动生成平台"的转型。
 
 ### GPU 加速的未来趋势 (2025-2027) ⭐⭐⭐
 
@@ -1422,6 +1768,25 @@ cuRobo 自 2023 年发布以来经历了快速迭代。截至 2026 年的主要�
 | **RISC-V Vector 扩展** | RVV 向量化碰撞检测 | VAMP 式加速在 RISC-V 嵌入式平台 |
 
 **对从业者的建议**: 2026 年的选择是 cuRobo/Isaac Manipulator (GPU 全栈) 或 VAMP (CPU SIMD)。关注 Transformer 规划器和 Isaac Manipulator 的进展——传统采样+优化的管线正在被 GPU 端到端方案和学习方法逐步替代。保持代码的模块化设计（回顾 M07.5 的策略模式），以便未来切换规划后端。
+
+**RISC-V Vector 扩展的潜力**：
+
+RISC-V 的 RVV（RISC-V Vector Extension）是值得关注的长期趋势。与 ARM NEON（固定 128-bit 宽度）和 AVX2（固定 256-bit 宽度）不同，RVV 支持可变长度向量（VLA, Variable-Length Architecture）——同一份代码可以在不同宽度的 RVV 硬件上运行，无需重新编译。这对 VAMP 式的 SIMD 加速意味着：
+
+- 不再需要为每种向量宽度维护不同的特化代码
+- 未来 RISC-V 处理器可能提供 512-bit 或更宽的向量——自动获得 2-4 倍于 AVX2 的加速
+- 嵌入式 RISC-V 处理器（低功耗）上也可能有 RVV 支持——扩展 VAMP 的部署范围
+
+当前 VAMP 尚未支持 RVV，但其模板化的 SIMD 抽象层（`FloatVector<N>` 模板特化）为添加 RVV 后端提供了清晰的扩展点。
+
+**Apple Metal 和 AMD ROCm 的运动规划前景**：
+
+cuRobo 完全依赖 NVIDIA CUDA——这在 Apple Silicon（M1/M2/M3 GPU）和 AMD GPU 上无法使用。2025-2026 年出现了两个替代方向：
+
+1. **WebGPU + Compute Shaders**：平台无关的 GPU 计算 API，可在 NVIDIA/AMD/Apple GPU 上运行。但性能比 CUDA 低 20-50%（缺少 CUDA 的硬件特化优化）
+2. **JAX + XLA**：Google 的 XLA 编译器可以将 JAX 代码编译到 CUDA/ROCm/Metal 上。将 cuRobo 的核心算法用 JAX 重写，理论上可以在任意 GPU 上运行
+
+这些方案目前都不成熟——但随着 NVIDIA GPU 以外的加速器在机器人中的普及（Apple Vision Pro 的空间计算、AMD 嵌入式 GPU），跨平台 GPU 运动规划将成为重要研究方向。
 
 ### 穷举式场景分类与方案推荐 ⭐⭐
 
@@ -1455,6 +1820,69 @@ cuRobo 自 2023 年发布以来经历了快速迭代。截至 2026 年的主要�
 2. **[跨章综合]** 画出从 M04(碰撞检测) → M07(OMPL) → M08(轨迹优化) → M09(GPU加速) 的完整技术栈演进图。标注每一步解决了什么问题、引入了什么新能力、留下了什么新问题。
 
 ---
+
+## 本章常见误解汇总
+
+| 误解 | 正确理解 |
+|------|---------|
+| "cuRobo 是 GPU 版 OMPL" | cuRobo 核心是并行多种子轨迹优化，不是把 RRT 搬到 GPU 上 |
+| "VAMP 比 cuRobo 快 1000 倍" | VAMP 35 us 是纯采样规划；cuRobo 30 ms 是全栈运动生成。问题规模不同 |
+| "GPU 加速一切都快" | GPU 加速的是碰撞检测和批量 FK，RRT 树的串行依赖不适合 GPU |
+| "SIMD 就是多线程" | SIMD 是单核内的数据并行（一条指令处理 8 个 float），多线程是多核 |
+| "球体近似不精确所以不安全" | 球体近似是保守的（比实际形状大），可能报假阳性但不会遗漏碰撞 |
+| "编译器自动向量化够用" | 实测 VAMP 手写 SIMD 比编译器自动向量化快 3-10 倍 |
+| "cuRobo warmup 每次都要 30s" | 启用 LRU 缓存后后续启动为秒级 |
+| "有 GPU 就应该用 cuRobo" | 简单场景 + 嵌入式功耗限制下，VAMP (CPU SIMD) 可能更合适 |
+| "VAMP 可以直接替代 OMPL" | VAMP 需要显式桥接模型、FK、碰撞表示，不是 drop-in 替换 |
+| "benchmark 数据可以直接用于选型" | benchmark 高度依赖场景复杂度、硬件、配置参数，必须在目标环境实测 |
+
+## 术语速查表
+
+| 术语 | 英文 | 一句话定义 |
+|------|------|----------|
+| SIMD | Single Instruction Multiple Data | 一条指令同时处理多个数据元素的并行模式 |
+| SIMT | Single Instruction Multiple Thread | GPU 的执行模型——大量线程执行相同程序的不同数据 |
+| Warp | Warp | NVIDIA GPU 中 32 个线程的执行单元 |
+| Warp Divergence | Warp Divergence | 同一 warp 中线程走不同分支路径导致串行执行 |
+| CUDA Graph | CUDA Graph | 将多个 kernel 启动打包为一个图提交，减少启动开销 |
+| SoA | Structure of Arrays | 数据布局：同类型字段连续存储（GPU 友好） |
+| AoS | Array of Structures | 数据布局：同对象字段连续存储（缓存友好但 GPU 不友好） |
+| AVX2 | Advanced Vector Extensions 2 | Intel/AMD 的 256-bit SIMD 指令集扩展 |
+| NEON | NEON | ARM 的 128-bit SIMD 指令集 |
+| OBB | Oriented Bounding Box | 方向包围盒——碰撞检测中的几何近似 |
+| ESDF | Euclidean Signed Distance Field | 欧氏签名距离场——从深度图实时生成 |
+| nanobind | nanobind | pybind11 的后继——更快的 C++/Python 绑定框架 |
+| CAPT | Collision-Affording Point Tree | VAMP RSS 2024 提出的 SIMD 友好最近邻数据结构 |
+
+## API 速查表
+
+| API/工具 | 入口 | 核心调用 |
+|---------|------|---------|
+| cuRobo MotionGen | `curobo.wrap.reacher.motion_gen` | `motion_gen.plan_single()` |
+| cuRobo 世界更新 | `curobo.geom.types.WorldConfig` | `motion_gen.update_world()` |
+| cuRobo 预热 | `MotionGen` 实例 | `motion_gen.warmup()` |
+| VAMP Python | `vamp` (nanobind) | `vamp.rrtc(robot, start, goal, env)` |
+| Isaac ROS cuMotion | MoveIt2 插件 | 替换 OMPL 规划管线 |
+| nvblox | ROS2 节点 | 深度图 → ESDF 实时生成 |
+
+## 研究实践建议
+
+| 层次 | 建议 |
+|------|------|
+| **入门**（1 周） | 安装 cuRobo，用预置 Panda 模型跑首次规划，记录延迟 |
+| **进阶**（2-3 周） | 将自有机器人模型接入 cuRobo（YAML + 球体生成），对比 MoveIt2 OMPL |
+| **深入**（1-2 月） | 精读 `sphere_obb_kernel.cu`，理解 GPU 碰撞检测的内存优化 |
+| **SIMD 方向**（2-4 周） | 安装 VAMP，精读 `avx.hh`，手写一个简单的 SIMD 碰撞检测函数 |
+| **研究**（2+ 月） | 探索 cuRobo V2 的 B-spline 轨迹优化，或 VAMP-MR 多臂扩展 |
+
+## 版本信息速查
+
+| 工具 | 推荐版本 | 许可证 | 关键依赖 |
+|------|---------|--------|---------|
+| cuRobo | 0.8+ (V2) | 以仓库 LICENSE 为准（通常 Apache-2.0） | CUDA 11.7+, PyTorch 2.0+, NVIDIA GPU |
+| VAMP | 最新 main 分支 | Apache-2.0 | C++20 编译器, AVX2 或 NEON |
+| nvblox | Isaac ROS 配套版本 | Apache-2.0 | CUDA, ROS2 |
+| Isaac ROS cuMotion | Isaac ROS 3.x | NVIDIA 许可 | cuRobo, ROS2 |
 
 ## M09.7 本章小结
 
@@ -1490,6 +1918,42 @@ cuRobo 自 2023 年发布以来经历了快速迭代。截至 2026 年的主要�
 
 ---
 
+## 预计阅读时间
+
+| 模式 | 时间 | 覆盖内容 |
+|------|------|---------|
+| 速查 | 30 分钟 | 选型决策表 (M09.5)、benchmark 数据、API 速查表 |
+| 速读 | 3 小时 | 全部 ⭐-⭐⭐ 内容 + Python API 示例 |
+| 精读 | 6 小时 | 全部内容含 ⭐⭐⭐ CUDA kernel 分析和 SIMD 抽象层 |
+| 实战 | 12-18 学时 | cuRobo 安装+首次规划 + VAMP 编译+benchmark + 实时重规划架构 |
+
+## 知识导航
+
+```
+M09 GPU 加速规划知识结构:
+
+  ┌─── M09.1 为什么需要 GPU (瓶颈分析, 10 min)
+  │    └── 碰撞检测占 80-95% ←── M07 采样规划
+  │
+  ├─── cuRobo GPU 全栈 (核心, 1.5 小时)
+  │    ├── M09.2 架构 + 配置 + API
+  │    ├── M09.3 GPU 碰撞检测 (球-OBB kernel)
+  │    └── cuRobo V2 + Isaac Manipulator (前沿)
+  │
+  ├─── VAMP CPU SIMD (核心, 1 小时)
+  │    ├── M09.4 手写 SIMD intrinsics
+  │    ├── CAPT 数据结构 (RSS 2024)
+  │    └── VAMP-MR 多臂扩展
+  │
+  ├─── 选型与 benchmark (工程, 1 小时)
+  │    ├── M09.5 GPU vs SIMD 决策
+  │    └── 不同场景复杂度 benchmark
+  │
+  ├─── M09.6 局限性 + 未来趋势 (前瞻, 30 min)
+  │
+  └─── 下游: M10 (时间参数化) → M12 (ros2_control 执行)
+```
+
 ## 延伸阅读
 
 | 资源 | 难度 | 说明 |
@@ -1522,6 +1986,34 @@ cuRobo 自 2023 年发布以来经历了快速迭代。截至 2026 年的主要�
 
 ---
 
+## 本章与后续章节的关系
+
+| 后续章节 | 关系 | 本章铺垫的知识 |
+|---------|------|-------------|
+| M10 时间参数化 | 直接下游 | GPU 规划输出的几何路径需时间参数化才能执行 |
+| M11 实时 C++ | 执行层 | cuRobo 的实时重规划需要实时安全控制框架 |
+| M12 ros2_control | 硬件接口 | cuMotion 通过 JointTrajectoryController 发送轨迹 |
+| M14 MoveIt2 集成 | 系统层 | cuMotion 作为 MoveIt2 规划插件替代 OMPL |
+
+## 研究前沿补充：Neural Motion Planning 与 GPU 加速的竞合 ⭐⭐⭐
+
+2024-2025 年，基于 Transformer 的运动策略网络（如 MotionPolicy Networks、M$\pi$Nets、SceneRobot Transformer）开始在某些场景中超越 cuRobo。
+
+**Neural vs GPU-Optimized 方法对比**：
+
+| 维度 | cuRobo (GPU 优化) | Neural Motion Planning |
+|------|------------------|----------------------|
+| 推理时间 | 30 ms (全栈) | 5-20 ms (单次前向传播) |
+| 训练需求 | 无需训练 | 需要百万级仿真轨迹训练 |
+| 泛化性 | 对新场景零适应 | 在分布内泛化好，分布外差 |
+| 安全保证 | 约束满足 (SQP/L-BFGS) | **无保证**（需后处理验证） |
+| 杂乱场景 | 球体近似可能过保守 | 学习方法可能更灵活 |
+| 可解释性 | 高（优化轨迹可分析） | 低（黑盒网络） |
+
+**最可能的演化方向**：不是 "Neural 替代 Optimization"，而是 **Neural 初始化 + Optimization 精细调整**——学习模型提供高质量初始轨迹（从数十毫秒的前向传播得到），优化器在此基础上保证约束满足和安全性。这结合了两者的优势：学习的泛化性 + 优化的安全保证。
+
+cuRobo V2 已经在探索这个方向——将 Transformer 运动策略的输出作为轨迹优化的初始种子之一，与传统的直线/随机初始化并行竞争。
+
 **三章总结过渡**: M07-M08-M09 构成了完整的"运动规划"模块：
 
 - **M07（采样规划）**: 在构型空间中找到**拓扑正确的可行路径**——解决"能不能走"的问题
@@ -1529,6 +2021,426 @@ cuRobo 自 2023 年发布以来经历了快速迭代。截至 2026 年的主要�
 - **M09（GPU加速）**: 将全栈运动生成压缩到**30ms 以内**——解决"来不来得及"的问题
 
 三者是递进关系：采样找可行解 → 优化提升质量 → 加速满足实时性。在 MoveIt2 的工程实践中，它们通过链式管线（OMPL → STOMP）或 GPU 全栈替代（cuRobo）组合使用。下一步（M10）将为优化后的路径赋予时间参数，使其成为可直接发送给 ros2_control 硬件接口的可执行轨迹。
+
+---
+
+## 本章常见误解汇总
+
+| 误解 | 正确理解 | 相关章节 |
+|------|---------|---------|
+| "GPU 加速一切都快" | GPU 擅长大规模数据并行，对串行依赖强的任务（如 Dijkstra、树搜索）无优势 | §1 |
+| "cuRobo 比 MoveIt2 好" | cuRobo 是运动生成器（速度优先），MoveIt2 是集成框架（功能优先）——定位不同 | §5 |
+| "VAMP 需要 GPU" | VAMP 是纯 CPU SIMD 加速，在任意现代 x86/ARM CPU 上运行 | §4 |
+| "球体近似不够精确" | 对于大多数工业场景，20-30 个球体的近似足够；只有精密装配需要 mesh 碰撞 | §6 |
+| "cuRobo 的 30ms 意味着 33Hz 重规划" | 规划和执行可以流水线化——规划线程和执行线程并行运行 | §5 |
+| "基准数据可以直接用于选型" | 基准高度依赖场景/硬件/配置——必须在自己的场景上做测试 | §5 |
+| "cuRobo 只支持 Franka Panda" | cuRobo 支持任意 URDF 机器人（需要配置球体模型），2025 年已支持扩展 DOF 系统 | §2 |
+| "没有 GPU 就不能做实时规划" | VAMP 在 CPU 上实现了 35 $\mu$s 采样规划——比 cuRobo 的 GPU 还快（仅采样规划阶段） | §4 |
+
+### 术语速查表
+
+| 术语 | 英文 | 一句话定义 |
+|------|------|-----------|
+| cuRobo | CUDA Robot | NVIDIA 的 GPU 加速运动生成库 |
+| VAMP | Vectorized Adaptive Motion Planning | Kavraki Lab 的 CPU SIMD 加速采样规划 |
+| cuMotion | CUDA Motion | cuRobo 在 MoveIt2 中的插件形式 |
+| SIMD | Single Instruction Multiple Data | 一条指令同时处理多个数据的并行计算模式 |
+| AVX2 | Advanced Vector Extensions 2 | Intel x86 的 256-bit SIMD 指令集 |
+| NEON | ARM Advanced SIMD | ARM 的 128-bit SIMD 指令集 |
+| ESDF | Euclidean Signed Distance Field | 体素网格上的欧几里德符号距离场 |
+| nvblox | NVIDIA Voxel Block | NVIDIA 的 GPU 加速 3D 重建和 ESDF 生成库 |
+| CUDA Graph | CUDA 图 | 预编译的 GPU kernel 执行图，减少 kernel launch 开销 |
+
+## 本章与后续章节的关系
+
+| 后续章节 | 关系 | 本章铺垫的知识点 |
+|---------|------|----------------|
+| M10 时间参数化 | 下游 | 本章输出的几何路径需要 M10 赋予时间参数 |
+| M14 MoveIt2 集成 | 工程应用 | cuMotion 插件在 MoveIt2 中替代 OMPL+STOMP |
+
+## 研究实践建议
+
+### 入门级
+1. 在 Docker 中安装 cuRobo，用 Franka Panda 跑官方 demo
+2. 对比同一场景下 cuRobo 和 MoveIt2 RRT-Connect 的规划时间
+
+### 进阶级
+1. 为你的自定义机器人生成 cuRobo 球体模型，验证碰撞检测精度
+2. 在 Jetson Orin 上部署 cuMotion MoveIt2 插件，测量端到端延迟
+
+### 研究级
+1. 评估 VAMP 在 ARM 平台（如 Apple M3、Graviton4）上的 NEON 性能
+2. 研究 cuRobo 的 L-BFGS 轨迹优化与 STOMP 的路径质量对比
+
+## 版本信息速查
+
+| 工具 | 版本 (截至 2026.06) | 安装 | 许可证 |
+|------|---|---|---|
+| cuRobo | 0.7.x | `pip install curobo` (需 CUDA 12+) | NVIDIA License |
+| cuMotion (Isaac ROS) | 3.x | Isaac ROS 包 | NVIDIA License |
+| VAMP | 最新 | 源码编译 (C++20) | Apache-2.0 |
+| nvblox | 3.x | Isaac ROS 包 | Apache-2.0 |
+
+> **许可证注意**：cuRobo 使用 NVIDIA 商业许可证（非开源），用于商业产品部署前需确认许可条款。VAMP 使用 Apache-2.0，可自由用于商业和学术。
+
+---
+
+## cuRobo 深度工程指南——从配置到调优 ⭐⭐
+
+### cuRobo 球体模型生成的最佳实践
+
+cuRobo 用球体近似替代 mesh 碰撞检测——球体数量和位置直接影响碰撞检测的精度和速度：
+
+| 参数 | 推荐值 | 说明 |
+|------|--------|------|
+| 每个 link 的球体数 | 5-15 | 太少碰撞检测不准，太多 GPU 计算量增加 |
+| 球体总数 | 20-40 (7-DOF) | 典型 Panda 配置用 ~30 个球体 |
+| 球体覆盖率 | > 95% link 体积 | 用 cuRobo 的自动球体生成工具检查 |
+| 球体最小半径 | > 1 cm | 太小的球体 GPU 线程利用率低 |
+
+```yaml
+# cuRobo 球体配置示例 (panda_sphere.yaml)
+robot_cfg:
+  kinematics:
+    urdf_path: "panda.urdf"
+  collision_spheres:
+    panda_link0:
+      - center: [0, 0, 0.05]
+        radius: 0.06
+    panda_link1:
+      - center: [0, -0.02, -0.1]
+        radius: 0.05
+      - center: [0, 0.02, -0.15]
+        radius: 0.04
+    # ... 其他 link 的球体定义
+```
+
+### cuRobo 性能调优参数
+
+| 参数 | 默认值 | 调优建议 |
+|------|--------|---------|
+| `num_trajopt_seeds` | 12 | 增加到 24-48 可提高成功率但增加延迟 |
+| `num_graph_seeds` | 4 | 增加可改善窄通道场景的成功率 |
+| `use_cuda_graph` | True | 必须为 True（否则 kernel launch 开销很大） |
+| `max_attempts` | 4 | 增加可提高整体成功率 |
+| `interpolation_dt` | 0.02 | 减小可提高轨迹精度但增加输出点数 |
+| `voxel_size` | 0.02 m | 减小可提高 ESDF 精度但增加 GPU 内存 |
+
+### cuRobo 在工业场景中的实际部署经验 ⭐⭐⭐
+
+2024-2025 年的多项工业应用案例揭示了 cuRobo 部署的关键经验：
+
+**成功案例**：
+1. **动态避让人员**：cuRobo 30ms 全栈重规划 + nvblox 实时 ESDF → 机器人在人员接近时自动绕行
+2. **高速 pick-and-place**：传统 OMPL+STOMP 需要 500ms/次，cuRobo 压缩到 100ms/次 → 产线节拍提升 3 倍
+3. **多场景快速切换**：cuRobo 支持热加载新的碰撞环境（无需重启），适合柔性产线
+
+**失败案例和教训**：
+1. **精密装配失败**：球体近似的碰撞精度不足以处理 0.5mm 间隙的零件装配——需要回退到 FCL mesh 碰撞
+2. **Jetson 性能不足**：在 Jetson Orin NX（较低端 GPU）上，cuRobo 延迟增加到 200ms+，不满足实时需求
+3. **调试困难**：cuRobo 的 CUDA+PyTorch 混合栈在出错时给出的错误信息不够清晰——建议从 Python API 入手调试
+
+> **反事实推理**：如果不用 cuRobo 的球体近似而用 GPU 加速的 mesh 碰撞检测（如 GPU-FCL），会怎样？
+> - mesh 碰撞检测的 GJK/EPA 算法有大量条件分支，对 GPU 的 SIMT 执行模型不友好
+> - GPU 上的 mesh 碰撞可能只比 CPU 快 5-10 倍（而非球体的 100 倍）
+> - cuRobo 选择球体近似是**正确的工程折中**——用精度换速度，然后通过增加球体数量部分补回精度
+
+### VAMP 的 SIMD 加速原理深度 ⭐⭐⭐
+
+VAMP 的核心创新不是算法——它用的仍然是 PRM/RRT。创新在于**碰撞检测的 SIMD 向量化**：
+
+```
+传统碰撞检测 (标量):
+  for each sphere pair (i, j):
+    d = sqrt((cx_i - cx_j)^2 + (cy_i - cy_j)^2 + (cz_i - cz_j)^2)
+    if d < r_i + r_j: collision!
+  → 每次检查 1 个球对
+
+VAMP SIMD (AVX2):
+  // 将 8 个球对的坐标打包到 256-bit 寄存器中
+  __m256d dx = _mm256_sub_pd(cx_batch_i, cx_batch_j);  // 4 个 double 的差
+  __m256d dy = _mm256_sub_pd(cy_batch_i, cy_batch_j);
+  __m256d dz = _mm256_sub_pd(cz_batch_i, cz_batch_j);
+  __m256d d2 = _mm256_fmadd_pd(dx, dx, _mm256_fmadd_pd(dy, dy,
+               _mm256_mul_pd(dz, dz)));
+  __m256d r_sum_sq = _mm256_mul_pd(r_sum, r_sum);
+  __m256d mask = _mm256_cmp_pd(d2, r_sum_sq, _CMP_LT_OQ);
+  // mask 中的 4 个 bit 同时告诉我们 4 个球对是否碰撞
+  → 一条指令检查 4 个球对（float 模式下 8 个）
+```
+
+**为什么手写 SIMD 比编译器自动向量化快？**
+
+1. 编译器无法确定数据的对齐和依赖关系——保守生成标量代码
+2. 球体碰撞检测的数据需要特殊的 AoS→SoA (Array of Structures → Structure of Arrays) 转换才能高效向量化
+3. VAMP 的作者手动做了这个转换，并用 intrinsics 绕过了编译器的保守决策
+
+**VAMP 的跨平台适配**：
+
+| 平台 | SIMD 指令集 | 向量宽度 | 每次碰撞检查的球对数 |
+|------|------------|---------|:---:|
+| Intel/AMD (AVX2) | AVX2 | 256 bit | 8 (float) / 4 (double) |
+| Apple M1/M2/M3 | NEON | 128 bit | 4 (float) / 2 (double) |
+| AWS Graviton3+ | SVE2 | 可变 (128-2048 bit) | 4-64 (取决于实现) |
+
+> **本质洞察**：cuRobo 和 VAMP 代表了加速碰撞检测的两条互补路线——GPU 并行（大量核心 $\times$ 简单逻辑）和 CPU SIMD（少量核心 $\times$ 宽向量）。它们不是竞争关系：有 GPU 用 cuRobo，无 GPU 用 VAMP。未来 VAMP 可能作为 cuRobo 的 CPU 降级方案集成到同一框架中。
+
+### GPU vs SIMD vs 传统方案的量化对比 ⭐⭐
+
+| 维度 | 传统 (OMPL+FCL) | VAMP (SIMD) | cuRobo (GPU) |
+|------|:---:|:---:|:---:|
+| **硬件要求** | 任意 CPU | 现代 CPU (AVX2/NEON) | NVIDIA GPU (Turing+) |
+| **全栈延迟** | 100-500 ms | 35 $\mu$s (采样) + 优化 | 30 ms (全栈) |
+| **碰撞精度** | mesh (最高) | 球体 (中) | 球体 (中) |
+| **轨迹质量** | OMPL → STOMP (高) | 采样路径 (中) | L-BFGS 优化 (高) |
+| **动态环境** | 不适合 (太慢) | 适合 (极快重规划) | 适合 (GPU ESDF) |
+| **部署复杂度** | 低 (MoveIt2 标配) | 中 (需编译 C++20) | 高 (CUDA+PyTorch) |
+| **许可证** | BSD (自由) | Apache-2.0 (自由) | NVIDIA (受限) |
+| **适用场景** | 静态环境、离线规划 | 无 GPU 环境的实时规划 | 有 GPU 的人机协作 |
+
+**选型决策树的实际应用**：
+
+```
+你的场景是什么？
+│
+├── 静态环境 + 产线预规划 (不需要实时)
+│   └── 传统 MoveIt2 (OMPL + STOMP)
+│       理由: 成熟稳定、零 GPU 依赖、MoveIt2 生态集成
+│
+├── 动态环境 + 有 NVIDIA GPU
+│   └── cuRobo (cuMotion MoveIt2 插件)
+│       理由: 30ms 全栈运动生成、nvblox 实时 ESDF
+│
+├── 动态环境 + 无 GPU + 现代 CPU
+│   └── VAMP + STOMP
+│       理由: 35us 碰撞检测、CPU 即可运行
+│
+├── 安全关键 (ISO/TS 15066 合规)
+│   └── 传统方案 + TrajOpt (硬约束)
+│       理由: 球体近似不够精确、需要 CCD 安全保证
+│
+└── 接触丰富操作 (装配/插入)
+    └── Drake (接触仿真 + 优化一体)
+        理由: 需要精确的接触力模型
+```
+
+> **跨领域类比**：GPU 加速规划之于传统规划，就像 SSD 之于 HDD——不是"更好的同一种东西"，而是"通过改变底层硬件假设重新设计整个管线"。cuRobo 不只是"把 OMPL 搬到 GPU 上"——它重新设计了碰撞检测（球体近似）、轨迹表示（B-spline）、优化算法（L-BFGS 并行种子），使得整个管线适合 GPU 的 SIMT 执行模型。理解这一点，你就不会犯"把 CPU 算法直接移植到 GPU 就能加速"的错误。
+
+---
+
+## 跨章综合练习 ⭐⭐⭐
+
+**题目**：综合 M04（碰撞检测）→ M07（OMPL）→ M08（轨迹优化）→ M09（GPU 加速），画出完整的运动规划技术栈演进图：
+
+1. 标注每一步解决了什么问题、引入了什么新能力、留下了什么新问题
+2. 对于以下三个场景，选择最优的规划方案并论证：
+   - (a) 工厂固定产线，6 个预定义 pick-and-place 动作
+   - (b) 仓库移动机械臂，人员随时走动
+   - (c) 实验室研究，需要快速迭代不同规划算法
+3. 如果你只有一台 Jetson AGX Orin（GPU 较弱），cuRobo 和 VAMP 哪个更适合？量化论证
+
+---
+
+## cuRobo 2025-2026 最新进展 ⭐⭐⭐
+
+### 扩展 DOF 系统支持
+
+2025 年的工业研究（arXiv:2508.04146）将 cuRobo 扩展到 7+1 DOF（7 轴机械臂 + 第 7 轴行走轨道），关键技术挑战和解决方案：
+
+| 挑战 | 解决方案 | 影响 |
+|------|---------|------|
+| 8 DOF 的配置空间比 7 DOF 大指数级 | 增加 trajopt seeds（24→48） | 规划成功率从 75% 提升到 92% |
+| 行走轨道的碰撞体积大 | 为轨道 link 增加更密的球体覆盖 | 碰撞检测精度提升 |
+| 混合运动学（旋转+平移） | 修改 cuRobo 的 FK kernel 支持棱柱关节 | 兼容工业 gantry 系统 |
+
+**对选型的影响**：cuRobo 不再局限于标准 6/7-DOF 机械臂——扩展 DOF 系统（双臂、行走轨道、龙门架）也可以使用。
+
+### cuMotion MoveIt2 插件成熟化
+
+cuMotion 在 2025-2026 年的主要进展：
+1. **MoveIt2 Jazzy/Kilted 原生支持**：不再需要单独安装 Isaac ROS
+2. **nvblox ESDF 自动更新**：深度相机输入 → GPU TSDF/ESDF → cuRobo 碰撞检测，全链路 GPU
+3. **多机器人支持**：双臂 cuMotion 已在 beta 阶段
+
+### VAMP 的后续发展
+
+VAMP 团队（Rice Kavraki Lab）在 2024-2025 年的后续工作：
+1. **ARM NEON 适配**：VAMP 现在支持 ARM 平台的 NEON 指令集，可在 Apple M1/M2/M3 和 Jetson 上运行
+2. **Python 绑定**：新增 pybind11 Python 接口，方便在 Python 项目中使用
+3. **更多规划算法**：除了 PRM，新增了 RRT-Connect 和 BIT* 的 SIMD 加速版本
+
+> **跨领域类比**：cuRobo/VAMP 的发展轨迹与深度学习推理加速框架（TensorRT/ONNX Runtime）非常相似——先是在特定硬件上做极致优化（cuRobo→NVIDIA GPU，VAMP→x86 AVX2），然后逐步扩展硬件支持（ARM、更多 GPU 型号），最后提供统一的 API 接口（cuMotion MoveIt2 插件）。
+
+---
+
+## GPU 碰撞检测原理——为什么球体近似适合 GPU ⭐⭐⭐
+
+GPU 的 SIMT (Single Instruction Multiple Thread) 执行模型要求所有线程执行**相同的指令路径**——分支（if/else）会导致线程分化（warp divergence），严重降低利用率。
+
+**GJK/EPA 为什么不适合 GPU？**
+
+GJK 算法的核心是迭代搜索 Minkowski 差集的支持向量——每次迭代的搜索方向取决于上一次迭代的结果，且迭代次数不确定（取决于几何形状）。这意味着：
+- 不同线程处理的碰撞对可能需要不同的迭代次数——线程分化
+- 迭代内有大量条件分支（判断原点是否在单纯形内）——分支发散
+- EPA（用于穿透深度）更糟——需要动态构建多面体，涉及堆分配
+
+**球体碰撞为什么完美适配 GPU？**
+
+```
+球体碰撞检测 = 完全无分支的数学运算:
+  d^2 = (x1-x2)^2 + (y1-y2)^2 + (z1-z2)^2
+  collision = (d^2 < (r1+r2)^2)
+  // 3 次减法 + 3 次乘法 + 2 次加法 + 1 次比较
+  // 零条件分支！零动态分配！
+```
+
+所有线程执行完全相同的指令序列——100% GPU 利用率。这就是 cuRobo 的球体近似能达到 100-1000x 加速的根本原因。
+
+**精度 vs 速度的工程权衡**：
+
+| 碰撞检测方法 | 精度 | 单次耗时 | GPU 友好度 | 适用场景 |
+|------------|:---:|:---:|:---:|------|
+| Mesh GJK/EPA | ⭐⭐⭐⭐⭐ | 50 $\mu$s | ⭐ | 精密装配 |
+| 凸包 GJK | ⭐⭐⭐⭐ | 10 $\mu$s | ⭐⭐ | 中等精度 |
+| OBB 树 | ⭐⭐⭐ | 5 $\mu$s | ⭐⭐ | 通用 |
+| 球体近似 | ⭐⭐ | 0.1 $\mu$s | ⭐⭐⭐⭐⭐ | **GPU 加速首选** |
+| AABB | ⭐ | 0.05 $\mu$s | ⭐⭐⭐⭐⭐ | 宽相粗筛 |
+
+> **本质洞察**：cuRobo 选择球体近似不是因为"懒"或"不精确"——而是因为这是**唯一一种在 GPU SIMT 架构上能达到极致并行度的碰撞检测方法**。这是一个硬件约束驱动的设计决策，类似于 GPU 渲染中用三角形而非 NURBS 做光栅化——三角形的固定处理管线完美匹配 GPU 架构。
+
+---
+
+## 符号表
+
+| 符号 | 含义 | 首次出现 |
+|------|------|---------|
+| $d(q)$ | 配置 $q$ 下机器人到最近障碍物的距离 | §1 |
+| $\|c_1 - c_2\|$ | 两个球心之间的距离 | §前置自测 Q4 |
+| $r_1, r_2$ | 碰撞检测球体的半径 | §前置自测 Q4 |
+| $N_{seeds}$ | cuRobo 并行优化的种子数 | §2 |
+| SIMT | Single Instruction Multiple Thread | GPU 执行模型 |
+| warp | 32 个 GPU 线程的执行单元 | §前置自测 Q5 |
+
+---
+
+## GPU 运动规划的工程实践指南 ⭐⭐
+
+### cuRobo 安装与首次运行检查清单
+
+```
+cuRobo 部署检查:
+│
+├── 硬件检查
+│   ├── NVIDIA GPU (Turing/Ampere/Ada, 建议 RTX 3060+)
+│   ├── CUDA 12.1+
+│   ├── GPU 内存 ≥ 8 GB
+│   └── nvidia-smi 确认 GPU 可见
+│
+├── 软件安装
+│   ├── pip install torch (PyTorch 2.0+)
+│   ├── pip install curobo (或从源码安装)
+│   ├── 运行 curobo warmup (首次 JIT 编译约 2-5 分钟)
+│   └── 验证: python -c "import curobo; print(curobo.__version__)"
+│
+├── 机器人配置
+│   ├── 准备 URDF 文件
+│   ├── 生成球体碰撞模型 (cuRobo 自带工具)
+│   ├── 可视化球体覆盖度 (确认 >95%)
+│   └── 配置关节限位和速度限制
+│
+└── 功能验证
+    ├── 空场景下的 motion_gen (应 <30ms)
+    ├── 带障碍物的 motion_gen (应 <50ms)
+    ├── 检查生成轨迹的碰撞安全性
+    └── 与 MoveIt2 的轨迹格式兼容性
+```
+
+### cuRobo 与 MoveIt2 的互补使用模式
+
+在实际部署中，cuRobo 和 MoveIt2 不是"二选一"——而是可以互补使用：
+
+```
+模式 1: cuMotion 作为 MoveIt2 插件
+  MoveIt2 → cuMotion plugin → cuRobo (GPU)
+  优势: 保持 MoveIt2 生态（MTC、PlanningScene、Servo）
+  限制: MoveIt2 的 PlanningScene 更新有延迟
+
+模式 2: cuRobo 独立运行 + ROS2 桥接
+  感知 → cuRobo (GPU) → ROS2 JointTrajectory → ros2_control
+  优势: 最低延迟（跳过 MoveIt2 开销）
+  限制: 失去 MoveIt2 的 PlanningScene 管理能力
+
+模式 3: 混合模式
+  离线规划: MoveIt2 (OMPL + STOMP) — 充分利用功能生态
+  在线重规划: cuRobo (GPU) — 利用实时性
+  切换逻辑: 静态环境用离线，动态环境切在线
+```
+
+### Jetson 平台上的 GPU 规划性能 ⭐⭐
+
+| 平台 | GPU 核心 | 显存 | cuRobo 延迟 | 功耗 | 适用场景 |
+|------|---------|------|:---:|:---:|------|
+| RTX 4090 (桌面) | 16384 | 24 GB | 15-30 ms | 450W | 开发/测试 |
+| RTX 4060 (桌面) | 3072 | 8 GB | 40-80 ms | 115W | 低成本开发 |
+| Jetson AGX Orin | 2048 | 32/64 GB | 50-150 ms | 15-60W | 机器人板载 |
+| Jetson Orin NX | 1024 | 8/16 GB | 100-300 ms | 10-25W | 紧凑部署 |
+| Jetson Orin Nano | 512 | 4/8 GB | 200-500 ms | 7-15W | 边缘设备 |
+
+> ⚠️ **思维陷阱**：认为 Jetson 平台的 cuRobo 延迟和桌面 GPU 一样
+>
+> **实际上**：Jetson Orin NX 的 GPU 性能约为 RTX 4090 的 1/10——cuRobo 延迟可能增加到 200ms+，此时传统 OMPL+STOMP 的 CPU 方案反而更快。
+>
+> **正确做法**：在目标 Jetson 平台上做实测，确认 cuRobo 延迟确实优于 CPU 方案后再决定使用。如果 Jetson GPU 不够快，考虑 VAMP (CPU SIMD) 作为替代。
+
+### 未来展望：Transformer 驱动的运动规划 ⭐⭐⭐⭐
+
+2025-2026 年的研究前沿开始探索用 Transformer 架构直接生成运动轨迹：
+
+| 工作 | 方法 | 状态 |
+|------|------|------|
+| MotionBenchMaker (NVIDIA) | 大规模运动规划数据集 | 数据集已公开 |
+| Motion Transformer | 输入场景点云+目标 → 输出轨迹 | 研究阶段 |
+| Diffusion Motion Planning | 扩散模型生成多模态轨迹 | 研究阶段 |
+
+这些方法的共同思路是：用神经网络**完全替代**采样/优化管线——输入场景描述和目标，直接输出可执行轨迹。但目前的挑战是：
+1. **安全保证**：神经网络不能保证生成的轨迹无碰撞
+2. **泛化能力**：在训练分布外的场景可能完全失败
+3. **延迟**：Transformer 推理 + 安全验证的总延迟可能 > cuRobo
+
+短期内（2026-2028），更实际的方案是**混合架构**：神经网络生成高质量初始路径，然后用 cuRobo/STOMP 做安全验证和微调。
+
+---
+
+## 工业部署最佳实践 ⭐⭐
+
+### cuRobo 部署注意事项
+
+1. **CUDA Graph 必须启用**：cuRobo 使用 CUDA Graph 预编译 kernel 执行图。不启用时，每次 kernel launch 有 ~10 $\mu$s 开销，上千个 kernel 累积可达 10+ ms
+2. **warmup 不可跳过**：首次调用 cuRobo 时 PyTorch JIT 编译需要 2-5 分钟。生产环境中应在系统启动时做 warmup
+3. **GPU 内存监控**：cuRobo + nvblox ESDF 可能占用 4-8 GB GPU 内存。在 Jetson 上注意与其他 GPU 任务（如视觉推理）的内存竞争
+4. **降级策略**：GPU 不可用或 cuRobo 失败时，降级到 CPU OMPL+STOMP
+
+### VAMP 部署注意事项
+
+1. **编译选项关键**：`-O3 -march=native -mavx2` 缺一不可——否则编译器不会使用 AVX2 指令，性能退化 10 倍
+2. **CPU 频率锁定**：省电模式（`powersave` governor）下 CPU 频率降低，VAMP 性能可能下降 3-5 倍
+3. **C++20 编译器要求**：VAMP 使用 C++20 特性，需要 GCC 10+ 或 Clang 14+
+4. **ARM 平台注意**：NEON 向量宽度只有 128 bit（AVX2 的一半），吞吐率相应降低
+
+### 从 M04 到 M09 的完整碰撞检测演进
+
+```
+M04: FCL/Coal GJK/EPA (精确, ~50us/对)
+ ↓ 精度高但太慢
+M07: OMPL + FCL 碰撞检查 (80-95% 时间在碰撞检测)
+ ↓ 碰撞检测是瓶颈
+M08: CHOMP/STOMP 用 SDF 梯度 (预计算 ESDF)
+ ↓ 预计算慢, 动态环境不适用
+M09-GPU: cuRobo 球体近似 + CUDA (0.1us/对, 并行数百构型)
+M09-SIMD: VAMP AVX2 球体碰撞 (0.05us/对, 8 球对/指令)
+```
+
+> **本质洞察**：碰撞检测的演进史就是"精度 vs 速度"权衡的演进史。每一代方法都在这个权衡中选择了不同的位置——FCL 选择极致精度（mesh），cuRobo/VAMP 选择极致速度（球体）。未来的方向可能是**自适应精度**——对离障碍物远的构型用球体（快），对接近碰撞的构型切换到 mesh（准）。cuRobo 的球体分层碰撞检测已经部分实现了这个思想。
 
 **M07-M08-M09 技术栈选型速查**:
 
@@ -1541,3 +2453,10 @@ cuRobo 自 2023 年发布以来经历了快速迭代。截至 2026 年的主要�
   Q5: 接触丰富操作?       ──→ Drake (联合优化)
   Q6: 增量/动态环境?      ──→ GPMP2 (iSAM2 增量)
 ```
+
+> **延伸阅读**：
+> - Sundaralingam et al., "cuRobo: Parallelized Collision-Free Robot Motion Generation", *ICRA*, 2023——cuRobo 的核心论文，详细阐述了球体近似碰撞检测和 L-BFGS 并行优化的设计思路
+> - Thomason et al., "Motions in Microseconds via Vectorized Sampling-Based Planning", *RSS*, 2024——VAMP 的原始论文，展示了 SIMD 向量化如何将采样规划加速到微秒级
+> - Fishman et al., "Motion Policy Networks", *CoRL*, 2023——探索端到端神经网络运动规划，是混合架构（神经网络 + GPU 优化器）方向的重要参考
+>
+> 这三篇论文分别代表了 GPU 并行优化、CPU SIMD 加速和神经网络规划三条技术路线，是理解本章内容的核心文献。

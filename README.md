@@ -11,7 +11,7 @@
 
 ---
 
-## Project Structure
+## 项目结构
 
 ```
 Robotics_Tutorial/
@@ -28,65 +28,65 @@ Robotics_Tutorial/
 └── 06_具身智能/              # 具身智能（RL运控、VLA、世界模型）
 ```
 
-## Content Overview
+## 内容概览
 
-| Direction | Files | Lines | Status |
-|-----------|------:|------:|--------|
-| 01 数学基础 | 90 | 152,010 | 6/10 sub-directions complete (QA'd) |
-| 02 C++基础与进阶 | 58 | 115,729 | 4/6 sub-directions complete |
-| 03 SLAM | 14 | 14,423 | In Progress |
-| 04 移动机器人规控 | 84 | 142,532 | In Progress |
-| 05 运动控制 | 147 | 209,188 | **Complete** |
-| 06 具身智能 | 30 | 69,428 | In Progress |
-| **Total** | **442** | **712,772** | |
+| 方向 | 文件数 | 总行数 | 状态 |
+|------|------:|------:|------|
+| 01 数学基础 | 90 | 159,718 | **完工（全 10 个子方向审核闭环）** |
+| 02 C++基础与进阶 | 58 | 115,733 | **完工（41 篇教学正文双审闭环）** |
+| 03 SLAM | 14 | 14,642 | **完工（5 篇教学正文审核闭环）** |
+| 04 移动机器人规控 | 84 | 145,154 | **完工（综述+采样 MPC 审核闭环）** |
+| 05 运动控制 | 152 | 231,320 | **完工（全部 67 篇教学正文双审闭环）** |
+| 06 具身智能 | 30 | 69,453 | **完工（审核闭环）** |
+| **合计** | **428** | **736,020** | **全方向完工** |
 
-### 05 运动控制 Breakdown
+### 05 运动控制 明细
 
-| Sub-direction | Files | Lines | Status |
-|---------------|------:|------:|--------|
-| 公共基础 (Common Foundation) | 1 | 406 | **Complete** |
-| 足式 (Legged) | 27 | 48,382 | **Complete** |
-| 机械臂 (Manipulator) | 47 | 68,965 | **Complete** |
-| 复合 (Loco-manipulation) | 48 | 60,352 | **Complete** |
-| 仿真 (Simulation) | 10 | 20,005 | **Complete** |
-| 总大纲 (Overview) | 1 | 2,172 | **Complete** |
+| 子方向 | 文件数 | 总行数 | 状态 |
+|--------|------:|------:|------|
+| 公共基础 | 1 | 406 | **完工** |
+| 足式（腿足机器人） | 27 | 52,204 | **完工（12 篇教学正文双审闭环）** |
+| 机械臂 | 51 | 79,963 | **完工（37 篇教学正文双审闭环）** |
+| 复合（移动操作） | 48 | 67,302 | **完工（17 篇教学正文双审闭环）** |
+| 仿真 | 10 | 20,346 | **完工（审核闭环）** |
+| 总大纲 | 1 | 2,172 | **完工** |
 
-## Legged Robot Chapters (足式)
+## 足式机器人章节序列
 
-Complete 24-chapter teaching sequence covering:
+完整 24 章教学序列：
 
-| Part | Chapters | Topic |
-|------|----------|-------|
-| Foundation | Ch47-50 | Pinocchio, CppAD, spatial algebra, QP/NLP |
-| Models & Contact | Ch51-52 | Simplified models, contact mechanics |
-| Control | Ch53-55 | WBC/TSID, DDP/Crocoddyl, OCS2 MPC |
-| Planning | Ch56-60 | Gait, state estimation, foothold planning |
-| Engineering | Ch61-62 | Real-time C++, hardware stack |
-| RL & Perception | Ch63-67 | RL training/deploy, hybrid RL+MPC, perception |
-| Capstone | Ch68-70 | Code reading, project, research directions |
+| 篇章 | 章节 | 主题 |
+|------|------|------|
+| 基础篇 | Ch47-50 | Pinocchio、CppAD、空间代数、QP/NLP |
+| 模型与接触 | Ch51-52 | 简化模型、接触力学 |
+| 控制篇 | Ch53-55 | WBC/TSID、DDP/Crocoddyl、OCS2 MPC |
+| 规划篇 | Ch56-60 | 步态、状态估计、落脚规划 |
+| 工程篇 | Ch61-62 | 实时 C++、硬件栈 |
+| RL 与感知 | Ch63-67 | RL 训练/部署、RL+MPC 混合、感知 |
+| 综合篇 | Ch68-70 | 代码精读、综合项目、研究方向 |
 
-## Quality Standards
+## 质量标准
 
-All teaching chapters follow a v5.0 internal spec with four document types (theory / algorithm-engineering / paper-reading / engineering-practice):
+全部 193 篇教学正文遵循 v5.0 内部编写规范，涵盖四种文档类型（理论教学/算法工程教学/论文解读/工程实践）。每篇均经过至少两轮独立审核，审核意见归档于 `00_项目导航/审核意见/`。
 
-- Minimum 2,000 lines per chapter (1,500 for engineering-practice)
-- 15 rules across 3 layers (content / expression / cognition)
-- 5-gate quality system (G1 structure → G2 accuracy → G3 consistency → G4 completeness → G5 polish)
-- Cognitive tools: ≥3 analogies, ≥3 counterfactuals, ≥2 essence insights per chapter
-- Full derivations with step-by-step reasoning, no "obvious" or "trivially"
-- Fault diagnosis tables, cross-chapter bridges, cumulative projects
+- 每章最低 2,000 行（工程实践类 1,500 行）
+- 15 条规则，横跨 3 个层次（内容层/表达层/认知层）
+- 5 层质量门禁（G1 结构 → G2 准确 → G3 一致 → G4 完整 → G5 润色）
+- 双轮独立审核流水线：R1 审核 → 修复 → R2 验证 → PASS
+- 认知工具：每章 ≥3 个类比、≥3 个反事实推理、≥2 个本质洞察
+- 完整推导，逐步推理，禁止"显然""容易看出"等跳步表述
+- 故障排查手册、跨章桥接、累积项目
+- 基于互联网调研的事实验证（论文引用、API 名称、数值声明）
 
-## Usage
+## 使用方法
 
 ```bash
 git clone https://github.com/Michael-Jetson/Robotics_Tutorial.git
 ```
 
-Documents are standalone Markdown files. Recommended reading order follows chapter numbering within each direction.
+所有文档为独立 Markdown 文件，建议按各方向内的章节编号顺序阅读。
 
-## Citation
-
-If you use this material in your work, please cite:
+## 引用
 
 ```
 Robotics Tutorial by Pengfei Guo, DAMIAO Technology
@@ -94,16 +94,16 @@ https://github.com/Michael-Jetson/Robotics_Tutorial
 Licensed under CC BY 4.0
 ```
 
-## License
+## 许可协议
 
-This work is licensed under a [Creative Commons Attribution 4.0 International License](https://creativecommons.org/licenses/by/4.0/).
+本项目采用 [CC BY 4.0 国际许可协议](https://creativecommons.org/licenses/by/4.0/)。
 
-You are free to:
-- **Share** — copy and redistribute in any medium or format
-- **Adapt** — remix, transform, and build upon for any purpose, including commercial
+你可以自由地：
+- **分享** — 以任何媒介或格式复制、转载
+- **改编** — 以任何目的（包括商业目的）进行混合、转换、再创作
 
-Under the following terms:
-- **Attribution** — You must give appropriate credit, provide a link to the license, and indicate if changes were made.
+但须遵守以下条件：
+- **署名** — 必须注明出处、提供许可协议链接，并说明是否进行了修改。
 
 ## Star History
 

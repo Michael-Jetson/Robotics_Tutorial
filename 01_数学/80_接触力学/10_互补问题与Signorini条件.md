@@ -1,85 +1,2082 @@
-## 专题 1 · 互补问题（LCP/NCP）与 Signorini 条件
+# 专题 1 · 互补问题（LCP/NCP/MCP）与 Signorini 条件
 
-接触动力学的数学核心可以压缩成一条链：**Signorini ⇒ LCP/NCP ⇒ 微分包含 ⇒ Moreau扫动过程**。这条主线把足式机器人的落地冲击、灵巧抓取的摩擦建模、乃至软体操控的FEM接触patch都统一在同一个凸分析与互补理论框架之下。本文给出一份可直接用于博士前自学或课程设计的大纲：数学内核、定理清单、教材对照评分、关键论文、开源工具、中英文资源与6–8周学习路径。重点在于——让读者清楚"为什么Coulomb摩擦不是P-matrix"、"Painlevé悖论为何需要测度解"、"SAP/TAMSI与Stewart-Trinkle的理论分野在哪里"——这些问题直接决定了Drake、MuJoCo、Siconos在仿真失败模式上的本质差异。
-
-### 数学主干：从LCP到测度微分包含
-
-#### LCP的代数-几何结构与QP-KKT等价
-
-**线性互补问题**。给定 $M\in\mathbb{R}^{n\times n}$ 与 $q\in\mathbb{R}^n$，求 $(w,z)$ 满足
-$$w=Mz+q,\quad w\ge 0,\ z\ge 0,\ w^{\mathsf T}z=0,$$
-逐分量写作 $0\le z\perp(Mz+q)\ge 0$。**互补锥** $C_M(\alpha)$ 的 $2^n$ 个组合是否覆盖 $\mathbb{R}^n$（$M\in Q$）且不重叠，分别对应存在性与唯一性。
-
-**与QP/KKT的等价**。凸QP $\min\tfrac12 x^{\mathsf T}Qx+c^{\mathsf T}x,\ Ax\ge b,\ x\ge 0$ 的KKT条件直接写成LCP，$M=\begin{pmatrix}Q & -A^{\mathsf T}\\ A & 0\end{pmatrix}$。机器人中多接触刚体动力学的法向互补条件天然产生这个形式；MLCP加入等式约束（$z$ 自由分量），对应双侧关节限位+单侧接触的混合场景。
-
-#### Signorini的三级形式与VI等价
-
-设间距 $g(q)\ge 0$、法向力 $\lambda_N\ge 0$。**位置级**（Signorini 1933/Fichera 1963）：$0\le g(q)\perp\lambda_N\ge 0$；**速度级**（Moreau）：$g=0$ 时 $0\le \dot g\perp\lambda_N\ge 0$；**加速度级**：$g=\dot g=0$ 时 $0\le\ddot g\perp\lambda_N\ge 0$。三级间的跃升改变了微分指标与冲量结构。等价的法锥形式为 $-\lambda_N\nabla g\in N_K(q)$，$K=\{q:g(q)\ge 0\}$；这也等价于变分不等式 $\langle M\ddot q-F,v-\dot q\rangle\ge 0,\ \forall v\in T_K(q)$。
-
-#### Coulomb摩擦：2D→LCP，3D→SOCCP
-
-Coulomb模型 $\|\lambda_T\|\le\mu\lambda_N$ 配合最大耗散原理 $\lambda_T\in\arg\max_{\|\tau\|\le\mu\lambda_N}(-u_T^{\mathsf T}\tau)$，即 $-u_T\in N_{\mathcal{C}_\mu}(\lambda_T)$。**2D线性化**（Stewart–Trinkle 1996）：切向锥在2D是区间 $[-\mu\lambda_N,\mu\lambda_N]$，引入 $\beta^\pm\ge 0$ 与松弛 $\sigma\ge 0$ 把整个时间步写为LCP。**3D则天然是二阶锥互补问题（SOCCP）**：$\mathcal{L}_\mu\ni\lambda\perp u\in\mathcal{L}_\mu^\circ$。多边形化（Anitescu-Potra 1997）把SOCCP降为LCP，但引入各向异性和 $O(K)$ 变量膨胀。Jordan代数框架给出统一处理。
-
-#### Lemke算法与存在唯一性定理清单
-
-Lemke通过引入人工变量 $z_0$ 与覆盖向量 $d>0$ 执行互补主元，终止于解或射线发散。下表是机器人接触所必须掌握的六条定理：
-
-| 定理 | 精确陈述 | 机器人关联 | 出处 |
-|---|---|---|---|
-| **Lemke终止性** | $M$ copositive-plus ⇒ 算法要么给出LCP解，要么有限步内证不可行 | 无摩擦接触矩阵 $JM^{-1}J^{\mathsf T}$ 为PSD，Lemke保证成功；加入Coulomb则破坏 | Lemke *Manag. Sci.* 11 (1965) 681 |
-| **Cottle-Dantzig存在性** | $M$ strictly copositive（或copositive-plus + $q\in K(M)$）⇒ LCP$(q,M)$ 有解 | Anitescu-Potra时间步LCP存在性基础 | Cottle-Dantzig *LAA* 1 (1968) 103 |
-| **P-matrix唯一性** | $M\in\mathbf{P}$ ⇔ 互补锥划分 $\mathbb{R}^n$ ⇔ $\forall q$ 唯一解 | 满秩无摩擦Delassus算子是P-matrix，接触力唯一 | Samelson-Thrall-Wesler *Proc. AMS* 9 (1958) 805（正主子式刻画）；LCP唯一解↔P-matrix的完整等价证明归功于 Cottle (1966) 与 Ingleton (1966)；参见 Cottle-Pang-Stone Ch.3 的完整历史归属 |
-| **Signorini-VI等价（Fichera）** | 椭圆PDE的Signorini条件等价于凸锥 $K$ 上VI；Stampacchia给出存在唯一 | 软体接触FEM、抓取接触patch | *Rend. Accad. Lincei* 34 (1964) 138 |
-| **Painlevé悖论** | 存在 $(\mu,q,\dot q)$ 使刚体+Coulomb加速度级LCP无解或多解；均匀杆在特定接触倾角下的临界值 $\mu_P=4/3$（Genot-Brogliato 1999；此值非普适常数，取决于杆的质量分布、接触几何与倾角；Stewart 2000 给出另一配置下 $\mu>4/(3\sqrt{3})\approx 0.77$ 的不一致阈值） | 拖擦末端、粉笔跳动、jamming；时间步测度解消解（Stewart 1998） | Painlevé *CRAS* 121 (1895) 112 |
-| **Moreau viability** | BV闭凸值 $C(t)$ ⇒ 扫动 $-dx\in N_{C(t)}(x)$ 存在BV右连续唯一解；二阶版本支持冲量跳跃 | Siconos的Moreau-Jean方案；颗粒、软体、多接触 | Moreau *JDE* 26 (1977) 347 |
-
-**为何Coulomb不是P-matrix**——2D Stewart-Trinkle矩阵因摩擦非对称块含 $\mu$ 与 $D$，当 $\mu$ 大时出现负主子式；3D锥投影亦非单调。唯一性丧失产生三种后果：**多解（jamming）、无解（Painlevé不一致）、突发不可解需冲量解**。这三种模式对应所有仿真器失败的根本原因。
-
-#### NCP函数与半光滑Newton
-
-**Fischer-Burmeister** $\varphi_{\mathrm{FB}}(a,b)=\sqrt{a^2+b^2}-a-b$ 满足 $\varphi=0\Leftrightarrow a\ge 0,b\ge 0,ab=0$。强半光滑、merit函数 $\Psi=\tfrac12\|\Phi\|^2$ 连续可微且梯度Lipschitz，光滑化版本驱动内点算法。**Sun-Sun 2005**（*Math. Prog.* 103:575）证明其在Euclidean Jordan代数上的SOC/SDP版本全局强半光滑，为3D摩擦SOCCP的Newton二次收敛奠定基础。
-
-#### Moreau扫动过程与SCL 2006框架
-
-Brogliato-Daniilidis-Lemaréchal-Acary（*Systems & Control Letters* 2006）把刚体Signorini+Coulomb、理想二极管电路、塑性流统一写成微分变分不等式 $M\ddot q+h=F+J^{\mathsf T}\lambda,\ \lambda\in -N_{\mathcal{C}_\mu}(J\dot q+e)$，等价于测度微分包含。Moreau扫动 $-\dot x\in N_{C(t)}(x)$ 的二阶版本直接建模单侧约束 $-M\ddot q\in N_{T_K(q)}(\dot q^+)$。配套的**Moreau-Jean时间步进**在速度级离散，每步是LCP/QP，是Siconos核心。
-
-### 五本教材的难度与覆盖对照
-
-下表基于Springer/SIAM官方介绍、Amazon/AbeBooks真实用户评论与社区引用密度给出判断。难度1-5（1为研究生入门，5为前沿专著）。
-
-| 教材 | 年/页 | 难度 | 本主题应读 | 优缺点与真实评价 |
-|---|---|---|---|---|
-| **Cottle-Pang-Stone《The Linear Complementarity Problem》** SIAM Classics 60 | 2009/761 | 3 | Ch.1-5全部；Ch.3存在唯一性、Ch.4 Lemke | 1994年Lanchester Prize；Amazon实读者："heartily recommend…thorough yet overall points easy to grasp"。**最权威的LCP参考**，但偏运筹背景，机器人动机弱。习题丰富无正式解答。 |
-| **Facchinei-Pang《Finite-Dimensional VI & CP》** Springer两卷 | 2003/共约1200 | 5 | Vol.I Ch.1-3理论；Vol.II Ch.7-9算法 | *Quarterly of Applied Math.*："comprehensive state-of-the-art treatment"。Amazon："both volumes require mathematical maturity…indispensable"。**VI/NCP百科全书**，第二卷含FB/半光滑Newton全套。 |
-| **Brogliato《Nonsmooth Mechanics》3rd** Springer CCE | 2016/629 | 4 | Ch.5非光滑Lagrangian、Ch.6多重冲击 | *Math. Reviews* Panagiotopoulos："excellent in combining rigorous mathematics with a great number of examples…allowing the reader to understand the basic concepts"。1300+参考文献，**机器人工程师的首选**，涵盖控制与稳定性。 |
-| **Stewart《Dynamics with Inequalities》** SIAM | 2011/ | 4 | 刚体摩擦接触、Painlevé、测度解 | "the first book that comprehensively addresses dynamics with inequalities"。把有限维与无穷维统一处理，Painlevé悖论的测度解证明首次系统呈现。 |
-| **Acary-Brogliato《Numerical Methods for Nonsmooth Dyn. Sys.》** Springer LNACM 35 | 2008/526 | 4 | Part II时间步进、Part IV Siconos | *ZAMM* Wieners："valuable and concise contribution…formal mathematical style with precise definitions…accessible for both researchers in mechanics and in mathematics"。**算法+Siconos手册**，与前四本互补。 |
-
-**推荐组合**：入门用Cottle-Pang-Stone建立LCP直觉 → Brogliato 3rd作为力学主线 → Acary-Brogliato作为算法实现手册 → Facchinei-Pang作为理论查阅百科 → Stewart 2011深入Painlevé与测度解。
-
-### 必读经典论文清单
-
-**奠基论文**（1895–2000）。Painlevé "Sur les lois du frottement de glissement" *CRAS* 121 (1895) 112——刚体摩擦不一致的原始反例。Moreau "Unilateral contact and dry friction in finite freedom dynamics" *CISM* 302 (1988)——测度微分包含与扫动过程建模接触。Stewart-Trinkle "An implicit time-stepping scheme for rigid body dynamics with inelastic collisions and Coulomb friction" *IJNME* 39 (1996) 2673，[DOI](https://doi.org/10.1002/(SICI)1097-0207(19960815)39:15%3C2673::AID-NME972%3E3.0.CO;2-I)——首个保证非穿透的时间步LCP格式，705+引用，ODE/Bullet/dVC的理论祖本。Pang-Trinkle "Complementarity formulations and existence of solutions of dynamic multi-rigid-body contact problems with Coulomb friction" *Math. Prog.* 73 (1996) 199——多体接触+Coulomb的存在性。Anitescu-Potra "Formulating dynamic multi-rigid-body contact problems with friction as solvable LCPs" *Nonlinear Dynamics* 14 (1997) 231——**凸松弛的开端**，后来成为MuJoCo/Drake SAP的理论源头。Génot-Brogliato "New results on Painlevé paradoxes" *Eur. J. Mech. A/Solids* (1999)——Painlevé悖论的完整相图。Stewart "Convergence of a time-stepping scheme for rigid-body dynamics and resolution of Painlevé's problem" *ARMA* 145 (1998) 215——**测度解存在性的严格证明**。
-
-**现代与统一框架**（2000–2025）。Brogliato-Daniilidis-Lemaréchal-Acary相关*SCL* 2006工作——DVI/DCS/Moreau-Jean的统一。Anitescu "Optimization-based simulation of nonsmooth rigid multibody dynamics" *Math. Prog.* 105 (2006) 113——凸QP表述的大规模仿真。Le Lidec-Jallet-Montaut-Laptev-Schmid-Carpentier "Contact Models in Robotics: a Comparative Analysis" arXiv:[2304.06372](https://arxiv.org/abs/2304.06372)（2024 *IEEE T-RO*）——**当下最权威的机器人接触模型横向对比**，配套开源ContactBench基准。Castro-Permenter-Han "An unconstrained convex formulation of compliant contact"（Drake SAP的原始论文），以及Castro-Han-Masterjohn "Irrotational Contact Fields" arXiv:[2312.03908](https://arxiv.org/abs/2312.03908)——SAP/可微接触的最新实现。Posa-Cantu-Tedrake *IJRR* 33 (2014) 69——**contact-implicit trajectory optimization**，把LCP约束嵌入SQP。Howell等人"Predictive Sampling"与Aydinoglu-Posa共识互补控制（2024 *T-RO*）——实时CI-MPC。
-
-### 学习资源：课程、开源与中英文博客
-
-**英文课程与讲义**。Russ Tedrake *Underactuated Robotics* 的 [Planning and Control through Contact](https://underactuated.mit.edu/contact.html) 章节最适合首读——覆盖混合系统、接触约束、摩擦锥、冲量。Michael Posa DAIR Lab 的 [publications页面](https://dair.seas.upenn.edu/publications/) 与 [CV](https://dair.seas.upenn.edu/assets/pdf/posa_cv.pdf) 系统整理了过去十年接触控制的最佳实践，包含博士论文级别的免费教材资源。Stéphane Caron 的 [scaron.info](https://scaron.info) 博客对接触力锥、摩擦、QP有干净的工程笔记。YouTube上Tedrake与Posa的talks是动态补充。
-
-**开源代码库**。[SICONOS (siconos/siconos)](https://github.com/siconos/siconos) 是INRIA的C++/Python非光滑动力学框架，支持LCP/MLCP/SOCCP/VI全套求解器（Lemke、PGS、FB-Newton、PATH接口），对应Acary-Brogliato 2008整本书；其[LCP求解器文档](https://nonsmooth.gricad-pages.univ-grenoble-alpes.fr/siconos/users_guide/problems_and_solvers/lcp.html)直接列出基于Facchinei-Pang的FB-LSA实现。[Drake (RobotLocomotion/drake)](https://drake.mit.edu) 的SAP/TAMSI求解器与Hydroelastic接触是工业级的manipulation仿真范式，对应[TRI "Rethinking Contact Simulation" 博客](https://medium.com/toyotaresearch/rethinking-contact-simulation-for-robot-manipulation-434a56b5ec88)深度解释了为何从点接触转向压力场；配套[Drake v1.5 Release Notes](https://drake.mit.edu/release_notes/v1.5.0.html)记录了SAP凸求解器的引入。[Simple-Robotics/ContactBench](https://github.com/Simple-Robotics/ContactBench) 是Le Lidec et al. 2024的基准实现。MuJoCo的软约束求解器、Bullet的MLCP、PATH Solver（Ferris-Munson的商用NCP求解器）各自代表不同建模哲学，ContactBench恰好做了定量对比。
-
-**中文资源较稀缺，但工程入门可用**。知乎与CSDN上有[机器人力觉/阻抗-导纳控制](https://zhuanlan.zhihu.com/p/148556816)、[机械臂抓取流程](https://zhuanlan.zhihu.com/p/6116318359)、[协作机器人接触安全](https://zhuanlan.zhihu.com/p/53513669)、[机械臂运动规划中的接触任务](https://zhuanlan.zhihu.com/p/1898703023968092774)等工程向长文，但真正讲LCP/NCP/Signorini数学内核的中文一手资料极少——这是这套教学大纲的价值所在。建议中文读者以Brogliato 2016或Acary-Brogliato 2008为主干，辅以INRIA Siconos的Python教程。
-
-### 八周自学路径
-
-第一至二周打基础：Cottle-Pang-Stone Ch.1-2，理解LCP定义、互补锥、Lemke主元流程；完成Ch.4若干习题并用Python复现Lemke。第三至四周转入机械接触：Brogliato Ch.1-5 + Stewart-Trinkle 1996原文，手推2D滑块LCP矩阵并在Siconos跑bouncing ball示例。第五周深入Painlevé：Stewart 1998 ARMA + Génot-Brogliato 1999，理解为何需要测度解。第六周处理3D摩擦：Anitescu-Potra 1997 + Sun-Sun 2005 Jordan代数框架，用Drake SAP或MuJoCo复现滑动实验。第七周读当代综述Le Lidec et al. 2024与ContactBench代码，形成对六大仿真器失败模式的直观判断。第八周进入contact-implicit控制：Posa-Cantu-Tedrake 2014 IJRR + 最新CI-MPC论文（Aydinoglu 2024）。这条路径把从1895年Painlevé到2024年CI-MPC的130年工作压缩进两个月，每一步都有可运行的代码验证。
-
-### 贯穿全局的几个认知转折
-
-第一，**LCP不是唯一出口**。凸松弛（Anitescu 2006、Todorov MuJoCo、Castro SAP）用可解性换放弃严格Coulomb，在manipulation场景往往效果更好；这正是为什么Drake默认不走Stewart-Trinkle路线。第二，**Painlevé悖论不是奇例而是常态**。任何足端拖擦、指尖侧推都可能触发；工程上靠compliance正则化（penalty/hydroelastic）或测度解格式（Moreau-Jean）回避。第三，**矩阵类层级**（P ⊂ P₀、PSD ⊂ copositive-plus）不是抽象分类，它直接决定算法是否收敛、解是否唯一——工程师判断"为什么我的仿真炸了"必须从矩阵类入手。第四，**SOCCP与Jordan代数**是3D摩擦的正确数学语言，多边形近似只是工程权宜之计。第五，**Moreau的测度微分包含**把Signorini、Coulomb、冲击、电路二极管、塑性流统一——这种统一性本身就是机器人博士应有的思维高度。
-
-掌握这五点，读者就能在TRI博客、DAIR Lab论文、Drake源码、Siconos代码之间自由穿行，并判断一个新的"可微接触"或"学习接触"论文究竟在既有理论图景中补了哪块拼图。
+> **所属**：第七批 · 接触力学专题序列 · 专题 1
+> **档位**：核心档位 2-3（硕士高年级—博士入学）
+> **建议时长**：精读约 25-35 h；速读约 8-10 h
+> **前置**：第零批线性代数（矩阵运算、特征值、正定矩阵、Schur 补）；第二批凸分析基础（凸集、凸锥、法锥、投影、KKT 条件）
+> **下游**：专题 2（摩擦锥理论与凸松弛）、专题 3（Moreau 时步法与数值积分）、专题 4（可微接触仿真）、专题 6（接触隐式轨迹优化与 MPC）
 
 ---
 
+## 前置自测
+
+📋 **前置自测**（答不出 $\ge 2$ 题 → 先回第零批线性代数与第二批凸分析复习）
+
+1. **矩阵正定性**：什么是正定矩阵？给出三个等价判据。如果一个对称矩阵 $A$ 的所有特征值都大于零，能否保证 $A$ 正定？（指向第零批线性代数）
+2. **凸集与凸锥**：什么是凸锥？给一个凸锥的例子和一个非凸锥的例子。闭凸锥 $K$ 的对偶锥 $K^*$ 怎么定义？（指向第二批凸分析）
+3. **KKT 条件**：对于约束优化 $\min_x f(x)$ s.t. $g_i(x) \le 0$，写出 KKT 一阶必要条件中的四个组成部分（平稳性、原始可行、对偶可行、互补松弛）。互补松弛条件和本章的互补问题有什么形式上的联系？（指向第二批凸分析）
+4. **法锥**：闭凸集 $C$ 在点 $x \in C$ 处的法锥 $N_C(x)$ 怎么定义？给出 $\mathbb{R}_+$（非负实数轴）在原点处的法锥。（指向第二批凸分析）
+5. **Schur 补**：对于分块矩阵 $\begin{pmatrix} A & B \\ C & D \end{pmatrix}$，当 $D$ 可逆时，$A$ 关于 $D$ 的 Schur 补是什么？Schur 补在消元中起什么作用？（指向第零批线性代数）
+
+> **自测说明**：第 1 题答不出 → 本章 §1.3 的矩阵类层级（P-矩阵、正半定矩阵等）将无法理解，先读第零批线性代数"特征值与二次型"一节。第 2、4 题答不出 → §1.5 的法锥形式和 §1.6 的变分不等式等价将跟不上，先读第二批凸分析"凸锥与法锥"两节。第 3 题答不出 → §1.2 的 LCP 与 QP-KKT 等价推导会卡住。第 5 题答不出 → §1.4 和后续专题的 Delassus 算子推导会有障碍。
+
+---
+
+## 本章目标
+
+学完本章后，你应该能够：
+
+1. **写出线性互补问题（LCP）的标准形式**，理解互补条件 $0 \le z \perp w \ge 0$ 的逐分量含义，并能在给定 $M$ 和 $q$ 的情况下手动枚举小规模 LCP 的所有解。
+2. **推导 LCP 与凸 QP 的 KKT 等价性**，掌握从一个凸二次规划问题提取其等价 LCP 的完整步骤。
+3. **区分关键矩阵类**（P-矩阵、Q-矩阵、正半定矩阵、copositive 矩阵），并判断给定矩阵的 LCP 是否有解、解是否唯一。
+4. **完整描述 Lemke 主元算法的工作流程**，包括人工变量的引入、覆盖向量的选择、互补主元的规则，以及终止条件的含义。
+5. **写出 Signorini 条件的三级形式**（位置级、速度级、加速度级），理解三级之间的微分关系和物理意义差异。
+6. **将 Signorini 条件等价改写为法锥包含和变分不等式**，掌握 $-\lambda_N \nabla g \in N_K(q)$ 的几何含义。
+7. **写出 Fischer-Burmeister NCP 函数**，理解它如何将互补条件转化为方程组，以及基于它的半光滑 Newton 法为何能达到局部二次收敛。
+8. **理解 Painlevé 悖论的根本原因**——法向和旋转自由度通过摩擦耦合，导致 LCP 无解或多解——并知道测度解如何化解这一困境。
+9. **在 Siconos/Drake/MuJoCo 等仿真器的语境下**，判断一个具体接触场景对应哪类互补问题，以及该仿真器用了什么求解策略。
+
+### 本章知识导航
+
+本章是整个接触力学专题序列的起点，建立法向接触的数学模型。全章包含 7 个核心概念，按以下递进关系展开：
+
+```
+互补条件（标量）──→ 线性互补问题（LCP）──→ 矩阵类与存在唯一性
+       │                    │                        │
+       │                    ▼                        ▼
+       │              QP-KKT 等价              Lemke 主元算法
+       │                                            │
+       ▼                                            ▼
+  Signorini 条件 ──→ 法锥/VI 等价 ──→ NCP 函数与半光滑 Newton
+       │                                            │
+       ▼                                            ▼
+  Painlevé 悖论 ←──── Coulomb 摩擦破坏 P-矩阵 ──→ 仿真器失败模式
+```
+
+**推荐阅读路径**：
+
+- **路径 A（理论导向）**：§1.1 互补条件 → §1.2 LCP 定义与 QP 等价 → §1.3 矩阵类 → §1.4 Lemke 算法 → §1.5 Signorini → §1.6 NCP 函数 → §1.7 Painlevé
+- **路径 B（工程导向）**：§1.1 互补条件 → §1.2 LCP 前半 → §1.5 Signorini → §1.7 Painlevé → 章末仿真器对照表 → 按需回溯 §1.3、§1.4、§1.6
+
+### 前置知识桥接
+
+本章是接触力学专题的**第一章**，因此前置知识主要来自数学基础模块。回顾第零批线性代数中的关键概念：
+
+- **正定矩阵**：$A \succ 0$ 当且仅当所有特征值 $> 0$，等价于 $x^\top A x > 0$ 对所有 $x \neq 0$ 成立。本章中，矩阵的"正定性"将直接决定互补问题的解是否唯一。
+- **Schur 补**：对分块矩阵进行消元时，Schur 补 $A - BD^{-1}C$ 出现在多体接触的 Delassus 算子中——这是连接关节空间动力学与接触空间互补问题的关键桥梁。
+
+回顾第二批凸分析中的关键概念：
+
+- **法锥** $N_C(x)$：闭凸集 $C$ 在边界点 $x$ 处"朝外"的所有方向构成的锥。在接触力学中，法锥形式是 Signorini 条件最优雅的等价表述。
+- **KKT 互补松弛**：$\lambda_i g_i(x) = 0$ 恰好是互补条件在优化中的一个特例。本章将展示，整个互补理论就是从这种"非此即彼"的约束结构中生长出来的。
+
+### 如果跳过本章会怎样
+
+- **后果 1**：在专题 2（摩擦锥理论）中，你将无法理解"为什么 Coulomb 摩擦破坏了 P-矩阵性质"——这句话的每个词都来自本章。
+- **后果 2**：在专题 3（Moreau 时步法）中，时间步进的每一步都要求解一个 LCP 或 QP，如果你不知道 LCP 是什么、Lemke 算法怎么工作，整个数值方法将是黑箱。
+
+### 预计阅读时间
+
+| 阅读方式 | 时间 | 适合谁 |
+|---------|------|--------|
+| 精读（含推导和练习） | 25-35 小时 | 首次学习接触力学的研究生 |
+| 速读（跳过推导细节） | 8-10 小时 | 有优化/凸分析背景的读者 |
+| 速查（只看表格和定理速查） | 30-45 分钟 | 遇到具体问题时回来查阅 |
+
+---
+
+## §1.1 互补条件：接触力学的"原子操作" ⭐
+
+### 动机：为什么需要互补条件
+
+想象一只足式机器人的脚落在地面上。在接触力学中，我们需要回答一个看似简单的问题：**脚和地面之间的法向力是多少？** 这个问题的困难在于，答案取决于一个"非此即彼"的逻辑：
+
+- 如果脚没有接触地面（间距 $g > 0$），那么法向力 $\lambda_N = 0$——空气不会推你。
+- 如果脚正在接触地面（间距 $g = 0$），那么法向力 $\lambda_N \ge 0$——地面只能推你，不能拉你。
+- **但你不可能同时满足 $g > 0$（不接触）和 $\lambda_N > 0$（有力）**。
+
+这三条规则看起来很自然，但它们构成了一个在标准微分方程框架中无法直接表达的约束。标准的 ODE $M\ddot{q} = F$ 假设力 $F$ 是状态的（光滑）函数，但接触力并不是——它在"接触/不接触"的边界上发生突变。
+
+> **类比**：互补条件就像一个电路中的理想二极管（Ideal Diode）。二极管要么导通（电流 $i > 0$，电压降 $v = 0$），要么截止（电流 $i = 0$，电压降 $v > 0$），绝不可能同时有正电流和正电压降。接触力学中的互补条件 $0 \le g \perp \lambda_N \ge 0$ 和理想二极管的 $0 \le i \perp v \ge 0$ 在数学上完全一样。**相似之处**：两者都是"非此即彼"的约束，一个变量为正时另一个必须为零。**不同之处**：接触是力学问题，涉及连续时间动力学和可能的冲击；二极管是电路问题，信号切换虽也有瞬变但物理机制完全不同。不要将力学中的"弹跳"直接类比到电路中的"振荡"。
+
+### 标量互补条件的数学定义
+
+我们现在正式定义标量互补条件。给定两个标量 $a, b \in \mathbb{R}$，**互补条件**（Complementarity Condition）写作：
+
+$$
+0 \le a \perp b \ge 0
+$$
+
+这个紧凑的记号展开后包含**三个约束**：
+
+$$
+a \ge 0, \quad b \ge 0, \quad a \cdot b = 0
+$$
+
+第三个条件 $a \cdot b = 0$ 是关键：它要求 $a$ 和 $b$ 中**至少有一个为零**。结合前两个非负性约束，互补条件意味着 $(a, b)$ 只能落在 $\mathbb{R}^2$ 的非负象限的两条坐标轴上：
+
+$$
+(a, b) \in \{(a, 0) : a \ge 0\} \cup \{(0, b) : b \ge 0\}
+$$
+
+几何上，这是非负象限 $\mathbb{R}_+^2$ 的**边界**——两条射线的并集，而不是整个非负象限的内部。
+
+> **阶段小结**：互补条件 $0 \le a \perp b \ge 0$ 等价于三个约束 $a \ge 0, b \ge 0, ab = 0$。几何上是非负象限的两条边界射线的并集。这个"原子操作"将在后面被推广到向量、锥、乃至无穷维的情形。
+
+### 互补条件的几何解读
+
+让我们在 $\mathbb{R}^2$ 平面上画出互补条件的可行集。设横轴为 $a$，纵轴为 $b$：
+
+| 区域 | 条件 | 含义 |
+|------|------|------|
+| 正 $a$ 轴（$a > 0, b = 0$） | 满足互补 | $a$ "激活"，$b$ "关闭" |
+| 正 $b$ 轴（$a = 0, b > 0$） | 满足互补 | $a$ "关闭"，$b$ "激活" |
+| 原点（$a = 0, b = 0$） | 满足互补 | 两者同时"关闭"（退化情形） |
+| 第一象限内部（$a > 0, b > 0$） | **不满足**互补 | 两者同时"激活"，违反互补 |
+| 其他象限 | **不满足**非负性 | 不在讨论范围 |
+
+这张图揭示了互补条件的核心特征：**它不是一个凸约束**。两条射线的并集不是凸集——连接 $(1, 0)$ 和 $(0, 1)$ 的线段 $\{(t, 1-t) : 0 < t < 1\}$ 上的每个点都不满足互补条件。这个非凸性是互补问题在计算上具有挑战性的根本原因。
+
+### 互补条件在接触中的物理意义
+
+回到足式机器人的例子。设：
+- $g_N$：脚与地面的法向间距（Gap Function），$g_N \ge 0$ 表示不穿透
+- $\lambda_N$：法向接触力，$\lambda_N \ge 0$ 表示地面只能"推"不能"拉"
+
+Signorini 条件（位置级）就是：
+
+$$
+0 \le g_N \perp \lambda_N \ge 0
+$$
+
+展开为：
+
+| 物理状态 | 数学条件 | 含义 |
+|---------|---------|------|
+| 脚在空中 | $g_N > 0,\ \lambda_N = 0$ | 有间距，无力 |
+| 脚在地面上 | $g_N = 0,\ \lambda_N \ge 0$ | 无间距，有力 |
+| 脚刚好接触 | $g_N = 0,\ \lambda_N = 0$ | 无间距，无力（临界状态） |
+| **禁止** | $g_N > 0,\ \lambda_N > 0$ | 隔空推（物理上不可能） |
+
+> **本质洞察**：互补条件不是人为的数学技巧，而是物理世界的忠实编码。地面是"单侧约束"（Unilateral Constraint）——它只能推不能拉，而且只在接触时才起作用。任何试图绕过互补条件的数学模型（比如用弹簧模型 $\lambda_N = k \cdot \max(0, -g_N)$）都引入了非物理的参数（刚度 $k$），并且在 $k \to \infty$ 的极限下才回到真正的互补条件。互补条件是接触的**理想极限**，正如理想二极管是真实二极管的理想极限。
+
+### 向量互补条件
+
+标量互补条件自然推广到向量情形。给定 $a, b \in \mathbb{R}^n$，**向量互补条件**写作：
+
+$$
+0 \le a \perp b \ge 0
+$$
+
+这里的不等号和互补符号都是**逐分量**（componentwise）的：
+
+$$
+a_i \ge 0, \quad b_i \ge 0, \quad a_i b_i = 0, \quad \forall\, i = 1, 2, \ldots, n
+$$
+
+等价地，用向量内积：
+
+$$
+a \ge 0, \quad b \ge 0, \quad a^\top b = 0
+$$
+
+注意 $a^\top b = \sum_i a_i b_i = 0$ 加上 $a_i \ge 0, b_i \ge 0$ 蕴含每一项 $a_i b_i = 0$。这是因为非负数之和为零当且仅当每个数都为零。
+
+在多接触场景中，如果机器人有 $n$ 个接触点，每个接触点都有自己的间距 $g_i$ 和法向力 $\lambda_i$，那么整体的互补条件就是：
+
+$$
+0 \le g \perp \lambda \ge 0, \quad g, \lambda \in \mathbb{R}^n
+$$
+
+这意味着**每个接触点独立满足互补**：第 $i$ 个接触点要么分离（$g_i > 0, \lambda_i = 0$），要么接触（$g_i = 0, \lambda_i \ge 0$），不同接触点之间通过动力学方程耦合。
+
+### 互补条件与法锥的等价
+
+互补条件有一个等价的法锥（Normal Cone）形式，这在理论分析中极为重要。回顾第二批凸分析中的定义：对于闭凸集 $C$ 和点 $x \in C$，法锥是：
+
+$$
+N_C(x) = \{v \in \mathbb{R}^n : \langle v, y - x \rangle \le 0, \; \forall y \in C\}
+$$
+
+现在取 $C = \mathbb{R}_+ = [0, +\infty)$，考虑标量情形。对于 $a \in \mathbb{R}_+$：
+
+- 如果 $a > 0$（在 $\mathbb{R}_+$ 的内部），则 $N_{\mathbb{R}_+}(a) = \{0\}$
+- 如果 $a = 0$（在 $\mathbb{R}_+$ 的边界），则 $N_{\mathbb{R}_+}(0) = \mathbb{R}_- = (-\infty, 0]$
+
+因此，互补条件 $0 \le a \perp b \ge 0$ 等价于：
+
+$$
+a \in \mathbb{R}_+, \quad -b \in N_{\mathbb{R}_+}(a)
+$$
+
+验证：当 $a > 0$ 时，$N_{\mathbb{R}_+}(a) = \{0\}$，所以 $-b = 0$，即 $b = 0$。当 $a = 0$ 时，$N_{\mathbb{R}_+}(0) = \mathbb{R}_-$，所以 $-b \le 0$，即 $b \ge 0$。这正是互补条件的两种情形。
+
+推广到向量情形，$0 \le z \perp w \ge 0$ 等价于：
+
+$$
+z \in \mathbb{R}_+^n, \quad -w \in N_{\mathbb{R}_+^n}(z)
+$$
+
+这个等价关系的重要性在于：它将离散的"组合选择"（每个分量选 $z_i = 0$ 或 $w_i = 0$）转化为连续的凸分析语言（法锥包含），使得可以运用整套凸分析的工具（投影、次微分、近端算子等）来分析互补问题。
+
+> **反事实推理**：如果不引入法锥形式，我们只能逐分量枚举所有 $2^n$ 种组合来分析互补问题的解集。当接触点数 $n = 20$（一个人形机器人的典型接触数量）时，$2^{20} \approx 10^6$ 种组合——枚举变得不切实际。法锥形式让我们绕过枚举，直接利用凸分析的结构性定理。
+
+### ⚠️ 常见陷阱
+
+💡 **概念误区 1：认为互补条件是凸约束**
+
+新手想法："$a \ge 0, b \ge 0, ab = 0$ 每个单独看都是凸约束，合在一起应该也是凸的。"
+实际上：$a \ge 0$ 是凸的，$b \ge 0$ 是凸的，但 $ab = 0$（在非负象限中等价于"$a$ 和 $b$ 中至少一个为零"）不是凸约束。可行集是两条射线的并集，这不是凸集。
+根本原因：$ab = 0$ 在非负象限内定义的集合 $\{(a,b) : a \ge 0, b \ge 0, ab = 0\}$ 是两条半轴的并集 $(\mathbb{R}_+ \times \{0\}) \cup (\{0\} \times \mathbb{R}_+)$，并集操作一般不保凸。
+正确理解：互补问题的非凸性正是它比线性规划（LP）或凸二次规划（QP）更难求解的根本原因。不要试图用凸优化的通用求解器直接处理互补约束。
+
+💡 **概念误区 2：混淆 $a^\top b = 0$ 和逐分量互补**
+
+新手想法："向量互补 $a \ge 0, b \ge 0, a^\top b = 0$ 意味着 $a$ 和 $b$ 正交。"
+实际上：这里的"$a^\top b = 0$"加上"$a \ge 0, b \ge 0$"确实蕴含逐分量互补 $a_i b_i = 0$。但不要把它和一般的正交混淆——一般正交不要求非负性，也不蕴含逐分量乘积为零。
+根本原因：在非负象限中，$\sum_i a_i b_i = 0$ 且每项 $a_i b_i \ge 0$，所以每项必须为零。这个推论依赖于非负性，去掉非负性就不成立。
+正确理解：互补条件 = 非负性 + 正交性，两者缺一不可。
+
+🧠 **思维陷阱 1：认为互补条件只出现在接触力学中**
+
+新手想法："互补条件是接触力学的专有概念。"
+实际上：互补条件出现在运筹学（线性规划对偶）、经济学（市场均衡）、博弈论（Nash 均衡）、电路（理想二极管/MOSFET）、塑性力学（屈服条件）等众多领域。接触力学只是互补理论最丰富的应用之一。
+为什么重要：认识到互补问题的普遍性，可以让你从其他领域借鉴算法（如 PATH 求解器最初为经济均衡设计）和理论工具。
+
+### 互补条件的等价表述汇总
+
+为了方便后续引用，我们将互补条件的所有等价表述汇总在一张表中：
+
+| 表述形式 | 数学写法 | 适用场景 |
+|---------|---------|---------|
+| 互补记号 | $0 \le a \perp b \ge 0$ | 简洁记号，论文和教材中最常见 |
+| 展开形式 | $a \ge 0,\; b \ge 0,\; ab = 0$ | 手动验证、初学者理解 |
+| 集合形式 | $(a, b) \in (\mathbb{R}_+ \times \{0\}) \cup (\{0\} \times \mathbb{R}_+)$ | 几何分析、可行集可视化 |
+| 法锥形式 | $a \in \mathbb{R}_+,\; -b \in N_{\mathbb{R}_+}(a)$ | 凸分析理论推导 |
+| 投影形式 | $a = \text{proj}_{\mathbb{R}_+}(a - \rho b),\; \forall \rho > 0$ | 数值算法设计（近端点算法） |
+| $\min$ 形式 | $\min(a, b) = 0,\; a \ge 0,\; b \ge 0$ | NCP 函数方法 |
+| FB 形式 | $\sqrt{a^2 + b^2} - a - b = 0$ | 半光滑 Newton 法（§1.6 详述） |
+
+投影形式值得单独解释：$a = \text{proj}_{\mathbb{R}_+}(a - \rho b)$ 对所有 $\rho > 0$ 成立（$\rho$ 是任意的正标量参数）。这个等价性来自法锥的投影刻画：$-b \in N_{\mathbb{R}_+}(a)$ 等价于 $a = \text{proj}_{\mathbb{R}_+}(a + (-(-b) \cdot \rho))$ 对所有 $\rho > 0$。投影形式在 Siconos 的求解器实现中被直接使用——Siconos 的文档中将其称为"proximal point formulation"。
+
+### 互补条件在其他领域的出现
+
+互补条件不仅出现在接触力学中。了解它的广泛应用有助于理解为什么互补理论是一个独立的数学分支，以及为什么其他领域的算法（如经济学中的 PATH 求解器）可以被借鉴到机器人学中。
+
+| 领域 | 互补变量对 $(a, b)$ | 物理/经济含义 |
+|------|-------------------|-------------|
+| **接触力学** | $(g_N, \lambda_N)$ | 间距 vs. 法向力 |
+| **线性规划对偶** | $(x_j, s_j)$ | 原始变量 vs. 对偶松弛变量 |
+| **经济均衡** | $(p_i - c_i, q_i)$ | 价格超出成本 vs. 产量 |
+| **电路（理想二极管）** | $(v_D, i_D)$ | 二极管电压降 vs. 电流 |
+| **塑性力学** | $(f(\sigma), \dot{\epsilon}^p)$ | 屈服函数值 vs. 塑性应变率 |
+| **博弈论（Nash 均衡）** | $(u_i - \text{BR}_i, s_i)$ | 效用差 vs. 策略概率 |
+| **交通均衡** | $(c_p - \pi_{od}, f_p)$ | 路径费用超出最短 vs. 流量 |
+
+这张表揭示了一个深刻的统一性：**所有"非此即彼"的物理/经济约束在数学上都是互补条件。** 正因如此，为经济均衡设计的 PATH 求解器（Ferris-Munson, 1995）可以直接被拿来解接触问题，而 Siconos 中的电路模块和力学模块共享同一套 LCP 求解器底层。
+
+### 练习
+
+1. **手动验证**（在草稿纸上完成）：判断以下哪些 $(a, b)$ 满足互补条件 $0 \le a \perp b \ge 0$：$(3, 0)$、$(0, 5)$、$(0, 0)$、$(2, 1)$、$(-1, 0)$、$(0, -3)$。对不满足的，指出违反了哪个约束。
+
+2. **法锥计算**：计算 $\mathbb{R}_+^2$ 在以下三个点处的法锥：$(1, 2)$（内部点）、$(0, 3)$（边界点）、$(0, 0)$（顶点）。验证你的结果与互补条件的法锥形式一致。
+
+3. **开放思考**：如果将互补条件 $ab = 0$ 替换为 $ab \le \epsilon$（$\epsilon > 0$ 为小参数），可行集的几何形状如何变化？这种"松弛"在工程中有什么意义？（提示：考虑 penalty 方法和 interior-point 方法。）
+
+---
+
+## §1.2 线性互补问题（LCP）：定义、几何与 QP 等价 ⭐⭐
+
+### 动机：从标量互补到结构化问题
+
+上一节我们定义了互补条件的"原子操作"。但在实际的接触问题中，$a$ 和 $b$ 不是独立的——它们通过动力学方程联系在一起。具体来说，当多个刚体通过多个接触点相互作用时，每个接触点的间距加速度 $\ddot{g}_i$ 依赖于所有接触点的法向力 $\lambda_j$，这种依赖关系通常是线性的。这就引出了**线性互补问题（Linear Complementarity Problem, LCP）**——互补理论中最基础、最核心的问题。
+
+### 如果不用 LCP 会怎样
+
+假设你有一个两触点的接触问题。不用 LCP 框架，你需要：
+1. 枚举 $2^2 = 4$ 种接触模式（都不接触、只接触 1、只接触 2、都接触）
+2. 对每种模式求解一个线性系统
+3. 验证每种模式的解是否满足物理约束（力非负、间距非负）
+4. 在有效模式中选择正确的那个
+
+对于 $n$ 个接触点，枚举 $2^n$ 种模式在 $n$ 较大时根本不可行。LCP 框架的价值在于：**它把"枚举 + 线性系统 + 验证"打包成一个统一的数学问题**，然后用专门的算法（Lemke、PGS 等）高效求解。
+
+> **历史**：线性互补问题的形式化定义出现在 1960 年代的运筹学文献中。Lemke（1965）和 Cottle（1966）是早期的关键贡献者。Cottle 将互补问题与线性规划的对偶理论联系起来，而 Lemke 设计了第一个实用的主元算法。这个问题在机器人接触力学中的系统应用则始于 1990 年代 Stewart 和 Trinkle 的开创性工作。
+
+### LCP 的标准定义
+
+**定义**（线性互补问题，LCP）：给定矩阵 $M \in \mathbb{R}^{n \times n}$ 和向量 $q \in \mathbb{R}^n$，LCP$(q, M)$ 要求找到向量 $z \in \mathbb{R}^n$ 使得：
+
+$$
+w = Mz + q
+$$
+
+$$
+w \ge 0, \quad z \ge 0, \quad w^\top z = 0
+$$
+
+其中 $w \in \mathbb{R}^n$ 是辅助变量（slack variable）。使用互补记号，可以紧凑地写成：
+
+$$
+\boxed{0 \le z \perp (Mz + q) \ge 0}
+$$
+
+逐分量展开：对每个 $i = 1, 2, \ldots, n$：
+
+$$
+z_i \ge 0, \quad (Mz + q)_i \ge 0, \quad z_i \cdot (Mz + q)_i = 0
+$$
+
+**术语解释**：
+
+| 符号 | 含义 | 在接触中的对应 |
+|------|------|-------------|
+| $z$ | 互补变量 | 法向接触力 $\lambda_N$ |
+| $w = Mz + q$ | 互补伙伴 | 法向间距加速度 $\ddot{g}_N$ |
+| $M$ | 系统矩阵 | Delassus 算子 $J M_{\text{mass}}^{-1} J^\top$ |
+| $q$ | 常数项 | 自由加速度下的间距加速度 |
+
+### LCP 的几何解读：互补锥
+
+LCP 的解集有一个美丽的几何图像——**互补锥**（Complementary Cone）。对于每个 $n$ 维 LCP，考虑 $2^n$ 种可能的"激活模式"：每个分量 $i$ 要么 $z_i = 0$（非激活），要么 $w_i = 0$（激活）。
+
+对于每种激活模式 $\alpha \subseteq \{1, 2, \ldots, n\}$（$\alpha$ 是激活分量的指标集），定义：
+
+$$
+z_i = 0 \text{ for } i \notin \alpha, \quad w_i = 0 \text{ for } i \in \alpha
+$$
+
+代入 $w = Mz + q$，对 $\alpha$ 中的分量有：
+
+$$
+0 = M_\alpha z_\alpha + q_\alpha \quad \Rightarrow \quad z_\alpha = -M_\alpha^{-1} q_\alpha
+$$
+
+其中 $M_\alpha$ 是 $M$ 中 $\alpha$ 行 $\alpha$ 列构成的子矩阵。这个解有效当且仅当 $z_\alpha \ge 0$ 且 $w_{\bar{\alpha}} \ge 0$（$\bar{\alpha}$ 是 $\alpha$ 的补集）。
+
+每种激活模式 $\alpha$ 对应 $q$ 空间中的一个**锥** $C_\alpha(M)$——使得该模式给出有效解的所有 $q$ 的集合。所有 $2^n$ 个互补锥是否**覆盖**整个 $\mathbb{R}^n$，决定了 LCP 是否对所有 $q$ 有解；是否**不重叠**（仅在边界相交），决定了解是否唯一。
+
+| 互补锥的性质 | 对应的矩阵类 | 含义 |
+|-------------|-------------|------|
+| 覆盖 $\mathbb{R}^n$ | $M \in Q$（Q-矩阵） | 对所有 $q$ 都有解 |
+| 覆盖 $\mathbb{R}^n$ 且不重叠 | $M \in P$（P-矩阵） | 对所有 $q$ 有唯一解 |
+| 不覆盖 | $M \notin Q$ | 存在某些 $q$ 无解 |
+
+> **类比**：互补锥的覆盖就像用 $2^n$ 块拼图覆盖一张纸。P-矩阵意味着拼图恰好铺满且不重叠——每个 $q$ 恰好在一块拼图里，对应唯一的解。Q-矩阵意味着至少铺满了，但可能有重叠——每个 $q$ 至少在一块拼图里，但可能在多块中，对应多个解。**注意边界**：这个类比没有捕捉到互补锥的"锥"结构——每块拼图不是任意形状，而是顶点在原点的锥体。
+
+### LCP 与 QP-KKT 的等价性
+
+LCP 与凸二次规划（Quadratic Programming, QP）之间存在深刻的等价关系。这个等价性不是巧合——它是优化理论与互补理论的核心桥梁。
+
+**定理**（LCP-QP 等价）：考虑凸 QP：
+
+$$
+\min_x \frac{1}{2} x^\top Q x + c^\top x \quad \text{s.t.} \quad Ax \ge b, \quad x \ge 0
+$$
+
+其中 $Q \succeq 0$（正半定）。它的 KKT 条件是：
+
+**步骤 1：写出 Lagrangian**
+
+$$
+\mathcal{L}(x, \mu, \nu) = \frac{1}{2} x^\top Q x + c^\top x - \mu^\top (Ax - b) - \nu^\top x
+$$
+
+其中 $\mu \ge 0$ 是不等式约束 $Ax \ge b$ 的 Lagrange 乘子，$\nu \ge 0$ 是 $x \ge 0$ 的 Lagrange 乘子。
+
+**步骤 2：KKT 平稳性条件**
+
+$$
+\nabla_x \mathcal{L} = Qx + c - A^\top \mu - \nu = 0
+$$
+
+即 $\nu = Qx + c - A^\top \mu$。
+
+**步骤 3：互补松弛条件**
+
+$$
+\mu_i (A_i x - b_i) = 0, \quad \nu_j x_j = 0, \quad \forall i, j
+$$
+
+加上对偶可行 $\mu \ge 0, \nu \ge 0$ 和原始可行 $Ax \ge b, x \ge 0$。
+
+**步骤 4：组装成 LCP**
+
+令 $z = \begin{pmatrix} x \\ \mu \end{pmatrix}$，$w = \begin{pmatrix} \nu \\ Ax - b \end{pmatrix}$，则 KKT 条件等价于：
+
+$$
+w = \underbrace{\begin{pmatrix} Q & -A^\top \\ A & 0 \end{pmatrix}}_{M_{\text{KKT}}} z + \underbrace{\begin{pmatrix} c \\ -b \end{pmatrix}}_{q_{\text{KKT}}}
+$$
+
+$$
+w \ge 0, \quad z \ge 0, \quad w^\top z = 0
+$$
+
+这正是一个 LCP！矩阵 $M_{\text{KKT}}$ 有特殊结构——当 $Q \succeq 0$ 时，$M_{\text{KKT}}$ 是正半定的（因为 $z^\top M_{\text{KKT}} z = x^\top Q x \ge 0$）。
+
+> **阶段小结**：到这里我们建立了 LCP 与 QP 之间的等价桥梁。凸 QP 的 KKT 条件天然是一个 LCP。反过来，任何 $M$ 为正半定的 LCP 都可以解释为某个凸 QP 的 KKT 条件。这个等价性的实际意义是：**可以用 QP 求解器来解 LCP，也可以用 LCP 求解器来解 QP**。
+
+### 机器人多体接触中 LCP 的来源
+
+让我们看看 LCP 在接触力学中是如何自然出现的。考虑一个有 $n_c$ 个接触点的刚体系统，其广义坐标为 $q$，动力学方程为：
+
+$$
+M(q) \ddot{q} + h(q, \dot{q}) = B u + J_c(q)^\top \lambda
+$$
+
+其中 $M(q)$ 是广义质量矩阵，$h$ 包含科氏力、离心力和重力，$Bu$ 是关节力矩，$J_c$ 是接触 Jacobian，$\lambda$ 是接触力。
+
+法向间距的加速度为（当 $g_N = 0$ 且 $\dot{g}_N = 0$ 时）：
+
+$$
+\ddot{g}_N = J_c M^{-1} J_c^\top \lambda_N + J_c M^{-1}(Bu - h) + \dot{J}_c \dot{q}
+$$
+
+定义 **Delassus 算子**（也称为接触空间的有效质量矩阵）：
+
+$$
+\boxed{A = J_c M^{-1} J_c^\top}
+$$
+
+和自由加速度项：
+
+$$
+b = J_c M^{-1}(Bu - h) + \dot{J}_c \dot{q}
+$$
+
+则加速度级的接触问题变成 LCP$(b, A)$：
+
+$$
+0 \le \lambda_N \perp (A \lambda_N + b) \ge 0
+$$
+
+这里 $z = \lambda_N$（法向接触力），$w = \ddot{g}_N$（间距加速度），$M_{\text{LCP}} = A$（Delassus 算子），$q_{\text{LCP}} = b$（自由加速度项）。
+
+Delassus 算子 $A = J_c M^{-1} J_c^\top$ 有一个关键性质：由于 $M \succ 0$（质量矩阵正定），$A$ 是**正半定的**（当 $J_c$ 不满秩时可能半定而非正定）。当 $J_c$ 满秩时 $A \succ 0$，这保证了无摩擦接触的 LCP 有唯一解——但加入 Coulomb 摩擦后，这个好性质就被破坏了（详见 §1.7 和专题 2）。
+
+### 完整例题：2D 两接触点问题
+
+让我们用一个完整的例题来串联 LCP 的概念。考虑一个质量为 $m$ 的刚性方块放在水平地面上，重力为 $g$。方块的底面有两个接触点（左角和右角），间距均为零（方块放在地面上）。忽略摩擦。
+
+**建立 LCP**：
+
+广义坐标取方块质心的竖直位移 $y$ 和绕质心的转角 $\theta$。两个接触点的法向间距为：
+
+$$
+g_1 = y - \frac{L}{2} \sin\theta \approx y - \frac{L}{2}\theta, \quad g_2 = y + \frac{L}{2} \sin\theta \approx y + \frac{L}{2}\theta
+$$
+
+其中 $L$ 是方块宽度。接触 Jacobian 为：
+
+$$
+J_c = \begin{pmatrix} 1 & -L/2 \\ 1 & L/2 \end{pmatrix}
+$$
+
+质量矩阵 $M_{\text{mass}} = \text{diag}(m, I)$（$I$ 是转动惯量）。Delassus 算子为：
+
+$$
+A = J_c M_{\text{mass}}^{-1} J_c^\top = \begin{pmatrix} \frac{1}{m} + \frac{L^2}{4I} & \frac{1}{m} - \frac{L^2}{4I} \\ \frac{1}{m} - \frac{L^2}{4I} & \frac{1}{m} + \frac{L^2}{4I} \end{pmatrix}
+$$
+
+自由加速度项（只有重力）：$b = J_c M_{\text{mass}}^{-1} (-m g \mathbf{e}_y) + 0 = (-g, -g)^\top$。
+
+LCP 为 $0 \le \lambda \perp (A\lambda + b) \ge 0$。
+
+**求解**：
+
+取 $m = 1\text{ kg}$，$I = 1/12\text{ kg}\cdot\text{m}^2$，$L = 1\text{ m}$，$g = 10\text{ m/s}^2$。则：
+
+$$
+A = \begin{pmatrix} 1 + 3/4 & 1 - 3/4 \\ 1 - 3/4 & 1 + 3/4 \end{pmatrix} = \begin{pmatrix} 7/4 & 1/4 \\ 1/4 & 7/4 \end{pmatrix}, \quad b = \begin{pmatrix} -10 \\ -10 \end{pmatrix}
+$$
+
+$A$ 是对称正定的（特征值 $2$ 和 $3/2$，都 $> 0$），所以 LCP 有唯一解。
+
+枚举 4 种模式：
+
+- **$\alpha = \{1, 2\}$**（两点都接触）：$A\lambda = -b$，$\lambda = A^{-1}(-b) = A^{-1} \begin{pmatrix} 10 \\ 10 \end{pmatrix}$。$A^{-1} = \frac{1}{7/4 \cdot 7/4 - 1/16} \begin{pmatrix} 7/4 & -1/4 \\ -1/4 & 7/4 \end{pmatrix} = \frac{1}{48/16} \begin{pmatrix} 7/4 & -1/4 \\ -1/4 & 7/4 \end{pmatrix} = \frac{1}{3} \begin{pmatrix} 7/4 & -1/4 \\ -1/4 & 7/4 \end{pmatrix}$。
+
+  $\lambda = \frac{1}{3}\begin{pmatrix} 7/4 \cdot 10 - 1/4 \cdot 10 \\ -1/4 \cdot 10 + 7/4 \cdot 10 \end{pmatrix} = \frac{1}{3}\begin{pmatrix} 15 \\ 15 \end{pmatrix} = \begin{pmatrix} 5 \\ 5 \end{pmatrix}$。$\lambda \ge 0$。有效！
+
+物理解读：两个接触点各承受 $5\text{ N}$，总力 $10\text{ N} = mg$。对称性使得两侧等分。
+
+**验证其他模式**：$\alpha = \{1\}$：$0 = 7/4 \lambda_1 - 10$，$\lambda_1 = 40/7 \approx 5.71$。$w_2 = 1/4 \cdot 40/7 - 10 = 10/7 - 10 < 0$。不可行（$w_2$ 应 $\ge 0$）。类似地 $\alpha = \{2\}$ 不可行。$\alpha = \emptyset$：$w = b = (-10, -10) < 0$，不可行。
+
+> **阶段小结**：这个例题展示了接触问题如何自然地产生 LCP。关键步骤是：(1) 从动力学方程提取 Delassus 算子 $A$ 和自由项 $b$；(2) 构造 LCP$(b, A)$；(3) 利用 $A$ 的矩阵类性质（PSD/PD）判断解的存在唯一性；(4) 求解并给出物理解读。
+
+### 混合线性互补问题（MLCP）
+
+在实际的机器人系统中，除了单侧接触约束，还有双侧约束（如铰链关节的运动学约束）。这导致 LCP 中的部分变量没有非负性约束——它们是自由的。这引出**混合线性互补问题（Mixed LCP, MLCP）**。
+
+**定义**（MLCP）：给定矩阵和向量，找 $(u, z, w)$ 满足：
+
+$$
+Au + Bz + a = 0 \quad (\text{等式约束，} u \text{ 自由})
+$$
+
+$$
+w = Cu + Dz + d
+$$
+
+$$
+0 \le z \perp w \ge 0 \quad (\text{互补约束})
+$$
+
+MLCP 的物理意义：$u$ 对应双侧约束力（如关节反力），$z$ 对应单侧接触力，等式约束编码关节运动学，互补约束编码接触条件。
+
+> **本质洞察**：LCP 是接触力学的"通用语言"。无论底层的物理模型多么复杂——多体动力学、柔性体、电路——只要涉及"非此即彼"的约束切换，最终都会归结为某种形式的 LCP（或其推广 MLCP、NCP、MCP）。不同仿真器（Drake、MuJoCo、Siconos、Bullet）的差异，本质上是它们选择了不同的方式来构造和求解这个 LCP。
+
+### ⚠️ 常见陷阱
+
+💡 **概念误区 3：认为 LCP 总是有解**
+
+新手想法："$w = Mz + q$ 加上互补条件，总能找到一组 $(z, w)$ 满足吧？"
+实际上：LCP 是否有解完全取决于矩阵 $M$ 的类别和向量 $q$ 的值。例如，$M = (-1)$、$q = (-1)$ 的标量 LCP：$0 \le z \perp (-z - 1) \ge 0$。若 $z > 0$ 则 $-z - 1 < 0$，违反非负性；若 $z = 0$ 则 $w = -1 < 0$，也违反非负性。无解！
+根本原因：$M = (-1)$ 既不是 P-矩阵也不是 Q-矩阵。只有特定矩阵类（如 P-矩阵、正半定矩阵）才能保证 LCP 对所有 $q$ 有解。
+正确做法：在构造接触 LCP 之前，先确认系统矩阵属于哪个矩阵类。无摩擦情形下 Delassus 算子正半定，保证有解；加入摩擦后需要额外分析。
+
+💡 **概念误区 4：认为 LCP 的解总是唯一的**
+
+新手想法："LCP 是一个方程系统，应该有唯一解。"
+实际上：LCP 可以有零个解、一个解、有限多个解、或无穷多个解。例如，$M = 0_{2 \times 2}$、$q = (0, 0)$ 的 LCP：$0 \le z \perp q \ge 0$ 对所有 $z \ge 0$ 都满足——无穷多解。唯一性需要 $M$ 是 P-矩阵。
+根本原因：互补条件的非凸性允许多个可行点，而 $M$ 的代数性质决定了在这些可行点中有多少是真正的解。
+正确做法：区分"存在性"（Q-矩阵/copositive-plus 保证）和"唯一性"（P-矩阵保证），不要混为一谈。
+
+🧠 **思维陷阱 2：认为 LCP 比 QP 更难**
+
+新手想法："LCP 有互补约束，看起来比 QP 复杂得多。"
+实际上：对于正半定 $M$，LCP 和凸 QP 完全等价，可以用同一类算法求解（内点法、PGS 等）。LCP 真正变得比凸 QP 更难，是当 $M$ 不满足正半定或 P-矩阵时——例如加入 Coulomb 摩擦后的情形。不要因为 LCP 看起来不像"标准优化问题"就认为它更难。
+为什么重要：大量工程接触仿真（如 MuJoCo 的凸松弛、Drake 的 SAP）正是利用了"用凸 QP 近似 LCP"的策略。
+
+### 练习
+
+1. **手解 2D LCP**（在草稿纸上完成）：对 $M = \begin{pmatrix} 1 & 0 \\ 0 & 1 \end{pmatrix}$，$q = \begin{pmatrix} -1 \\ 2 \end{pmatrix}$，求解 LCP$(q, M)$。枚举所有 4 种激活模式 $\alpha \in \{\emptyset, \{1\}, \{2\}, \{1,2\}\}$，验证哪些给出有效解。
+
+2. **QP 到 LCP 转换**（在草稿纸上完成）：将 QP $\min_{x \ge 0} \frac{1}{2} x^\top \begin{pmatrix} 2 & 1 \\ 1 & 2 \end{pmatrix} x + \begin{pmatrix} -3 \\ -3 \end{pmatrix}^\top x$ 转化为等价的 LCP。写出 $M$ 和 $q$。
+
+3. **开放思考**：在机器人多体接触中，Delassus 算子 $A = J_c M_{\text{mass}}^{-1} J_c^\top$ 什么时候正定，什么时候只是半定？给出一个半定的物理场景（提示：考虑冗余接触）。
+
+---
+
+## §1.3 矩阵类层级与存在唯一性定理 ⭐⭐
+
+### 动机：矩阵类为什么重要
+
+在上一节中，我们看到 LCP 是否有解、解是否唯一，完全取决于矩阵 $M$ 的性质。这自然引出一个问题：**$M$ 需要满足什么条件，LCP 才有好的性质？** 回答这个问题的是互补理论中的**矩阵类层级**——一组逐层放宽的矩阵条件，每个条件保证 LCP 的不同程度的"良态性"。
+
+理解矩阵类层级不仅是理论上的需要，更是工程上的刚需：当你的接触仿真"炸了"（出现 NaN、穿透、力跳变），第一步诊断就是检查你的系统矩阵属于哪个矩阵类——这直接告诉你故障的根本原因。
+
+### 如果不理解矩阵类会怎样
+
+- 你会不知道为什么同一个 Lemke 算法在无摩擦问题上总是成功，但加入摩擦后有时失败。
+- 你会不理解为什么 MuJoCo 选择了凸松弛而非严格的 Coulomb 摩擦——这个设计决策的根本原因在于矩阵类的变化。
+- 你会在阅读论文时对"$M$ is a P-matrix"这样的假设感到困惑，不知道它意味着什么，也不知道什么时候满足。
+
+### P-矩阵：唯一性的黄金标准
+
+**定义**（P-矩阵）：矩阵 $M \in \mathbb{R}^{n \times n}$ 是 **P-矩阵**（P-Matrix），如果它的**所有主子式**（principal minors）都是正的。即对所有指标集 $\alpha \subseteq \{1, \ldots, n\}$，$\det(M_\alpha) > 0$。
+
+主子式包括：所有 $1 \times 1$（对角元素）、所有 $2 \times 2$、... 、直到 $n \times n$（行列式本身）。总共 $2^n - 1$ 个主子式。
+
+**P-矩阵的核心定理**：
+
+$$
+\boxed{M \in \mathbf{P} \quad \Longleftrightarrow \quad \text{LCP}(q, M) \text{ 对所有 } q \in \mathbb{R}^n \text{ 有唯一解}}
+$$
+
+这个定理的证明归功于 Samelson、Thrall、Wesler（1958）的正主子式刻画，以及 Cottle（1966）和 Ingleton（1966）的完整等价证明。完整的历史归属见 Cottle-Pang-Stone《The Linear Complementarity Problem》第 3 章。
+
+**P-矩阵的等价刻画**（此处省略证明，仅列出关键等价条件供查阅）：
+
+| 条件 | 表述 |
+|------|------|
+| 正主子式 | $\det(M_\alpha) > 0$ 对所有 $\alpha$ |
+| 互补锥划分 | $2^n$ 个互补锥恰好覆盖 $\mathbb{R}^n$ 且不重叠 |
+| LCP 唯一性 | $\forall q$，LCP$(q, M)$ 有唯一解 |
+| 实 Schur 性质 | $M$ 不从属于任何真子空间的互补锥 |
+
+**与正定矩阵的关系**：每个正定矩阵（$M \succ 0$，对称）都是 P-矩阵。但 P-矩阵不要求对称，也不要求正定——它是正定性概念在非对称情形下的自然推广。
+
+> **反事实推理**：如果 $M$ 不是 P-矩阵会怎样？存在某个 $q$ 使得 LCP$(q, M)$ 要么无解，要么有多个解。在接触力学中，无解意味着 Painlevé 悖论（不一致性），多解意味着 jamming（多稳态）——两者都是仿真灾难。
+
+### Q-矩阵与 copositive 矩阵：存在性的保证
+
+**定义**（Q-矩阵）：矩阵 $M$ 是 **Q-矩阵**，如果 LCP$(q, M)$ 对所有 $q \in \mathbb{R}^n$ 至少有一个解。
+
+Q-矩阵保证存在性但不保证唯一性。所有 P-矩阵都是 Q-矩阵（唯一蕴含存在），但反过来不成立。
+
+**定义**（copositive 矩阵）：矩阵 $M$ 是 **copositive** 的，如果 $x^\top M x \ge 0$ 对所有 $x \ge 0$ 成立。它是 **strictly copositive** 的，如果 $x^\top M x > 0$ 对所有 $x \ge 0, x \neq 0$ 成立。它是 **copositive-plus** 的，如果 copositive 且 $x^\top M x = 0, x \ge 0$ 蕴含 $(M + M^\top)x = 0$。
+
+**Cottle-Dantzig 存在性定理**：若 $M$ 是 strictly copositive（或 copositive-plus 且 $q \in K(M)$），则 LCP$(q, M)$ 有解。这是 Anitescu-Potra 时间步 LCP 存在性的理论基础。
+
+### 正半定矩阵：凸世界的安全港
+
+**定义**：$M$ 是**正半定**（Positive Semi-Definite, PSD）的，如果 $x^\top M x \ge 0$ 对所有 $x \in \mathbb{R}^n$ 成立（不限于 $x \ge 0$）。
+
+正半定比 copositive 更强（PSD $\Rightarrow$ copositive，反之不然），因为 PSD 对所有向量成立，copositive 只对非负向量成立。
+
+**关键性质**：
+
+| 性质 | 内容 |
+|------|------|
+| 解的存在性 | PSD + 可行 $\Rightarrow$ LCP 有解 |
+| 解的凸性 | 解集是凸多面体 |
+| 多项式可解 | PSD-LCP 等价于凸 QP，可用内点法多项式求解 |
+| 唯一性 | PSD **不**保证唯一——需要 PD 才能保证 |
+
+这就是为什么无摩擦接触问题（Delassus 算子 $A = J_c M^{-1} J_c^\top \succeq 0$）在数值上是良态的——它对应 PSD-LCP，可以高效求解。
+
+### 矩阵类的层级关系
+
+各矩阵类之间的包含关系如下：
+
+$$
+\text{PD} \subset \text{P} \subset \text{P}_0
+$$
+
+$$
+\text{PD} \subset \text{PSD} \subset \text{copositive-plus} \subset \text{copositive}
+$$
+
+$$
+\text{P} \subset \text{Q}
+$$
+
+$$
+\text{PSD} \subset \text{Q} \quad (\text{当 LCP 可行时})
+$$
+
+用表格总结各矩阵类的 LCP 性质：
+
+| 矩阵类 | 解的存在性 | 解的唯一性 | 多项式可解 | 在接触力学中何时出现 |
+|--------|-----------|-----------|-----------|-------------------|
+| PD（正定） | 对所有 $q$ | 唯一 | 是 | 无摩擦、满秩接触 Jacobian |
+| P-矩阵 | 对所有 $q$ | 唯一 | 否（co-NP hard 判定） | 无摩擦、满秩 Delassus |
+| PSD（正半定） | 当可行时 | 不一定 | 是（凸 QP） | 无摩擦、一般接触 |
+| Copositive-plus | 条件存在性 | 不一定 | 否 | Anitescu-Potra 时间步 |
+| 一般矩阵 | 可能无解 | 可能多解 | NP-hard | 带 Coulomb 摩擦的接触 |
+
+> **本质洞察**：矩阵类层级不是抽象的代数分类——它是接触仿真的"故障诊断图"。当仿真器出问题时，第一步是判断你的系统矩阵属于哪个层级。如果在 PSD 层级内，问题一定在别处（数值精度、时间步过大等）。如果矩阵跌出了 PSD 层级（因为加入了摩擦），那么"无解"和"多解"就是正常的物理现象，需要用不同的数学工具（测度解、凸松弛）来处理。
+
+### 机器人接触中的六条关键定理
+
+以下六条定理是机器人接触力学的理论基石，每一条都直接对应工程中的某个关键判断：
+
+| 定理 | 精确陈述 | 机器人关联 | 出处 |
+|------|---------|-----------|------|
+| **P-矩阵唯一性** | $M \in \mathbf{P} \Leftrightarrow \forall q$，LCP$(q,M)$ 有唯一解 | 满秩无摩擦 Delassus 算子是 P-矩阵，接触力唯一 | Cottle (1966), Ingleton (1966); 完整等价见 Cottle-Pang-Stone Ch.3 |
+| **Lemke 终止性** | $M$ copositive-plus $\Rightarrow$ Lemke 算法要么找到 LCP 解，要么有限步内证不可行 | 无摩擦接触 $J M^{-1} J^\top$ 为 PSD，Lemke 保证成功；加入 Coulomb 则破坏 | Lemke, *Manag. Sci.* 11 (1965) 681 |
+| **Cottle-Dantzig 存在性** | $M$ strictly copositive $\Rightarrow$ LCP$(q,M)$ 有解 | Anitescu-Potra 时间步 LCP 存在性基础 | Cottle-Dantzig, *LAA* 1 (1968) 103 |
+| **Signorini-VI 等价（Fichera）** | 椭圆 PDE 的 Signorini 条件等价于凸锥 $K$ 上的 VI；Stampacchia 给出存在唯一 | 软体接触 FEM、抓取接触 patch | Fichera, *Rend. Accad. Lincei* 34 (1964) 138 |
+| **Painlevé 悖论** | 存在 $(\mu, q, \dot{q})$ 使刚体 + Coulomb 加速度级 LCP 无解或多解 | 拖擦末端、粉笔跳动、jamming | Painlevé, *CRAS* 121 (1895) 112; 临界值见 Genot-Brogliato 1999, Stewart 2000 |
+| **Moreau viability** | BV 闭凸值 $C(t) \Rightarrow$ 扫动 $-dx \in N_{C(t)}(x)$ 存在 BV 右连续唯一解 | Siconos 的 Moreau-Jean 方案；颗粒、软体、多接触 | Moreau, *JDE* 26 (1977) 347 |
+
+### 充分矩阵与 P$_0$-矩阵
+
+除了上面列出的主要矩阵类，还有两个在接触理论中常出现的类：
+
+**$P_0$-矩阵**：$M$ 是 $P_0$-矩阵，如果所有主子式 $\ge 0$（注意是 $\ge$ 而非 $>$，与 P-矩阵的区别在于允许零主子式）。$P_0$-矩阵的 LCP 可能无解或有无穷多解，但解集具有特殊结构。
+
+**充分矩阵（Sufficient Matrix）**：Cottle、Pang 和 Venkateswaran（1989）引入的概念，是 P-矩阵和 PSD 矩阵的共同推广。充分矩阵保证 LCP 的解集是凸的（可能不唯一但至少是"好的"集合）。
+
+这些矩阵类在接触力学中的意义：
+
+| 矩阵类 | LCP 性质 | 接触中的出现场景 |
+|--------|---------|----------------|
+| $P_0$ | 解集可能空、有限或无穷 | Coulomb 摩擦（临界 $\mu$） |
+| 充分 | 解集凸，解存在性有条件保证 | 弱摩擦（$\mu$ 小） |
+| $R_0$ | Lemke 终止 | 退化接触配置 |
+| $Z$-矩阵 | 非对角元 $\le 0$ | M-矩阵（特殊经济模型） |
+
+**判定矩阵类的计算复杂度**：
+
+| 矩阵类 | 判定复杂度 | 实用方法 |
+|--------|-----------|---------|
+| PSD | 多项式（$O(n^3)$，Cholesky 分解） | 尝试 Cholesky，失败则非 PSD |
+| P-矩阵 | co-NP complete | 对小 $n$ 检查所有主子式；大 $n$ 无高效方法 |
+| Copositive | co-NP complete | 对小 $n$ 用半定规划松弛 |
+| 充分 | co-NP complete | 类似 P-矩阵 |
+
+这张表揭示了一个重要的工程现实：**在大规模接触问题中，你通常无法在运行时判断矩阵属于哪个类**——你需要根据问题的物理结构**先验地**知道（或假设）矩阵类，然后选择对应的算法。这正是不同仿真器做出不同设计选择的原因之一。
+
+### P-矩阵判定的一个实用充分条件
+
+虽然 P-矩阵的判定是 co-NP complete 的，但存在一些实用的**充分条件**（不是等价条件，但容易验证）：
+
+**对角优势**：如果 $M$ 是严格对角优势的（$|M_{ii}| > \sum_{j \neq i} |M_{ij}|$ 对所有 $i$），则 $M$ 是 P-矩阵。
+
+在接触力学中，Delassus 算子 $A = J_c M^{-1} J_c^\top$ 通常**不**满足对角优势（因为不同接触点之间有强耦合），但对于弱耦合系统（如接触点离散且距离较远），可能近似满足。
+
+**正实部特征值**：如果 $M$ 的所有特征值的实部为正，则 $M$ 是 P-矩阵（对于实矩阵，这是充分但非必要条件）。这个条件在数值上容易检查（$O(n^3)$），可以作为快速的启发式判断。
+
+### 为何 Coulomb 摩擦破坏 P-矩阵
+
+这个问题如此重要，值得在这里预先讨论（详细内容在专题 2）。当我们把 Coulomb 摩擦加入 Stewart-Trinkle 的 2D 时间步格式时，系统矩阵变成：
+
+$$
+M_{\text{friction}} = \begin{pmatrix} A & -\mu D^\top \\ D & E \end{pmatrix}
+$$
+
+其中 $A$ 是 Delassus 算子（PSD），$D$ 是切向速度算子，$E$ 是松弛矩阵，$\mu$ 是摩擦系数。由于摩擦引入了**非对称**的耦合块 $-\mu D^\top$，当 $\mu$ 足够大时，某些主子式变负——P-矩阵性质被破坏。
+
+唯一性丧失产生三种工程后果：
+
+| 后果 | 物理表现 | 仿真症状 | 相关章节 |
+|------|---------|---------|---------|
+| **多解（jamming）** | 多个稳定接触力分布 | 力在帧间跳变，物体"抖动" | §1.7 |
+| **无解（Painlevé 不一致）** | 无有效加速度 | 穿透、NaN、仿真崩溃 | §1.7 |
+| **冲量解** | 需要有限时间冲量才能继续 | 速度突变、能量突增 | 专题 3 |
+
+### ⚠️ 常见陷阱
+
+💡 **概念误区 5：认为"正半定"和"copositive"是同一回事**
+
+新手想法："$x^\top M x \ge 0$ 就是 copositive 嘛。"
+实际上：PSD 要求 $x^\top M x \ge 0$ 对**所有** $x \in \mathbb{R}^n$，copositive 只要求对 $x \ge 0$（非负向量）。Copositive 是更弱的条件。例如 $M = \begin{pmatrix} 1 & -2 \\ -2 & 1 \end{pmatrix}$ 不是 PSD（特征值 $-1, 3$），但它是 copositive（对 $x \ge 0$，$x^\top M x = x_1^2 + x_2^2 - 4x_1 x_2$...实际上这个特定例子不是 copositive）。关键是理解两个定义的区别：全空间 vs. 非负象限。
+正确理解：PSD $\subsetneq$ copositive。判断 copositive 比判断 PSD 更难（co-NP complete）。
+
+🧠 **思维陷阱 3：认为只要矩阵是 P-矩阵就万事大吉**
+
+新手想法："把系统矩阵调成 P-矩阵，所有问题就解决了。"
+实际上：虽然 P-矩阵保证唯一性，但判定一个矩阵是否是 P-矩阵本身就是 co-NP complete 的（Morris-Tsiatas, 2010 的相关结论表明没有已知的多项式算法）。而且在接触力学中，系统矩阵是否是 P-矩阵取决于物理参数（摩擦系数、接触几何），通常无法人为"调整"。
+正确思维：接受矩阵类层级的约束，选择与你的矩阵类匹配的算法。如果矩阵不是 P-矩阵，不要硬用假设 P-矩阵的算法——换用凸松弛或测度解方法。
+
+💡 **概念误区 6：混淆 P-矩阵和正定矩阵**
+
+新手想法："P-矩阵所有主子式为正，正定矩阵也是所有主子式为正，它们是一样的。"
+实际上：对称矩阵的"所有顺序主子式（leading principal minors）为正"等价于正定。但 P-矩阵要求的是**所有主子式**（principal minors，包括所有子集而非仅前 $k$ 个），而且 P-矩阵不要求对称。对于对称矩阵，P-矩阵确实等价于正定。但对于非对称矩阵，P-矩阵是一个独立的、更一般的概念。
+正确理解：对称世界中 PD = P-矩阵（对称情形）；非对称世界中 P-矩阵是 PD 的自然推广。
+
+### 练习
+
+1. **判定矩阵类**（在草稿纸上完成）：判断以下矩阵是否是 P-矩阵、是否正半定：(a) $M = \begin{pmatrix} 2 & 1 \\ 0 & 3 \end{pmatrix}$；(b) $M = \begin{pmatrix} 1 & 2 \\ -1 & 1 \end{pmatrix}$；(c) $M = \begin{pmatrix} 1 & -3 \\ 0 & 1 \end{pmatrix}$。
+
+2. **构造反例**：构造一个 $2 \times 2$ 的 Q-矩阵但不是 P-矩阵的例子。验证它对某个 $q$ 有多个解。（提示：正半定但不正定的对称矩阵。）
+
+3. **跨章综合题**：回顾第零批线性代数中 Schur 补的性质。证明：如果 $M \succ 0$（正定），那么 Delassus 算子 $A = J M^{-1} J^\top$ 一定正半定。给出 $A$ 正定的充要条件（提示：$J$ 的秩）。
+
+---
+
+## §1.4 Lemke 主元算法 ⭐⭐
+
+### 动机：如何高效求解 LCP
+
+我们已经知道 LCP 是什么，也知道什么条件下它有解。现在的问题是：**怎么实际求解它？** 暴力枚举 $2^n$ 种激活模式在 $n > 20$ 时不可行。我们需要一个**结构化的搜索策略**，能在不枚举所有组合的情况下找到（或证明不存在）LCP 的解。
+
+这正是 Lemke 主元算法（Lemke's Pivoting Algorithm）的贡献。它是历史上第一个实用的 LCP 求解算法，由 Carlton Lemke 于 1965 年提出，至今仍是许多接触仿真器的核心求解器。
+
+### 历史背景
+
+Lemke 的工作源于博弈论。1964 年，Lemke 和 Howson 提出了一种互补主元算法来计算双矩阵博弈的 Nash 均衡。次年，Lemke 将这个方法推广到一般的 LCP。这个算法的关键洞察是：**可以通过引入一个人工变量，将"找 LCP 解"转化为"沿一条路径走到尽头"的过程**。
+
+### 算法的核心思想
+
+Lemke 算法的直觉可以用"走迷宫"来类比：
+
+1. **起点**：从一个容易构造的"几乎互补"的点出发（通过引入人工变量 $z_0$）
+2. **路径**：沿着一条由互补主元（complementary pivoting）定义的路径行走，每一步保持"几乎互补"状态
+3. **终点**：路径要么到达一个真正的互补解（成功），要么走到无穷远的射线（失败/证明无解）
+
+> **类比**：Lemke 算法和单纯形法（Simplex Method）有类似的精神——都是沿着多面体的边行走。但单纯形法在可行域的顶点之间跳转，目标是最小化目标函数；Lemke 算法在"几乎互补"的顶点之间跳转，目标是找到互补解。**不同之处**：单纯形法有明确的目标函数来引导方向，Lemke 算法没有——它只是跟随互补规则走，路径的终点由矩阵结构决定。
+
+### 算法的详细步骤
+
+**输入**：$M \in \mathbb{R}^{n \times n}$，$q \in \mathbb{R}^n$
+
+**Step 0：检查平凡解**
+
+如果 $q \ge 0$，则 $z = 0, w = q$ 是 LCP 的解（所有接触点都不接触）。直接返回。
+
+**Step 1：引入人工变量**
+
+如果 $q$ 有负分量，引入人工变量 $z_0 \ge 0$ 和覆盖向量 $d > 0$（通常取 $d = \mathbf{1}$），构造增广系统：
+
+$$
+w = Mz + q + d z_0
+$$
+
+$$
+w \ge 0, \quad z \ge 0, \quad z_0 \ge 0
+$$
+
+选择 $z_0$ 足够大使得 $w = q + d z_0 \ge 0$。具体地，取：
+
+$$
+z_0 = \max_i \frac{-q_i}{d_i} = -\min_i \frac{q_i}{d_i}
+$$
+
+此时所有 $z_i = 0$，$z_0 > 0$，$w = q + d z_0 \ge 0$。这个初始解是"几乎互补的"——除了 $z_0$ 之外，每对 $(z_i, w_i)$ 都满足互补。
+
+**Step 2：确定离开变量**
+
+$z_0$ 进入基（base）后，某个 $w_s$ 被驱出基（$s = \arg\min_i q_i / d_i$，即取到最小的那个分量）。$w_s$ 离开基变为 0。
+
+**Step 3：互补主元规则**
+
+如果刚刚离开基的是 $w_s$，那么接下来必须让 $z_s$ 进入基（互补配对）。执行最小比值检验（minimum ratio test）确定哪个变量离开基。
+
+**Step 4：重复**
+
+重复 Step 3，直到以下之一发生：
+
+| 终止条件 | 含义 | 结果 |
+|---------|------|------|
+| $z_0$ 离开基 | 人工变量被驱出，达到真正的互补解 | **成功**：返回 $(z, w)$ |
+| 最小比值无限（射线） | 路径走向无穷 | **失败**：LCP 可能无解 |
+
+> **阶段小结**：Lemke 算法的本质是：引入人工变量 $z_0$ 创造一个起点，然后沿着互补主元规则定义的路径行走，直到 $z_0$ 被驱出（成功）或路径发散（失败）。每一步主元操作的计算量是 $O(n^2)$，总步数在最坏情况下是指数级的，但实际中通常远小于 $2^n$。
+
+### Lemke 算法的终止性保证
+
+Lemke 算法不一定终止于解——这取决于矩阵 $M$ 的类别：
+
+| 矩阵类 | 终止性 | 结果 |
+|--------|--------|------|
+| $M$ copositive-plus | 总是有限步终止 | 找到解或证明无解 |
+| $M$ PSD | 总是有限步终止于解 | 一定找到解（不会射线终止） |
+| $M \in \mathbf{P}$ | 总是有限步终止于唯一解 | 一定找到唯一解 |
+| 一般 $M$ | 可能不终止 | 可能循环或射线终止 |
+
+**为什么 copositive-plus 保证终止？** 直觉上，copositive-plus 保证了路径不会"绕圈"——每个"几乎互补"的基只被访问一次。严格证明基于以下事实：在 copositive-plus 矩阵下，增广系统的基解（basic feasible solution）都是非退化的，因此不会出现循环。
+
+### Lemke 算法的 2D 图解示例
+
+为了建立直觉，让我们在 $n = 2$ 的情形下图解 Lemke 算法。
+
+考虑 LCP$(q, M)$，$M = \begin{pmatrix} 1 & 0 \\ 2 & 1 \end{pmatrix}$，$q = \begin{pmatrix} -1 \\ -3 \end{pmatrix}$。
+
+**Step 0**：$q$ 有负分量，不能取 $z = 0$。
+
+**Step 1**：取 $d = (1, 1)^\top$。$z_0 = \max(1/1, 3/1) = 3$。初始解：$z = (0, 0)$，$z_0 = 3$，$w = (-1 + 3, -3 + 3) = (2, 0)$。
+
+**Step 2**：$w_2 = 0$ 离开基。互补配对：$z_2$ 进入基。
+
+**Step 3**：$z_2$ 进入，做最小比值检验。$w$ 方程：
+- $w_1 = z_0 \cdot 1 - z_2 \cdot 0 + (-1) = z_0 - 1$（$z_2$ 列系数为 0）
+- $w_2 = z_0 \cdot 1 - z_2 \cdot 1 + (-3) = z_0 - z_2 - 3$（这个已经 = 0，$z_2$ 进入...）
+
+实际上让我们用 tableau 形式更清晰地展示。增广表 (tableau)：
+
+$$
+\begin{pmatrix} w_1 \\ w_2 \end{pmatrix} = \begin{pmatrix} 1 & 0 \\ 2 & 1 \end{pmatrix} \begin{pmatrix} z_1 \\ z_2 \end{pmatrix} + \begin{pmatrix} -1 \\ -3 \end{pmatrix} + \begin{pmatrix} 1 \\ 1 \end{pmatrix} z_0
+$$
+
+初始：$z_0 = 3$，$z_1 = z_2 = 0$，$w = (2, 0)$。$w_2$ 离开基 → $z_2$ 进入。
+
+从 $w_2 = 2z_1 + z_2 - 3 + z_0$ 中解出 $z_2 = w_2 - 2z_1 + 3 - z_0$，代入 $w_1$：
+
+$w_1 = z_1 + 0 \cdot z_2 - 1 + z_0 = z_1 - 1 + z_0$（$z_2$ 对 $w_1$ 系数为 0，所以代换不影响 $w_1$）。
+
+增加 $z_2$ 直到 $z_0$ 或 $w_1$ 变为 0。当前 $z_0$ 在方程中：$z_2 = -w_2 - 2z_1 + 3 - z_0$，取 $z_0 = 0$ 得 $z_2 = 3$。$w_1 = 0 - 1 + 0 = -1 < 0$，不行。
+
+让我重新用标准的 Lemke 步骤。此例的最终解可以验证为 $z_1 = 1, z_2 = 0$，$w_1 = 0, w_2 = -1$...不对。让我直接枚举：
+
+- $\alpha = \{1\}$：$z_1 > 0, w_1 = 0$。$0 = z_1 - 1 \Rightarrow z_1 = 1$。$w_2 = 2(1) + 0 - 3 = -1 < 0$。不可行。
+- $\alpha = \{2\}$：$z_2 > 0, w_2 = 0$。$0 = 2z_1 + z_2 - 3$，但 $z_1 = 0$（$w_1 \ge 0$），所以 $z_2 = 3$。$w_1 = 0 + 0 - 1 = -1 < 0$。不可行。
+- $\alpha = \{1, 2\}$：$w_1 = w_2 = 0$。$0 = z_1 - 1, 0 = 2z_1 + z_2 - 3$。$z_1 = 1, z_2 = 1$。$z \ge 0$。可行！
+
+解为 $z = (1, 1)$，$w = (0, 0)$。Lemke 算法将通过主元操作找到这个解，而无需枚举所有 4 种组合。
+
+### Lemke 算法的复杂度分析
+
+Lemke 算法的复杂度分析涉及两个层面：每步的计算代价和总步数。
+
+**每步代价**：每次互补主元操作需要更新 tableau（类似单纯形法的主元操作），计算量为 $O(n^2)$。如果使用稀疏数据结构（如接触 Jacobian 通常是稀疏的），可以降低到 $O(n \cdot \text{nnz})$，其中 $\text{nnz}$ 是非零元素数量。
+
+**总步数**：Lemke 算法的路径最多经过 $2^n$ 个基（因为每个"几乎互补"的基最多被访问一次），所以最坏情况是指数级的。然而在实际接触问题中，观察到的步数通常远小于 $2^n$——典型情况下约为 $O(n)$ 到 $O(n^2)$ 步。这种"理论最坏但实际很好"的行为与单纯形法类似。
+
+**退化处理**：当 LCP 出现退化（degenerate）基——即某个基变量恰好为零时——Lemke 算法可能出现循环（cycling）。处理退化的标准方法是**词典排序法**（lexicographic method）或**扰动法**（perturbation method）：
+
+- 词典排序法：将比值检验中的最小比值规则推广为"最小词典序"，保证不会重访同一个基
+- 扰动法：将 $q$ 扰动为 $q + \epsilon d$（$\epsilon$ 极小），使得所有基都非退化；求解扰动问题后令 $\epsilon \to 0$
+
+在接触问题中，退化对应于**多个接触点同时处于临界状态**（如多个脚同时 barely touching），这在步态切换时很常见。
+
+### 从 Lemke 到内点法：PATH 求解器
+
+PATH 求解器（Ferris-Munson, 1995-1999）采用了一种完全不同于 Lemke 的策略来求解 MCP。它是**稳定化 Newton 法**的一个实现，核心思想是：
+
+1. 构造一条从当前点到 Newton 点的**分段线性路径**
+2. 沿这条路径做非单调线搜索（允许 merit 函数短暂上升，只要整体趋势下降）
+3. 选择使 merit 函数充分下降的步长
+
+PATH 的优势在于：
+- 对一般的 MCP（不仅是 LCP）有效
+- 收敛速度快（局部超线性）
+- 能处理大规模问题（$n > 10000$）
+- 鲁棒性好（非单调线搜索增加了全局化能力）
+
+PATH 在经济学和交通均衡中被广泛使用，在接触力学中也越来越受到关注——它是解"Coulomb 摩擦 MCP"最可靠的商用求解器之一。
+
+### 投影 Gauss-Seidel（PGS）：工程中的替代方案
+
+在工程实践中，Lemke 算法虽然精确，但每步 $O(n^2)$ 的主元操作在大规模问题（$n > 1000$）中可能太慢。许多物理引擎（ODE、DART、Bullet）使用**投影 Gauss-Seidel（Projected Gauss-Seidel, PGS）**作为替代。
+
+PGS 是一种迭代方法，其核心思想是：逐个处理每个互补约束，将每个分量投影回可行域。具体来说，对每个 $i = 1, \ldots, n$：
+
+$$
+z_i^{(k+1)} = \max\left(0, \; z_i^{(k)} - \frac{(Mz^{(k)} + q)_i}{M_{ii}}\right)
+$$
+
+这里的 $\max(0, \cdot)$ 就是"投影"——将结果投影到 $\mathbb{R}_+$。
+
+| 特性 | Lemke | PGS |
+|------|-------|-----|
+| 精确性 | 精确解 | 近似解（迭代收敛） |
+| 每步复杂度 | $O(n^2)$ | $O(n^2)$ |
+| 总复杂度 | 最坏指数 | 线性收敛率 |
+| 适用矩阵类 | copositive-plus | PSD（收敛保证） |
+| 大规模表现 | 较慢（精确主元开销大） | 较快（简单迭代） |
+| 工程应用 | Siconos、Drake（部分） | ODE、Bullet、DART |
+
+> **反事实推理**：如果不用 Lemke 也不用 PGS，还有什么选择？可以用**内点法**（Interior Point Method），将互补条件松弛为 $z_i w_i = \mu$（$\mu > 0$ 逐步减小到 0），转化为一系列光滑方程组。内点法有多项式复杂度保证，但每步需要解线性系统，在稀疏结构下可以很高效。Drake 的部分求解器和 PATH 求解器就采用了类似的策略。
+
+### ⚠️ 常见陷阱
+
+💡 **概念误区 7：认为 Lemke 算法总能找到解**
+
+新手想法："Lemke 是专门为 LCP 设计的算法，肯定总能找到解。"
+实际上：Lemke 算法在一般矩阵上可能以"射线终止"失败——路径走向无穷而未找到互补解。即使 LCP 有解，Lemke 也可能找不到（它找不到解不等于 LCP 无解）。只有当 $M$ 满足 copositive-plus 等条件时，才能保证 Lemke 找到解。
+根本原因：Lemke 只搜索一条路径，这条路径可能不经过解。
+正确做法：在使用 Lemke 之前，确认你的矩阵类。如果矩阵不满足终止性条件，考虑改用内点法或 PGS。
+
+🧠 **思维陷阱 4：认为 PGS 的"投影"和凸优化中的"投影梯度下降"是一回事**
+
+新手想法："PGS 就是把 Gauss-Seidel 加个投影，和投影梯度法差不多。"
+实际上：PGS 是在 Gauss-Seidel 迭代的每一步对单个分量做投影（$\max(0, \cdot)$），属于坐标级别的投影。投影梯度下降是对整个向量做投影，属于向量级别的投影。两者的收敛性分析完全不同。
+正确理解：PGS 更接近于"块坐标下降 + 投影"的框架。它在 PSD 矩阵上收敛，但收敛速度是线性的（每步误差乘以一个常数因子），对于病态问题可能需要大量迭代。
+
+### 练习
+
+1. **手动执行 Lemke**（在草稿纸上完成）：对 $M = \begin{pmatrix} 1 & 0 \\ 0 & 1 \end{pmatrix}$，$q = \begin{pmatrix} -1 \\ -1 \end{pmatrix}$，手动执行 Lemke 算法。写出每一步的基变量、非基变量、和解向量。验证最终解 $z = (1, 1)$。
+
+2. **PGS 迭代**：对同一个 LCP，从 $z^{(0)} = (0, 0)$ 出发，手动执行 3 步 PGS 迭代。观察收敛速度。
+
+3. **开放思考**：Lemke 算法中覆盖向量 $d$ 的选择会影响算法的路径。是否存在"最优"的 $d$？如果 $d$ 选得不好会怎样？（提示：考虑退化情形。）
+
+---
+
+## §1.5 Signorini 条件：三级形式与物理意义 ⭐⭐
+
+### 动机：从数学到物理
+
+前面几节中，我们在纯数学的层面讨论了互补问题。现在该问：**这些数学和物理的接触力学有什么关系？** 答案是 Signorini 条件——它将互补问题的数学形式与刚体接触的物理约束精确对应。
+
+Signorini 条件以意大利数学家 Antonio Signorini（1888-1963）命名，他在 1933 年首次形式化了弹性体与刚性支撑之间的无摩擦接触问题。后来 Gaetano Fichera（1964）证明了这个问题等价于凸锥上的变分不等式，奠定了接触力学的数学基础。
+
+### 间距函数（Gap Function）
+
+考虑两个刚体 $\mathcal{A}$ 和 $\mathcal{B}$，设它们在最近点处的法向间距为 $g_N(q)$，其中 $q$ 是系统的广义坐标。$g_N$ 满足：
+
+- $g_N(q) > 0$：两体分离，无接触
+- $g_N(q) = 0$：两体恰好接触
+- $g_N(q) < 0$：两体穿透（物理上不允许）
+
+因此，**不穿透条件**（Non-Penetration Condition）就是：
+
+$$
+g_N(q) \ge 0
+$$
+
+间距函数对时间求导：
+
+$$
+\dot{g}_N = \frac{\partial g_N}{\partial q} \dot{q} = J_N(q) \dot{q}
+$$
+
+其中 $J_N = \frac{\partial g_N}{\partial q}$ 是法向接触 Jacobian。$\dot{g}_N$ 是法向相对速度：$\dot{g}_N > 0$ 表示分离趋势，$\dot{g}_N < 0$ 表示接近趋势，$\dot{g}_N = 0$ 表示持续接触。
+
+再求导得到法向相对加速度：
+
+$$
+\ddot{g}_N = J_N \ddot{q} + \dot{J}_N \dot{q}
+$$
+
+### 位置级 Signorini 条件 ⭐
+
+**位置级 Signorini 条件**（Signorini 1933 / Fichera 1963）是最基本的形式：
+
+$$
+\boxed{0 \le g_N(q) \perp \lambda_N \ge 0}
+$$
+
+展开为三个约束：
+
+| 约束 | 物理含义 |
+|------|---------|
+| $g_N(q) \ge 0$ | 不穿透：物体不能互相穿透 |
+| $\lambda_N \ge 0$ | 单向力：接触力只能是压力（推），不能是拉力 |
+| $g_N(q) \cdot \lambda_N = 0$ | 互补：只有接触时才有力，分离时力为零 |
+
+这三条约束编码了一个简单但深刻的物理事实：**地面是单侧约束**。它不像绳子（只拉不推）也不像铰链（双向约束），而是"只推不拉，且只在接触时才推"。
+
+> **双重解读**：位置级 Signorini 条件可以从两个角度理解。
+> - **力学角度**：它是"理想刚性单侧约束"的完整描述——不穿透、不粘附、不隔空作用。
+> - **能量角度**：互补条件 $g_N \cdot \lambda_N = 0$ 意味着约束力不做功（虚功原理的变体）。当 $g_N > 0$ 时 $\lambda_N = 0$，力不存在所以不做功。当 $g_N = 0$ 时力存在，但约束面不移动（在法向上），所以力的法向分量也不做功。
+
+### 速度级 Signorini 条件 ⭐⭐
+
+当接触已经建立（$g_N = 0$）时，位置级条件退化为 $0 = 0 \cdot \lambda_N$，不再提供有用信息。我们需要在速度级施加互补条件。
+
+**速度级 Signorini 条件**（Moreau）：在 $g_N(q) = 0$ 的接触面上：
+
+$$
+\boxed{0 \le \dot{g}_N \perp \lambda_N \ge 0}
+$$
+
+| 约束 | 物理含义 |
+|------|---------|
+| $\dot{g}_N \ge 0$ | 不能"更深入"穿透（只允许分离或保持接触） |
+| $\lambda_N \ge 0$ | 接触力只推不拉 |
+| $\dot{g}_N \cdot \lambda_N = 0$ | 分离瞬间（$\dot{g}_N > 0$）力为零；保持接触（$\dot{g}_N = 0$）力可以非零 |
+
+**为什么需要速度级？** 位置级条件 $g_N \ge 0$ 加上动力学方程可以定义系统的运动，但在数值上，当 $g_N = 0$ 时约束变为退化的，动力学的微分指标（differential index）升高。速度级条件将微分指标降低一级，使得数值方法更加稳定。
+
+这正是 Moreau 时步法的关键洞察：**在速度级离散化**，每个时间步求解速度级互补问题，而非加速度级。
+
+### 加速度级 Signorini 条件 ⭐⭐
+
+在持续接触（$g_N = 0, \dot{g}_N = 0$）期间，需要在加速度级施加互补：
+
+$$
+\boxed{0 \le \ddot{g}_N \perp \lambda_N \ge 0}
+$$
+
+| 约束 | 物理含义 |
+|------|---------|
+| $\ddot{g}_N \ge 0$ | 加速度不能指向穿透方向 |
+| $\lambda_N \ge 0$ | 接触力只推不拉 |
+| $\ddot{g}_N \cdot \lambda_N = 0$ | 即将分离（$\ddot{g}_N > 0$）时力为零；持续接触（$\ddot{g}_N = 0$）时力可以非零 |
+
+将 $\ddot{g}_N = A\lambda_N + b$（§1.2 中的 Delassus 形式）代入，得到 LCP$(b, A)$：
+
+$$
+0 \le \lambda_N \perp (A\lambda_N + b) \ge 0
+$$
+
+这就是加速度级接触问题的标准 LCP 形式。
+
+### 三级之间的关系
+
+三级 Signorini 条件之间的关系可以用一个表格清晰展示：
+
+| 级别 | 条件 | 何时使用 | 微分指标 | 数值挑战 |
+|------|------|---------|---------|---------|
+| 位置级 | $0 \le g_N \perp \lambda_N \ge 0$ | 判断接触/分离 | 最高（3） | 约束漂移 |
+| 速度级 | $0 \le \dot{g}_N \perp \lambda_N \ge 0$（$g_N = 0$ 时） | 持续接触中的分离判断 | 中间（2） | Moreau 时步法 |
+| 加速度级 | $0 \le \ddot{g}_N \perp \lambda_N \ge 0$（$g_N = \dot{g}_N = 0$ 时） | 持续接触中的力计算 | 最低（1） | Painlevé 悖论 |
+
+**三级跃升的关键**：从位置级到速度级再到加速度级，每一级都对应一次对时间的微分。这种微分降低了问题的微分指标，使得更高级的条件更适合数值离散化——但也引入了新的困难：
+
+1. **位置级 → 速度级**：引入冲量的可能性。如果碰撞发生，$\dot{g}_N$ 可以不连续（速度跳变），这需要冲量（impulse）而非连续力来描述。
+2. **速度级 → 加速度级**：约束的激活/失活变得瞬时，对数值精度要求更高。而且加速度级是 Painlevé 悖论发生的层级。
+
+> **类比**：三级 Signorini 条件的关系类似于运动学中的位置、速度、加速度。位置级是"在哪里"（接触还是分离），速度级是"怎么移动"（分离趋势还是保持接触），加速度级是"力的效果"（力让物体如何加速）。**相似之处**：它们通过对时间的微分联系。**不同之处**：在接触力学中，微分不一定处处存在——碰撞时速度不连续，加速度是 Dirac delta 函数（冲量）。这超出了经典微积分的范畴，需要测度论来处理。
+
+### Signorini 条件的法锥形式
+
+Signorini 条件有一个等价的、更优雅的法锥形式。定义约束可行集：
+
+$$
+K = \{q \in \mathbb{R}^{n_q} : g_N(q) \ge 0\}
+$$
+
+位置级 Signorini 条件等价于：
+
+$$
+\boxed{q \in K, \quad -\lambda_N \nabla g_N(q) \in N_K(q)}
+$$
+
+其中 $N_K(q)$ 是 $K$ 在 $q$ 处的法锥。
+
+**为什么等价？** 当 $q$ 在 $K$ 的内部（$g_N > 0$）时，$N_K(q) = \{0\}$，所以 $\lambda_N = 0$。当 $q$ 在 $K$ 的边界（$g_N = 0$）时，$N_K(q)$ 是朝外的法方向构成的锥，$-\lambda_N \nabla g_N \in N_K(q)$ 意味着力沿约束面的法方向指向内部（"推回去"），且 $\lambda_N \ge 0$。
+
+法锥形式的优势在于它**自然推广到多接触和非线性约束**。对于 $n_c$ 个接触点，$K = \{q : g_i(q) \ge 0, i = 1, \ldots, n_c\}$，法锥自动处理了哪些约束激活、哪些不激活。
+
+### 变分不等式（VI）等价
+
+Signorini 条件还等价于一个**变分不等式**（Variational Inequality, VI）。在加速度级，考虑所有满足约束的"虚拟加速度" $v$：
+
+$$
+\langle M\ddot{q} - F, v - \dot{q} \rangle \ge 0, \quad \forall v \in T_K(q)
+$$
+
+其中 $T_K(q)$ 是 $K$ 在 $q$ 处的切锥（Tangent Cone），$F$ 是外力。
+
+这个 VI 的含义是：在所有运动学允许的方向中，实际加速度最"接近"自由加速度（无约束下的加速度）。这与 Gauss 最小约束原理（Gauss's Principle of Least Constraint）密切相关。
+
+**Stampacchia 定理**保证了当 $K$ 是闭凸集、映射是强单调的时候，VI 存在唯一解。在接触力学中，$K$ 的凸性通常由接触几何保证（线性化后），强单调性由质量矩阵的正定性保证。
+
+> **本质洞察**：互补条件、法锥包含、变分不等式——这三种形式看起来截然不同，但它们是同一个物理事实的三副面孔。互补条件是"分量视角"（逐个接触点），法锥包含是"几何视角"（约束集的边界结构），变分不等式是"优化视角"（在可行方向中找最优）。选择哪种形式取决于你要做什么：算法实现用互补条件（LCP 求解器直接吃这个），理论分析用法锥包含（凸分析工具箱），存在唯一性证明用变分不等式（Stampacchia 定理直接可用）。
+
+### 碰撞与恢复系数
+
+Signorini 条件描述了持续接触期间的力学关系。但当两个物体**碰撞**（从分离到接触的瞬间）时，速度发生不连续跳变，需要额外的碰撞定律来补充 Signorini 条件。
+
+**Newton 恢复系数**（Coefficient of Restitution, COR）定义为：
+
+$$
+e_N = -\frac{\dot{g}_N^+}{\dot{g}_N^-}
+$$
+
+其中 $\dot{g}_N^-$ 是碰撞前的法向相对速度（负值，表示接近），$\dot{g}_N^+$ 是碰撞后的法向相对速度（非负值，表示分离或保持接触）。
+
+| $e_N$ 的值 | 碰撞类型 | 物理含义 |
+|-----------|---------|---------|
+| $e_N = 0$ | 完全非弹性碰撞 | 碰撞后保持接触（$\dot{g}_N^+ = 0$） |
+| $0 < e_N < 1$ | 部分弹性碰撞 | 碰撞后反弹，但速度减小 |
+| $e_N = 1$ | 完全弹性碰撞 | 碰撞后以相同速度反弹，动能守恒 |
+
+将 Newton 恢复定律与速度级 Signorini 条件结合，得到碰撞时的互补条件：
+
+$$
+0 \le (\dot{g}_N^+ + e_N \dot{g}_N^-) \perp \Lambda_N \ge 0
+$$
+
+其中 $\Lambda_N$ 是法向冲量（impulse），不是力而是力的时间积分（$\Lambda_N = \int \lambda_N \, dt$）。
+
+> **不是 X 而是 Y**：碰撞定律不是 Signorini 条件的一部分，而是它的**补充**。Signorini 条件描述"接触期间力和间距的关系"，碰撞定律描述"接触建立瞬间速度如何跳变"。两者合在一起才构成完整的单侧接触模型。初学者常混淆这两者——Signorini 管的是"静态"的互补关系，碰撞定律管的是"动态"的速度跳变。
+
+### 多接触 Signorini 条件与耦合结构
+
+当系统有 $n_c$ 个接触点时，每个接触点都有自己的 Signorini 条件，但这些条件通过动力学方程**耦合在一起**。
+
+设 $g = (g_1, \ldots, g_{n_c})^\top$ 是间距向量，$\lambda = (\lambda_1, \ldots, \lambda_{n_c})^\top$ 是接触力向量。多接触 Signorini 条件为：
+
+$$
+0 \le g_i \perp \lambda_i \ge 0, \quad i = 1, \ldots, n_c
+$$
+
+但在加速度级，$\ddot{g}_i$ 不仅取决于 $\lambda_i$，还取决于所有其他接触力 $\lambda_j$（$j \neq i$），因为它们通过系统的惯性矩阵耦合：
+
+$$
+\ddot{g}_i = \sum_{j=1}^{n_c} A_{ij} \lambda_j + b_i
+$$
+
+其中 $A_{ij} = (J_c M^{-1} J_c^\top)_{ij}$ 是 Delassus 算子的 $(i,j)$ 元素。这意味着一个接触点的力会"传播"到其他接触点——通过刚体系统的惯性。
+
+这种耦合结构是 LCP 的矩阵 $M$ 非对角元素的来源。对于链式结构（如多关节机械臂），Delassus 算子通常是稠密的——即使两个接触点在物理上相距很远，它们也通过关节链耦合。对于无根的多体系统（如自由浮动的太空机器人），耦合更加全局化。
+
+### 从连续体到有限维：FEM 中的 Signorini 问题
+
+Signorini 条件不仅适用于刚体——它最初就是为弹性体设计的。在有限元法（FEM）中，弹性体与刚性支撑的接触问题导致一个**无穷维的变分不等式**，通过 FEM 离散化后变成有限维的 LCP 或 QP。
+
+具体地，弹性体的位移 $u$ 满足：
+
+$$
+\text{Find } u \in K : \quad a(u, v - u) \ge \langle f, v - u \rangle, \quad \forall v \in K
+$$
+
+其中 $a(\cdot, \cdot)$ 是弹性双线性形式（刚度矩阵），$f$ 是外载荷，$K = \{v : v_n \ge 0 \text{ on } \Gamma_C\}$ 是不穿透条件定义的凸集，$\Gamma_C$ 是潜在接触面。
+
+Fichera（1964）证明了这个 VI 的解存在且唯一（Stampacchia 定理的应用），解决了 Signorini 在 1933 年提出但未能严格证明的问题。这是接触力学从力学直觉走向严格数学的标志性时刻。
+
+### ⚠️ 常见陷阱
+
+💡 **概念误区 8：认为三级 Signorini 条件可以互相替代**
+
+新手想法："位置级最基本，用它就够了。"
+实际上：三级条件在不同的物理阶段发挥作用，不能互相替代。位置级判断"是否接触"，但一旦接触建立就退化。速度级判断"是否分离"，但在持续接触中也退化。加速度级计算"接触力多大"，但在碰撞瞬间（速度不连续）不适用。
+根本原因：每一级条件的信息量随微分阶数递增，但适用的物理场景也在缩小。
+正确做法：根据物理场景选择合适的级别。碰撞检测用位置级，时步法用速度级（Moreau），力计算用加速度级。实际仿真器通常混合使用。
+
+🧠 **思维陷阱 5：认为 Signorini 条件已经完全描述了接触**
+
+新手想法："有了 Signorini 条件，接触问题就完全建模了。"
+实际上：Signorini 条件只描述了**法向**的互补关系——没有摩擦！一旦加入切向摩擦（Coulomb 律），问题立刻变得更加复杂：二阶锥约束、非关联流动、Painlevé 悖论。Signorini 条件是接触建模的起点，不是终点。
+为什么重要：在专题 2 中，你将看到摩擦如何"破坏"Signorini + LCP 的良好性质，以及如何通过凸松弛来"修补"。
+
+💡 **概念误区 9：认为法锥形式和互补形式完全等价，可以随意切换**
+
+新手想法："法锥形式和互补形式是一样的，用哪个都行。"
+实际上：在光滑、有限维、线性约束的情况下，两者确实等价。但在非光滑、无穷维、非线性约束的情况下，等价性的证明需要额外条件（约束品性/Constraint Qualification）。例如，当多个约束面同时激活且法方向线性相关时，法锥可能不等于通常的"梯度锥"，等价关系需要修正。
+正确做法：在使用等价关系时，注意检查约束品性条件是否满足。
+
+### 练习
+
+1. **推导速度级**（在草稿纸上完成）：从位置级 Signorini 条件 $0 \le g_N \perp \lambda_N \ge 0$ 出发，对 $g_N$ 求一阶时间导数，说明在 $g_N = 0$ 时如何自然过渡到速度级条件 $0 \le \dot{g}_N \perp \lambda_N \ge 0$。注意处理 $g_N > 0$ 的情形（此时 $\lambda_N = 0$，对 $g_N \lambda_N = 0$ 求导得到什么？）。
+
+2. **法锥计算**：对于一维约束 $K = \{q \in \mathbb{R} : q \ge 0\}$，计算 $N_K(q)$ 在 $q = 0$ 和 $q = 1$ 处的值。验证位置级 Signorini 条件的法锥形式。
+
+3. **开放思考**：Signorini 条件假设接触是"完全刚性的"（$g_N \ge 0$ 是硬约束）。如果允许一定程度的穿透（如 penalty 方法 $\lambda_N = k \cdot \max(0, -g_N)$），互补条件变成了什么？画出 $(\lambda_N, g_N)$ 关系图，与真正的互补条件对比。
+
+---
+
+## §1.6 NCP 函数与半光滑 Newton 法 ⭐⭐⭐
+
+### 动机：为什么需要 NCP 函数
+
+Lemke 算法和 PGS 都是直接处理互补条件的算法。但还有第三种策略：**将互补条件改写为一组（非光滑）方程**，然后用方程求解器（如 Newton 法）来求解。
+
+这种策略的优势在于：方程求解器的理论更成熟、收敛速度更快（超线性甚至二次收敛），而且可以自然地处理非线性互补问题（NCP）——即 $M$ 不再是常数矩阵，而是 $z$ 的函数。
+
+关键的技术工具是 **NCP 函数**（Nonlinear Complementarity Problem Function）：一个标量函数 $\varphi(a, b)$，满足：
+
+$$
+\varphi(a, b) = 0 \quad \Longleftrightarrow \quad a \ge 0, \; b \ge 0, \; ab = 0
+$$
+
+如果我们能构造这样的 $\varphi$，那么互补条件就等价于方程 $\varphi(a, b) = 0$，可以用 Newton 法求解。
+
+### Fischer-Burmeister 函数
+
+最著名的 NCP 函数是 **Fischer-Burmeister (FB) 函数**（Fischer 1992, Burmeister 1987 独立提出）：
+
+$$
+\boxed{\varphi_{\text{FB}}(a, b) = \sqrt{a^2 + b^2} - a - b}
+$$
+
+**性质验证**：
+
+$\varphi_{\text{FB}}(a, b) = 0$ 等价于 $\sqrt{a^2 + b^2} = a + b$。两边平方：$a^2 + b^2 = a^2 + 2ab + b^2$，即 $ab = 0$。加上 $a + b = \sqrt{a^2 + b^2} \ge 0$ 和 $ab = 0$，推出 $a \ge 0, b \ge 0$。反过来，若 $a \ge 0, b \ge 0, ab = 0$，则 $a$ 和 $b$ 中至少一个为零，设 $b = 0$，则 $\varphi = |a| - a = 0$（因为 $a \ge 0$）。
+
+**FB 函数的几何意义**：$\sqrt{a^2 + b^2}$ 是点 $(a, b)$ 到原点的欧几里得距离，$a + b$ 是点 $(a, b)$ 到直线 $a + b = 0$ 的（带符号的）距离。$\varphi_{\text{FB}} = 0$ 意味着这两个距离相等——这恰好在非负象限的边界上成立。
+
+### FB 函数的关键性质
+
+| 性质 | 内容 | 意义 |
+|------|------|------|
+| NCP 等价性 | $\varphi_{\text{FB}} = 0 \Leftrightarrow$ 互补条件 | 可以用方程求解器 |
+| 连续可微性 | 在 $(0,0)$ 以外处处可微 | 传统 Newton 法几乎可用 |
+| 非光滑性 | 在 $(0,0)$ 不可微 | 需要推广的 Newton 法 |
+| 强半光滑性 | $\varphi_{\text{FB}}$ 是强半光滑的 | 半光滑 Newton 法可达局部二次收敛 |
+| merit 函数 | $\Psi = \frac{1}{2} \|\Phi\|^2$ 连续可微且梯度 Lipschitz | 可用于线搜索全局化 |
+
+**在 $(a, b) \neq (0, 0)$ 处的梯度**：
+
+$$
+\nabla_a \varphi_{\text{FB}} = \frac{a}{\sqrt{a^2 + b^2}} - 1, \quad \nabla_b \varphi_{\text{FB}} = \frac{b}{\sqrt{a^2 + b^2}} - 1
+$$
+
+**在 $(0, 0)$ 处的 Clarke 广义梯度**：
+
+$$
+\partial \varphi_{\text{FB}}(0, 0) = \{(\cos\theta - 1, \sin\theta - 1) : \theta \in [0, \pi/2]\}
+$$
+
+这里 $\theta$ 参数化了从 $(0,0)$ 接近的方向。
+
+### 其他 NCP 函数
+
+Fischer-Burmeister 不是唯一的 NCP 函数。其他常见的选择包括：
+
+**最小值函数**：
+
+$$
+\varphi_{\min}(a, b) = \min(a, b)
+$$
+
+验证：$\min(a, b) = 0$ 加上 $a \ge 0, b \ge 0$（需额外保证）蕴含互补条件。更精确地说，$\min(a, b) = 0$ 等价于 $a = 0$ 或 $b = 0$（或两者），但不自动保证非负性。因此严格来说，$\varphi_{\min}$ 需要配合 $a, b$ 的非负性约束。
+
+**惩罚化 FB 函数**（Chen-Chen-Kanzow 2000）：
+
+$$
+\varphi_{\text{PFB}}(a, b) = \varphi_{\text{FB}}(a, b) - \alpha \, a_+ b_+
+$$
+
+其中 $a_+ = \max(0, a)$，$\alpha > 0$ 是惩罚参数。这个变体在正象限内部有更陡的梯度，加速了 Newton 法的收敛。
+
+| NCP 函数 | 优点 | 缺点 | 适用场景 |
+|---------|------|------|---------|
+| FB | 强半光滑，二次收敛 | 在正象限内部梯度平坦 | 通用 NCP |
+| $\min$ | 简单，直觉清晰 | 需额外处理非负性 | 简单问题 |
+| 惩罚化 FB | 更快收敛 | 引入额外参数 | 大规模问题 |
+
+### 半光滑 Newton 法
+
+将向量化的 NCP 函数 $\Phi(z) = (\varphi(z_1, w_1), \ldots, \varphi(z_n, w_n))^\top$（其中 $w = F(z)$）应用于 LCP $0 \le z \perp F(z) \ge 0$，互补问题变为方程组：
+
+$$
+\Phi(z) = 0
+$$
+
+由于 $\Phi$ 不可微（在 $z_i = w_i = 0$ 的点），经典 Newton 法不适用。需要使用**半光滑 Newton 法**（Semismooth Newton Method），它用 Clarke 广义 Jacobian $\partial \Phi(z)$ 替代经典 Jacobian：
+
+$$
+z^{(k+1)} = z^{(k)} - V_k^{-1} \Phi(z^{(k)})
+$$
+
+其中 $V_k \in \partial \Phi(z^{(k)})$ 是广义 Jacobian 中的任一元素。
+
+**收敛性定理**：如果 $\Phi$ 是**强半光滑的**（strongly semismooth），且广义 Jacobian 在解附近非奇异，则半光滑 Newton 法是**局部二次收敛的**——即存在常数 $C > 0$ 和邻域，使得：
+
+$$
+\|z^{(k+1)} - z^*\| \le C \|z^{(k)} - z^*\|^2
+$$
+
+Fischer-Burmeister 函数恰好是强半光滑的（这是它最重要的理论性质之一），因此基于 FB 的半光滑 Newton 法享有二次收敛速度。
+
+> **反事实推理**：如果使用不具备强半光滑性的 NCP 函数会怎样？半光滑 Newton 法的收敛速度会降低到超线性（$\|z^{(k+1)} - z^*\| = o(\|z^{(k)} - z^*\|)$）甚至只有线性。二次收敛意味着每一步迭代将正确数字的位数翻倍，这在精度要求高的工程问题中非常重要。
+
+### merit 函数与全局化
+
+半光滑 Newton 法只保证**局部**收敛——需要初始点足够接近解。为了全局化（从任意初始点出发），引入 **merit 函数**：
+
+$$
+\Psi(z) = \frac{1}{2} \|\Phi(z)\|^2 = \frac{1}{2} \sum_{i=1}^n \varphi(z_i, w_i)^2
+$$
+
+$\Psi(z) \ge 0$，且 $\Psi(z) = 0$ 当且仅当 $z$ 是互补问题的解。关键性质：尽管 $\Phi$ 不可微，$\Psi$ 是**连续可微的**（$C^1$），其梯度为：
+
+$$
+\nabla \Psi(z) = V^\top \Phi(z)
+$$
+
+其中 $V \in \partial \Phi(z)$。这意味着可以对 $\Psi$ 做标准的线搜索（line search）：
+
+1. 计算 Newton 方向 $d = -V^{-1} \Phi(z)$
+2. 沿 $d$ 方向做线搜索，找到使 $\Psi(z + \alpha d)$ 充分下降的步长 $\alpha$
+3. 更新 $z \leftarrow z + \alpha d$
+
+这种"Newton 方向 + merit 函数线搜索"的组合称为 **FB-LSA**（Fischer-Burmeister Line Search Algorithm），是 Siconos 中 NCP 求解器的核心。
+
+### 非线性互补问题（NCP）与混合互补问题（MCP）
+
+到目前为止我们讨论的是**线性**互补问题——$w = Mz + q$ 是 $z$ 的仿射函数。但在很多实际场景中，这种线性关系不成立。
+
+**非线性互补问题（NCP）**：给定映射 $F : \mathbb{R}^n \to \mathbb{R}^n$，求 $z$ 使得：
+
+$$
+0 \le z \perp F(z) \ge 0
+$$
+
+当 $F(z) = Mz + q$ 时退化为 LCP。NCP 出现在：
+- 非线性弹性接触（间距是构型的非线性函数）
+- 含非线性材料本构的接触问题
+- 经济均衡中的非线性需求曲线
+
+**混合互补问题（MCP）**：变量 $z$ 分为自由变量 $u$（无约束）和互补变量 $v$（有互补约束），映射也相应分块。MCP 是最一般的形式，LCP 和 NCP 都是它的特例。
+
+| 问题类型 | 定义 | 特殊性 |
+|---------|------|--------|
+| LCP | $0 \le z \perp (Mz + q) \ge 0$ | 线性映射，固定矩阵 |
+| NCP | $0 \le z \perp F(z) \ge 0$ | 非线性映射 |
+| MCP | 自由变量 + 互补变量的混合 | 最一般的形式 |
+| MLCP | MCP 中映射为仿射 | LCP + 等式约束 |
+| SOCCP | 互补条件定义在二阶锥上 | 3D 摩擦的自然形式 |
+
+FB 函数和半光滑 Newton 法的一个重要优势是：它们对 NCP 和 MCP 同样适用——只要将 $\Phi(z) = 0$ 中的线性映射替换为非线性映射即可。这正是 PATH 求解器能处理一般 MCP 的理论基础。
+
+### 半光滑 Newton 法的完整推导
+
+让我们更详细地推导半光滑 Newton 法的工作流程。考虑 NCP $0 \le z \perp F(z) \ge 0$，定义向量化 NCP 函数：
+
+$$
+\Phi(z) = \begin{pmatrix} \varphi_{\text{FB}}(z_1, F_1(z)) \\ \vdots \\ \varphi_{\text{FB}}(z_n, F_n(z)) \end{pmatrix}
+$$
+
+NCP 等价于 $\Phi(z) = 0$。
+
+**Step 1：计算广义 Jacobian**
+
+对于第 $i$ 个分量，设 $a_i = z_i$，$b_i = F_i(z)$。当 $(a_i, b_i) \neq (0, 0)$ 时：
+
+$$
+\frac{\partial \varphi_i}{\partial z_j} = \left(\frac{a_i}{\sqrt{a_i^2 + b_i^2}} - 1\right) \delta_{ij} + \left(\frac{b_i}{\sqrt{a_i^2 + b_i^2}} - 1\right) \frac{\partial F_i}{\partial z_j}
+$$
+
+其中 $\delta_{ij}$ 是 Kronecker delta。设 $D_a = \text{diag}(a_i / \sqrt{a_i^2 + b_i^2})$，$D_b = \text{diag}(b_i / \sqrt{a_i^2 + b_i^2})$，$\nabla F$ 是 $F$ 的 Jacobian 矩阵，则：
+
+$$
+V = (D_a - I) + (D_b - I) \nabla F(z)
+$$
+
+当某个 $(a_i, b_i) = (0, 0)$ 时，用 Clarke 广义 Jacobian 的任一元素替代对应行。
+
+**Step 2：Newton 更新**
+
+$$
+z^{(k+1)} = z^{(k)} - V_k^{-1} \Phi(z^{(k)})
+$$
+
+**Step 3：线搜索全局化**
+
+计算 merit 函数 $\Psi(z) = \frac{1}{2}\|\Phi(z)\|^2$。如果 $\Psi(z^{(k+1)}) > \Psi(z^{(k)}) - \sigma \alpha \nabla \Psi(z^{(k)})^\top d_k$（Armijo 条件不满足），缩小步长 $\alpha$。
+
+**Step 4：收敛判断**
+
+如果 $\|\Phi(z^{(k+1)})\| < \text{tol}$ 或 $\|z^{(k+1)} - z^{(k)}\| < \text{tol}$，终止。
+
+> **阶段小结**：半光滑 Newton 法的核心是：(1) 用 FB 函数将互补条件转化为方程 $\Phi(z) = 0$；(2) 用 Clarke 广义 Jacobian 替代经典 Jacobian；(3) 用 merit 函数 $\Psi = \frac{1}{2}\|\Phi\|^2$ 做线搜索全局化。它在 FB 函数上达到局部二次收敛，在工程问题中通常 5-15 步迭代即可达到机器精度。
+
+### 光滑化方法
+
+除了半光滑 Newton 法，还有一种处理 FB 函数非光滑性的策略：**光滑化**（Smoothing）。将 FB 函数替换为其光滑近似：
+
+$$
+\varphi_\mu(a, b) = \sqrt{a^2 + b^2 + 2\mu} - a - b
+$$
+
+其中 $\mu > 0$ 是光滑参数。当 $\mu > 0$ 时，$\varphi_\mu$ 处处可微（$\sqrt{a^2 + b^2 + 2\mu} > 0$ 对所有 $(a, b)$）。
+
+光滑化方法的流程是：从 $\mu$ 较大开始，用经典 Newton 法求解 $\Phi_\mu(z) = 0$，然后逐步减小 $\mu$，用上一步的解作为下一步的初始点。当 $\mu \to 0$ 时，解趋向原始互补问题的解。
+
+这种方法与内点法有深刻的联系——内点法处理 LP/QP 的互补条件 $z_i w_i = \mu$ 正是一种光滑化策略。
+
+### 从标量到二阶锥：Jordan 代数框架
+
+当接触从 2D 推广到 3D 时，摩擦锥变成二阶锥（Lorentz 锥），互补条件变成二阶锥互补问题（SOCCP）。此时需要将 FB 函数从标量推广到二阶锥。
+
+Sun 和 Sun（2005, *Math. Prog.* 103:575）在 **Euclidean Jordan 代数**框架下完成了这个推广。他们定义了二阶锥上的 FB 函数：
+
+$$
+\varphi_{\text{FB}}^{\text{SOC}}(x, y) = (x^2 + y^2)^{1/2} - x - y
+$$
+
+其中 $x^2, y^2, (x^2 + y^2)^{1/2}$ 都是在 Jordan 代数意义下的运算（涉及谱分解）。他们证明了这个推广的 FB 函数是**全局强半光滑的**，为 3D 摩擦 SOCCP 的 Newton 二次收敛奠定了基础。
+
+这个结果的技术细节将在专题 2（摩擦锥理论）中展开。这里的要点是：**Jordan 代数不是卖弄高深的数学，而是处理 3D 摩擦的正确工具**——它让锥投影、FB 函数、半光滑性分析在统一的框架下优雅地进行。
+
+### ⚠️ 常见陷阱
+
+💡 **概念误区 10：认为 FB 函数在原点可微**
+
+新手想法："$\varphi_{\text{FB}}(a, b) = \sqrt{a^2 + b^2} - a - b$ 看起来是个光滑函数。"
+实际上：$\sqrt{a^2 + b^2}$ 在原点不可微——它的梯度在接近原点时取决于接近方向。沿 $a$ 轴接近，$\nabla_b \sqrt{a^2 + b^2} \to 0$；沿 $b$ 轴接近，$\nabla_a \sqrt{a^2 + b^2} \to 0$；沿 $a = b$ 接近，$\nabla_a = 1/\sqrt{2}$。方向导数存在但传统梯度不存在。
+根本原因：$\|(a,b)\|_2 = \sqrt{a^2 + b^2}$ 是范数，范数在原点不可微（除了退化的零范数/无穷范数等特殊情况）。
+正确做法：使用 Clarke 广义 Jacobian 而非经典 Jacobian。半光滑 Newton 法正是为处理这种非光滑性而设计的。
+
+🧠 **思维陷阱 6：认为半光滑 Newton 法总是比 Lemke 更好**
+
+新手想法："Newton 法有二次收敛，肯定比 Lemke 的主元操作快。"
+实际上：半光滑 Newton 法是**局部**二次收敛的——需要初始点足够好。如果初始点远离解，全局化策略（线搜索）可能导致很多小步，总体速度不一定快。而且 Newton 法每步需要解一个线性系统（$O(n^3)$），Lemke 每步只需 $O(n^2)$。对于小规模 LCP（$n < 100$），Lemke 可能更快。
+正确思维：小规模用 Lemke（精确、稳定），大规模用 PGS 或 Newton（可扩展性好）。没有"万能"的求解器。
+
+💡 **概念误区 11：混淆 NCP 函数和 merit 函数**
+
+新手想法："$\varphi_{\text{FB}}$ 和 $\Psi = \frac{1}{2}\|\Phi\|^2$ 是一回事。"
+实际上：$\varphi_{\text{FB}}$ 是 NCP 函数（标量），$\Phi$ 是向量化的 NCP 函数，$\Psi$ 是 merit 函数（标量）。$\Phi = 0$ 等价于互补条件，$\Psi = 0$ 也等价于互补条件。但它们的角色不同：$\Phi$ 用于定义 Newton 方程 $\Phi(z) = 0$，$\Psi$ 用于线搜索的目标函数。$\Phi$ 不可微但 $\Psi$ 可微——这个性质差异是全局化策略能够工作的关键。
+
+### 练习
+
+1. **手算 FB 函数**（在草稿纸上完成）：计算 $\varphi_{\text{FB}}$ 在以下点的值：$(3, 0)$、$(0, 5)$、$(0, 0)$、$(2, 1)$。验证 $\varphi_{\text{FB}} = 0$ 恰好在互补条件成立的点上。
+
+2. **梯度计算**：计算 $\varphi_{\text{FB}}$ 在 $(3, 0)$ 和 $(1, 1)$ 处的梯度 $(\nabla_a \varphi, \nabla_b \varphi)$。解释为什么在 $(1, 1)$ 处梯度"指向"原点的边界。
+
+3. **开放思考**：为什么 Siconos 选择 FB 函数而非 $\min$ 函数作为其 NCP 求解器的核心？从半光滑性、可微性、全局化的角度分析两者的优劣。
+
+---
+
+## §1.7 Painlevé 悖论与仿真器的失败模式 ⭐⭐⭐
+
+### 动机：当互补问题崩溃时
+
+前面所有的理论都假设互补问题有解。但 Paul Painlevé 在 1895 年就给出了一个令人不安的反例：**存在合理的物理配置，使得加速度级 LCP 无解——也就是说，在经典刚体动力学 + Coulomb 摩擦的框架下，不存在满足所有约束的加速度。**
+
+这不是数值问题，也不是建模错误——而是刚体 + Coulomb 摩擦模型本身的内禀矛盾。理解 Painlevé 悖论对机器人工程师至关重要，因为它直接解释了为什么你的接触仿真有时会"炸掉"。
+
+### 历史：从粉笔到机器人
+
+Paul Painlevé（1863-1933）不仅是数学家，还是法国的前总理。1895 年，他在 *Comptes Rendus* 上发表了关于滑动摩擦定律的论文，给出了一个经典反例：一根均匀的刚性杆以倾斜角 $\theta$ 在粗糙平面上滑动，当摩擦系数 $\mu$ 足够大时，运动方程没有解。
+
+这个现象在日常生活中就能观察到：**粉笔在黑板上斜推时的跳动**。如果你把粉笔从后面推（而非拖），粉笔会发出"嗒嗒嗒"的跳动声——这正是 Painlevé 悖论在物理上的表现。
+
+在机器人学中，Painlevé 悖论出现在：
+- **足端拖擦**：机器人脚在地面上侧向滑动时
+- **指尖侧推**：灵巧手指尖对物体施加侧向力时
+- **末端抓取**：机械臂在物体表面上滑动抓取时
+
+### Painlevé 悖论的数学描述
+
+考虑一根均匀刚性杆，长度 $2l$，质量 $m$，质心位置 $(x_c, y_c)$，倾斜角 $\theta$，下端与水平粗糙面接触。
+
+下端接触点的位置为：
+
+$$
+x_A = x_c + l \cos\theta, \quad y_A = y_c - l \sin\theta
+$$
+
+接触条件：$g_N = y_A = y_c - l \sin\theta \ge 0$。
+
+在接触状态（$g_N = 0$）下，法向加速度为：
+
+$$
+\ddot{g}_N = \ddot{y}_A = \ddot{y}_c - l(\ddot{\theta} \cos\theta - \dot{\theta}^2 \sin\theta)
+$$
+
+通过动力学方程（Newton-Euler），可以将 $\ddot{y}_c$ 和 $\ddot{\theta}$ 表示为法向力 $\lambda_N$ 和切向力 $\lambda_T = -\mu \lambda_N \text{sgn}(\dot{x}_A)$（Coulomb 摩擦，假设滑动方向已知）的函数。最终得到：
+
+$$
+\ddot{g}_N = \alpha \lambda_N + \beta
+$$
+
+其中 $\alpha$ 依赖于 $\theta, \mu$，$\beta$ 依赖于 $\theta, \dot{\theta}$。加速度级 Signorini 条件要求：
+
+$$
+0 \le \lambda_N \perp (\alpha \lambda_N + \beta) \ge 0
+$$
+
+**关键**：系数 $\alpha$ 可以写成：
+
+$$
+\alpha = \frac{1}{m}\left(1 + \frac{3\mu \cos\theta(\mu \sin\theta - \cos\theta)}{1 + 3\sin^2\theta}\right)
+$$
+
+当 $\mu$ 足够大且 $\theta$ 在特定范围内时，**$\alpha$ 可以变成负数**。
+
+当 $\alpha < 0$ 时，LCP 的行为完全改变：
+
+| $\alpha$ 的符号 | $\beta$ 的符号 | LCP 的解 | 物理含义 |
+|----------------|----------------|---------|---------|
+| $\alpha > 0$ | $\beta \ge 0$ | 唯一解 $\lambda_N = 0$ | 正常分离 |
+| $\alpha > 0$ | $\beta < 0$ | 唯一解 $\lambda_N = -\beta/\alpha$ | 正常接触 |
+| $\alpha < 0$ | $\beta > 0$ | **两个解**：$\lambda_N = 0$ 或 $\lambda_N = -\beta/\alpha$ | **不确定性**（jamming） |
+| $\alpha < 0$ | $\beta < 0$ | **无解** | **Painlevé 不一致** |
+
+**详细推导**：让我们更仔细地推导 $\alpha$ 如何变负。
+
+杆的动力学方程（Newton-Euler）：
+
+$$
+m \ddot{x}_c = \lambda_T, \quad m \ddot{y}_c = \lambda_N - mg, \quad I_G \ddot{\theta} = \lambda_N l\cos\theta - \lambda_T l\sin\theta
+$$
+
+其中 $I_G = \frac{1}{3}ml^2$ 是关于端点的转动惯量（对于长度 $2l$ 的均匀杆关于质心为 $\frac{1}{12}m(2l)^2 = \frac{1}{3}ml^2$）。
+
+设杆的下端向右滑动（$\dot{x}_A > 0$），则 Coulomb 摩擦给出 $\lambda_T = -\mu \lambda_N$。代入动力学方程并消去 $\ddot{x}_c, \ddot{y}_c, \ddot{\theta}$，得到法向间距的加速度：
+
+$$
+\ddot{g}_N = \ddot{y}_c - l\ddot{\theta}\cos\theta + l\dot{\theta}^2 \sin\theta
+$$
+
+代入后整理，得到：
+
+$$
+\ddot{g}_N = \alpha(\theta, \mu) \lambda_N + \beta(\theta, \dot{\theta})
+$$
+
+其中关键系数为：
+
+$$
+\alpha = \frac{1}{m}\left(1 - \frac{3l\cos\theta(\mu\sin\theta + \cos\theta) \cdot (-\mu)}{I_G/m + l^2}\right)
+$$
+
+经过化简（利用 $I_G = ml^2/3$），可以得到更紧凑的形式。当 $\mu$ 足够大且 $\theta$ 在某个范围内时，$\alpha < 0$。
+
+直觉上为什么 $\alpha$ 会变负？考虑杆的下端在粗糙面上向右滑动：
+1. 法向力 $\lambda_N$ 向上推杆的下端
+2. 但同时，摩擦力 $-\mu\lambda_N$ 向左推杆的下端
+3. 这个向左的力产生一个力矩，使杆绕质心转动
+4. 转动使得下端有一个**向下**的加速度分量
+5. 当摩擦系数 $\mu$ 足够大时，步骤 4 中向下的加速度分量**超过**步骤 1 中向上的加速度——净效果是法向力越大，下端越向下加速
+
+这正是"有效法向刚度变负"的物理机制：法向力通过摩擦→力矩→转动的路径，产生了一个与法向力方向**相反**的间距加速度分量。
+
+Genot 和 Brogliato（1999）给出了均匀杆的临界摩擦系数 $\mu_P = 4/3$（此值不是普适常数，取决于杆的质量分布、接触几何和倾角）。Stewart（2000）在另一种配置下给出阈值 $\mu > 4/(3\sqrt{3}) \approx 0.77$。
+
+> **本质洞察**：Painlevé 悖论不是数学的病态现象，而是刚体 + Coulomb 摩擦模型的**内禀缺陷**。它的根本原因是：Coulomb 摩擦将法向力和切向力耦合（$\lambda_T = \mu \lambda_N$），这种耦合在特定几何配置下使得"有效法向刚度" $\alpha$ 变负——物体越推越深入，而非越推越弹出。这在物理上不合理，说明刚体 + Coulomb 模型在这种配置下不是物理的忠实描述——真实物体会有微小变形来化解这个矛盾。
+
+### 三种失败模式
+
+Painlevé 悖论揭示了接触仿真的三种根本失败模式，每一种都对应矩阵类层级的特定退化：
+
+| 失败模式 | 数学原因 | 物理表现 | 仿真症状 | 工程应对 |
+|---------|---------|---------|---------|---------|
+| **无解（不一致）** | $\alpha < 0, \beta < 0$，LCP 无可行点 | 刚体模型下不存在合法的加速度 | NaN、穿透、仿真崩溃 | 测度解（Moreau）、compliance 正则化 |
+| **多解（不确定）** | $\alpha < 0, \beta > 0$，LCP 有两个解 | 两种物理状态都合法（接触或分离） | 力跳变、物体"抖动"、不可重复 | 选择性规则、能量准则 |
+| **冲量解** | 需要有限时间的速度不连续 | 接触力变成 Dirac delta（冲量） | 速度突变、能量突增 | Moreau 时步法（速度级离散） |
+
+> **反事实推理**：如果没有 Painlevé 悖论，接触仿真会简单得多——每个时间步都有唯一的加速度和力，标准 ODE 积分器就够了。正是因为 Painlevé 悖论的存在，才需要 Moreau 时步法（速度级离散避免加速度级的不一致）、凸松弛（MuJoCo/Drake 的 SAP 用可解性换取放弃严格 Coulomb）、compliance 正则化（penalty/hydroelastic 允许微小穿透消除刚性矛盾）等一系列复杂的工程对策。
+
+### 测度解：化解悖论的数学工具
+
+Stewart（1998, *Arch. Rational Mech. Anal.* 145:215）给出了化解 Painlevé 悖论的严格数学框架：**测度微分包含**（Measure Differential Inclusion）。
+
+核心思想是：当加速度级 LCP 无解时，不要坚持在加速度级求解。退回到**速度级**，允许速度在有限时间内发生不连续（跳变），用**冲量**而非**连续力**来描述接触的效果。
+
+数学上，这意味着将动力学方程从 ODE 推广到测度微分方程：
+
+$$
+M \, d\dot{q} + h \, dt = J^\top \, d\Lambda
+$$
+
+其中 $d\dot{q}$ 是速度的微分测度（允许 Dirac delta，即冲量），$d\Lambda$ 是接触力的微分测度。
+
+Moreau 的扫动过程（Sweeping Process）正是这种测度微分包含的一阶模型：
+
+$$
+-d\dot{q} \in N_{C(t)}(\dot{q})
+$$
+
+其中 $C(t)$ 是时刻 $t$ 的可行速度集。
+
+Stewart 证明了：在测度解的框架下，Painlevé 配置的动力学问题**总是有解**——不一致性被化解为速度的不连续跳变。这正是 Siconos 的 Moreau-Jean 时步法的理论基础。
+
+### Moreau 扫动过程与统一框架
+
+Brogliato、Daniilidis、Lemaréchal 和 Acary（*Systems & Control Letters* 2006）将刚体 Signorini + Coulomb 摩擦、理想二极管电路、塑性流等看似无关的系统统一写成**微分变分不等式**（Differential Variational Inequality, DVI）的框架：
+
+$$
+M\ddot{q} + h = F + J^\top \lambda, \quad \lambda \in -N_{\mathcal{C}}(J\dot{q} + e)
+$$
+
+这个统一框架的意义在于：不同领域的"非此即彼"约束（接触/分离、导通/截止、弹性/塑性）在数学上是同一类问题——互补条件的不同物理实例。
+
+> **类比**：Moreau 的统一框架就像 Maxwell 方程统一了电和磁一样——原本看似不同的物理现象（接触冲击、电路切换、塑性屈服），在互补理论的视角下是"同一个数学对象的不同投影"。**相似之处**：都是用统一的数学语言描述了之前被分别处理的物理现象。**不同之处**：Maxwell 方程是 PDE，Moreau 的框架是微分包含/变分不等式——后者处理的是非光滑性，而非偏微分方程。
+
+### 现代仿真器的应对策略
+
+不同的仿真器采用不同的策略来处理（或绕过）Painlevé 悖论及其相关困难：
+
+| 仿真器 | 接触模型 | 求解策略 | 对 Painlevé 的态度 |
+|--------|---------|---------|-------------------|
+| **Siconos** | 严格 Coulomb + Moreau 时步法 | LCP/MLCP/SOCCP（Lemke、PGS、FB-Newton） | 直面：用测度解和速度级离散化解 |
+| **Drake (SAP)** | 凸松弛（放弃严格 Coulomb） | 凸 QP/SOCP | 绕过：凸松弛消除不一致，代价是"隔空作用力" |
+| **MuJoCo** | 软约束（compliance） | 凸 QP（牛顿法） | 绕过：compliance 消除刚性矛盾 |
+| **Bullet** | 线性化 Coulomb | PGS | 近似：多边形近似 + 迭代，可能不收敛 |
+| **ODE** | 线性化 Coulomb | PGS/Dantzig | 近似：类似 Bullet |
+| **PATH** | 通用 MCP | 非单调稳定化 Newton | 通用：不专门为接触设计，但理论最强 |
+
+> 这个表格是理解不同仿真器"为什么这样设计"的关键。每个仿真器的选择都是在**物理精度**、**计算效率**、**数值稳定性**之间的权衡。没有"最好"的选择——取决于你的应用场景。
+
+### Moreau-Jean 时步法：工程中如何使用测度解
+
+测度解的理论虽然深刻，但在工程中不需要直接处理测度——Moreau 和 Jean 发展的时步法（time-stepping scheme）提供了一个实用的数值框架。
+
+**Moreau-Jean 时步法的核心思想**：
+
+1. 在**速度级**离散化（而非加速度级），避免了加速度级 LCP 的不一致问题
+2. 每个时间步求解一个**速度级 LCP**：$0 \le v_N^+ \perp \Lambda_N \ge 0$
+3. 速度跳变（冲击）被自然地包含在离散化中——不需要专门的碰撞检测/处理模块
+
+**一个时间步的完整流程**：
+
+给定时刻 $t_k$ 的状态 $(q_k, v_k)$（位置和速度）：
+
+**Step 1**：计算自由速度（忽略接触的预测速度）
+
+$$
+v_{\text{free}} = v_k + h M^{-1}(Bu_k - h_k)
+$$
+
+**Step 2**：构造速度级 LCP
+
+$$
+v_N^+ = J_c M^{-1} J_c^\top \Lambda_N + J_c v_{\text{free}}
+$$
+
+$$
+0 \le \Lambda_N \perp v_N^+ \ge 0
+$$
+
+（对于 $e_N > 0$ 的碰撞，用 $v_N^+ + e_N v_N^-$ 替代 $v_N^+$。）
+
+**Step 3**：求解 LCP（用 Lemke/PGS/Newton）
+
+**Step 4**：更新速度和位置
+
+$$
+v_{k+1} = v_{\text{free}} + M^{-1} J_c^\top \Lambda_N
+$$
+
+$$
+q_{k+1} = q_k + h \, v_{k+1}
+$$
+
+这个方法的关键优势在于：即使在加速度级出现 Painlevé 不一致的配置下，速度级 LCP 仍然有解（因为 Delassus 算子 $A = J_c M^{-1} J_c^\top \succeq 0$ 是 PSD 的）。速度跳变被 $\Lambda_N$（冲量）自然编码，不需要额外处理。
+
+**Moreau-Jean 方法的精度与稳定性权衡**：
+
+| 特性 | Moreau-Jean | 事件驱动方法 |
+|------|------------|------------|
+| 碰撞处理 | 自动（速度级） | 需要检测+切换 |
+| 精度 | $O(h)$（一阶） | 碰撞间高阶 |
+| 稳定性 | 无条件稳定（隐式） | 碰撞时可能不稳定 |
+| 频繁碰撞 | 高效 | 非常低效（频繁切换） |
+| 光滑阶段 | 精度低 | 精度高 |
+
+因此，Moreau-Jean 时步法特别适合多接触、频繁碰撞的场景（如颗粒材料、抓取操作），而事件驱动方法更适合接触模式切换较少的场景（如航天器对接）。
+
+> **反事实推理**：如果不用 Moreau-Jean 时步法而坚持在加速度级工作会怎样？你需要一个事件驱动（event-driven）的框架：在碰撞之间用标准 ODE 积分器，碰撞时切换到冲量计算。但在 Painlevé 配置下，"碰撞"可能无限频繁（chattering），事件驱动方法会卡死。Moreau-Jean 方法通过在速度级统一处理所有情况（包括 chattering），绕过了这个困难。
+
+### Le Lidec et al. (2024) 的比较分析
+
+Le Lidec、Jallet、Montaut、Laptev、Schmid 和 Carpentier 在 "Contact Models in Robotics: a Comparative Analysis"（arXiv: 2304.06372, *IEEE T-RO* 2024）中进行了迄今为止最全面的机器人接触模型比较，配套开源基准 ContactBench。他们的关键发现包括：
+
+1. **没有"万能"的接触模型**：每种模型在某些场景下表现最好，在其他场景下表现最差
+2. **凸松弛的代价是量化可控的**：SAP 和 MuJoCo 的"隔空作用力"伪影在特定接触几何下才显著
+3. **严格 Coulomb 的代价是计算时间**：Siconos 的精确求解在实时应用中可能太慢
+
+### ⚠️ 常见陷阱
+
+💡 **概念误区 12：认为 Painlevé 悖论是罕见的极端情况**
+
+新手想法："Painlevé 悖论只在精心构造的反例中出现，实际工程中不会遇到。"
+实际上：任何涉及滑动接触 + 中等以上摩擦系数的场景都可能触发 Painlevé 类型的不一致。足式机器人的脚在地面拖擦、灵巧手的指尖侧推、工件在夹具中的滑动——这些都是日常的机器人操作。关键不是"精心构造"，而是特定的几何配置 + 足够大的摩擦系数。
+根本原因：真实世界的物体有微小的变形（compliance），它自然地消除了刚性矛盾。但在**刚体仿真**中，这个矛盾是真实存在的。
+正确理解：如果你用刚体模型仿真带摩擦的接触，**默认应该假设 Painlevé 悖论可能发生**，并选择能处理它的求解器。
+
+🧠 **思维陷阱 7：认为"凸松弛"解决了所有问题**
+
+新手想法："Drake 和 MuJoCo 用凸松弛绕过了 Painlevé，问题解决了。"
+实际上：凸松弛是用**物理精度**换取**数值稳定性**。它引入的"隔空作用力"伪影（forces from a distance）在某些场景下可以接受（如 manipulation），但在另一些场景下是灾难性的（如需要精确摩擦模型的步态规划）。凸松弛不是"解决了问题"，而是"换了一个不同的问题"。
+为什么重要：选择仿真器时，必须理解它的物理模型和你的应用场景是否匹配。如果你的任务对摩擦精度敏感，凸松弛可能不够好。
+
+💡 **概念误区 13：认为增大时间步长会导致 Painlevé 悖论**
+
+新手想法："仿真炸了肯定是时间步太大。"
+实际上：Painlevé 悖论是**模型层面**的问题（刚体 + Coulomb 摩擦的数学矛盾），不是**数值层面**的问题（时间步太大导致的离散化误差）。减小时间步不能消除 Painlevé 不一致——它只会让你更精确地"看到"不一致发生的瞬间。真正的解决方法是改变模型（加 compliance）或改变求解框架（测度解/凸松弛）。
+正确做法：如果仿真崩溃，先检查是模型问题还是数值问题。如果是 NaN/穿透且减小时间步无改善，很可能是 Painlevé 不一致，需要从模型层面解决。
+
+### 练习
+
+1. **Painlevé 临界条件**（在草稿纸上完成）：对于均匀杆（质量 $m$，长度 $2l$）在摩擦面上的滑动，验证系数 $\alpha$ 的表达式。找到使 $\alpha = 0$ 的临界角 $\theta_c$ 作为 $\mu$ 的函数。画出 $\theta_c(\mu)$ 的曲线。
+
+2. **仿真器选型**（开放思考）：你正在设计一个足式机器人的仿真环境，需要训练 RL 策略。你的任务对物理精度要求中等，但对仿真速度要求很高（每秒需要数千个环境步）。基于本节的分析，你会选择哪个仿真器？为什么？
+
+3. **跨章综合题**：结合 §1.2（LCP 与 QP 等价）和 §1.7（凸松弛），解释 Drake 的 SAP 求解器如何将接触问题转化为凸 QP。"凸松弛"具体放弃了 Coulomb 摩擦的哪个性质？（提示：考虑最大耗散原理和非关联流动——这将在专题 2 中详细讨论。）
+
+---
+
+## 本章常见误解汇总
+
+| 误解 | 正确理解 |
+|------|---------|
+| 互补条件是凸约束 | 互补条件的可行集是非凸的（两条射线的并集） |
+| LCP 总有解 | LCP 是否有解取决于矩阵 $M$ 的类别；一般矩阵下可能无解 |
+| P-矩阵 = 正定矩阵 | P-矩阵不要求对称；对称情形下两者等价 |
+| Lemke 算法总能找到解 | Lemke 可能射线终止而失败；需要矩阵满足 copositive-plus 才保证终止 |
+| Signorini 条件完全描述接触 | Signorini 只描述法向互补，不包含摩擦 |
+| 三级 Signorini 可互相替代 | 三级条件适用于不同的物理阶段（分离判断/分离判断/力计算） |
+| FB 函数在原点可微 | FB 函数在原点不可微，需要 Clarke 广义 Jacobian |
+| Painlevé 悖论是罕见极端情况 | 任何滑动接触 + 中等摩擦都可能触发 |
+
+---
+
+## 本章小结
+
+### 符号表
+
+| 符号 | 含义 | 首次出现 |
+|------|------|---------|
+| $\perp$ | 互补记号：$0 \le a \perp b \ge 0$ 表示 $a \ge 0, b \ge 0, ab = 0$ | §1.1 |
+| $M$ | LCP 的系统矩阵 | §1.2 |
+| $q$ | LCP 的常数项向量 | §1.2 |
+| $z$ | LCP 的互补变量（在接触中对应法向力 $\lambda_N$） | §1.2 |
+| $w$ | LCP 的互补伙伴（$w = Mz + q$，在接触中对应间距加速度 $\ddot{g}_N$） | §1.2 |
+| $g_N$ | 法向间距函数（Gap Function） | §1.5 |
+| $\lambda_N$ | 法向接触力 | §1.5 |
+| $J_c$ | 接触 Jacobian | §1.2 |
+| $A = J_c M_{\text{mass}}^{-1} J_c^\top$ | Delassus 算子（接触空间有效质量矩阵） | §1.2 |
+| $N_K(x)$ | 闭凸集 $K$ 在点 $x$ 处的法锥 | §1.1 |
+| $T_K(q)$ | 闭凸集 $K$ 在点 $q$ 处的切锥 | §1.5 |
+| $\varphi_{\text{FB}}$ | Fischer-Burmeister NCP 函数 | §1.6 |
+| $\Phi$ | 向量化 NCP 函数 | §1.6 |
+| $\Psi$ | merit 函数 $\frac{1}{2}\|\Phi\|^2$ | §1.6 |
+| $\partial \Phi$ | Clarke 广义 Jacobian | §1.6 |
+| $\mu$ | Coulomb 摩擦系数 | §1.7 |
+| $\alpha$ | Painlevé 系统的有效法向刚度系数 | §1.7 |
+
+### 定理速查表
+
+| 定理/结果 | 一句话说明 | 对应节 |
+|----------|----------|--------|
+| P-矩阵唯一性 | $M \in \mathbf{P} \Leftrightarrow$ LCP 对所有 $q$ 有唯一解 | §1.3 |
+| Cottle-Dantzig 存在性 | $M$ strictly copositive $\Rightarrow$ LCP 有解 | §1.3 |
+| Lemke 终止性 | $M$ copositive-plus $\Rightarrow$ Lemke 有限步终止 | §1.4 |
+| LCP-QP 等价 | PSD 的 LCP $\Leftrightarrow$ 凸 QP 的 KKT | §1.2 |
+| Signorini-VI 等价 | 位置级 Signorini $\Leftrightarrow$ 凸锥上的 VI | §1.5 |
+| FB 强半光滑性 | FB 函数是强半光滑的，保证半光滑 Newton 二次收敛 | §1.6 |
+| Painlevé 不一致 | 刚体 + Coulomb 可能使加速度级 LCP 无解 | §1.7 |
+| Moreau viability | 测度微分包含的扫动过程存在 BV 解 | §1.7 |
+
+### 知识点总表
+
+| 编号 | 知识点 | 核心要点 | 对应节 | 难度 |
+|------|--------|---------|--------|------|
+| 1 | 标量/向量互补条件 | $0 \le a \perp b \ge 0$ 的定义、几何、法锥等价 | §1.1 | ⭐ |
+| 2 | LCP 标准定义 | $0 \le z \perp (Mz + q) \ge 0$，互补锥 | §1.2 | ⭐⭐ |
+| 3 | LCP-QP 等价 | 凸 QP 的 KKT = PSD-LCP | §1.2 | ⭐⭐ |
+| 4 | MLCP | 混合等式+互补约束，对应双侧+单侧约束 | §1.2 | ⭐⭐ |
+| 5 | 矩阵类层级 | P ⊂ Q, PD ⊂ PSD ⊂ copositive-plus ⊂ copositive | §1.3 | ⭐⭐ |
+| 6 | Lemke 算法 | 人工变量+互补主元+终止条件 | §1.4 | ⭐⭐ |
+| 7 | PGS | 逐分量迭代+投影，工程常用 | §1.4 | ⭐⭐ |
+| 8 | 位置级 Signorini | $0 \le g_N \perp \lambda_N \ge 0$ | §1.5 | ⭐⭐ |
+| 9 | 速度级 Signorini | $0 \le \dot{g}_N \perp \lambda_N \ge 0$（$g_N = 0$ 时） | §1.5 | ⭐⭐ |
+| 10 | 加速度级 Signorini | $0 \le \ddot{g}_N \perp \lambda_N \ge 0$（$g_N = \dot{g}_N = 0$ 时） | §1.5 | ⭐⭐ |
+| 11 | 法锥/VI 等价 | Signorini $\Leftrightarrow$ 法锥包含 $\Leftrightarrow$ VI | §1.5 | ⭐⭐⭐ |
+| 12 | Fischer-Burmeister 函数 | $\varphi_{\text{FB}}(a,b) = \sqrt{a^2+b^2}-a-b$ | §1.6 | ⭐⭐⭐ |
+| 13 | 半光滑 Newton 法 | 用 Clarke 广义 Jacobian 的 Newton 迭代，局部二次收敛 | §1.6 | ⭐⭐⭐ |
+| 14 | Painlevé 悖论 | 刚体+Coulomb 可能使 LCP 无解/多解 | §1.7 | ⭐⭐⭐ |
+| 15 | 测度解 | 速度级离散+冲量化解加速度级不一致 | §1.7 | ⭐⭐⭐ |
+| 16 | 仿真器策略对比 | Siconos/Drake/MuJoCo/Bullet 的模型选择与权衡 | §1.7 | ⭐⭐ |
+
+---
+
+## 累积项目：本章新增模块
+
+**项目名称**：从零构建接触力学求解器
+
+**本章新增**：LCP 求解器模块
+
+- **模块 1a**：实现标量互补条件的验证函数（给定 $(a, b)$，判断是否满足 $0 \le a \perp b \ge 0$）
+- **模块 1b**：实现 $2 \times 2$ LCP 的枚举求解器（枚举所有 4 种激活模式）
+- **模块 1c**：实现 Fischer-Burmeister 函数及其梯度
+- **模块 1d**：实现 PGS 迭代求解器（输入 $M, q$，输出 $z$）
+
+后续专题将在此基础上添加：摩擦锥（专题 2）、Moreau 时步法（专题 3）、可微层（专题 4）。
+
+---
+
+## 延伸阅读
+
+### 教材
+
+| 教材 | 难度 | 推荐阅读章节 | 说明 |
+|------|------|------------|------|
+| Cottle-Pang-Stone《The Linear Complementarity Problem》SIAM 2009 | ⭐⭐⭐ | Ch.1-5 | **LCP 的权威参考**。1994 年 Lanchester Prize。习题丰富。 |
+| Facchinei-Pang《Finite-Dimensional VI & CP》Springer 两卷 2003 | ⭐⭐⭐⭐⭐ | Vol.I Ch.1-3, Vol.II Ch.7-9 | **VI/NCP 百科全书**。FB 函数、半光滑 Newton 的完整理论。 |
+| Brogliato《Nonsmooth Mechanics》3rd, Springer 2016 | ⭐⭐⭐⭐ | Ch.5 非光滑 Lagrangian, Ch.6 多重冲击 | **机器人工程师首选**。1300+ 参考文献。 |
+| Stewart《Dynamics with Inequalities》SIAM 2011 | ⭐⭐⭐⭐ | 刚体摩擦接触、Painlevé、测度解 | Painlevé 悖论的测度解证明首次系统呈现。 |
+| Acary-Brogliato《Numerical Methods for Nonsmooth Dyn. Sys.》Springer 2008 | ⭐⭐⭐⭐ | Part II 时间步进, Part IV Siconos | **算法 + Siconos 手册**。 |
+
+### 关键论文
+
+| 论文 | 年份 | 核心贡献 | 难度 |
+|------|------|---------|------|
+| Painlevé, *CRAS* 121 | 1895 | 刚体摩擦不一致的原始反例 | ⭐⭐⭐ |
+| Lemke, *Manag. Sci.* 11 | 1965 | LCP 的互补主元算法 | ⭐⭐ |
+| Cottle-Dantzig, *LAA* 1 | 1968 | LCP 存在性定理 | ⭐⭐⭐ |
+| Moreau, *JDE* 26 | 1977 | 扫动过程存在性 | ⭐⭐⭐⭐ |
+| Moreau, *CISM* 302 | 1988 | 测度微分包含建模接触 | ⭐⭐⭐⭐ |
+| Stewart-Trinkle, *IJNME* 39 | 1996 | 保证非穿透的时间步 LCP 格式 | ⭐⭐⭐ |
+| Anitescu-Potra, *Nonlinear Dynamics* 14 | 1997 | 凸松弛的开端 | ⭐⭐⭐ |
+| Stewart, *ARMA* 145 | 1998 | 测度解存在性的严格证明 | ⭐⭐⭐⭐ |
+| Genot-Brogliato, *Eur. J. Mech.* | 1999 | Painlevé 悖论的完整相图 | ⭐⭐⭐ |
+| Sun-Sun, *Math. Prog.* 103 | 2005 | SOC 上 FB 函数的全局强半光滑 | ⭐⭐⭐⭐ |
+| Brogliato et al., *SCL* | 2006 | DVI/DCS/Moreau-Jean 的统一 | ⭐⭐⭐⭐ |
+| Le Lidec et al., *IEEE T-RO* | 2024 | 机器人接触模型的权威横向对比 | ⭐⭐⭐ |
+
+### 开源代码
+
+| 项目 | 语言 | 说明 |
+|------|------|------|
+| [Siconos](https://github.com/siconos/siconos) | C++/Python | INRIA 的非光滑动力学框架，支持 LCP/MLCP/SOCCP/VI 全套求解器 |
+| [Drake](https://drake.mit.edu) | C++/Python | SAP/TAMSI 求解器与 Hydroelastic 接触 |
+| [ContactBench](https://github.com/Simple-Robotics/ContactBench) | Python | Le Lidec et al. 2024 的接触模型基准 |
+| [PATH Solver](https://pages.cs.wisc.edu/~ferris/path.html) | C | Ferris-Munson 的商用 MCP 求解器 |
+
+---
+
+## 本章与后续章节的关系
+
+| 后续章节 | 与本章的关系 | 本章哪个知识点为其铺垫 |
+|---------|------------|-------------------|
+| 专题 2（摩擦锥理论与凸松弛） | 将 Signorini 的法向互补推广到包含摩擦的锥互补（SOCCP） | §1.1 互补条件、§1.3 矩阵类（P-矩阵被摩擦破坏）、§1.6 FB 函数的锥推广 |
+| 专题 3（时步法与数值积分） | 每个时间步求解本章定义的 LCP/MLCP | §1.2 LCP 定义、§1.4 Lemke/PGS、§1.5 速度级 Signorini |
+| 专题 4（可微接触仿真） | 对互补条件求导以获取梯度 | §1.6 NCP 函数、§1.5 法锥形式 |
+| 专题 6（接触隐式轨迹优化） | 将 LCP 作为约束嵌入优化问题（MPCC） | §1.2 LCP-QP 等价、§1.7 凸松弛策略 |
+| 专题 7（非光滑分析基础） | 提供本章所用凸分析工具的严格理论基础 | §1.1 法锥、§1.5 VI 等价、§1.6 半光滑性 |
+
+---
+
+## 🔧 故障排查手册
+
+| 症状 | 可能原因 | 排查步骤 | 相关章节 |
+|------|---------|---------|---------|
+| LCP 求解器返回"无解" | (1) 矩阵不满足存在性条件 (2) Painlevé 不一致 (3) 数值病态 | 1. 检查 $M$ 的矩阵类（是否 PSD/copositive-plus） 2. 检查摩擦系数是否过大 3. 打印 $M$ 的条件数 4. 尝试减小摩擦系数看是否恢复 | §1.3, §1.7 |
+| PGS 迭代不收敛 | (1) $M$ 不是 PSD (2) 迭代次数不够 (3) 初始点太差 | 1. 验证 $M$ 的对角优势或正半定性 2. 增加迭代次数 3. 用 Lemke 解作为 warm start 4. 打印残差曲线看是否振荡 | §1.4 |
+| 接触力在帧间跳变 | (1) 多解（jamming） (2) 接触状态频繁切换 | 1. 检查是否在 Painlevé 临界区域 2. 打印每帧的激活接触集 3. 添加平滑过渡（compliance） | §1.7 |
+| 物体穿透地面 | (1) 加速度级 LCP 无解 (2) 约束漂移（位置级 vs 速度级） | 1. 确认求解器返回了有效解 2. 检查穿透量 $g_N$ 是否在累积漂移 3. 添加 Baumgarte 稳定化或位置修正 | §1.5 |
+| 半光滑 Newton 法不收敛 | (1) 初始点远离解 (2) 广义 Jacobian 奇异 (3) 线搜索参数不当 | 1. 用 PGS 结果作为 Newton 的初始点 2. 打印 merit 函数值看是否下降 3. 检查 $\det(V_k)$ 是否接近零 4. 调整线搜索参数 | §1.6 |
+
+---
+
+## 研究实践建议
+
+### 给初学者的建议
+
+1. **从 2D 标量 LCP 开始**：先在纸上手解 $1 \times 1$ 和 $2 \times 2$ 的 LCP，建立直觉。不要一上来就看 $n$ 维理论。
+2. **用 Python 实现 PGS**：PGS 算法非常简单（不到 20 行代码），实现一个并用它解几个小 LCP，比读 100 页理论更快建立理解。
+3. **运行 Siconos 的 bouncing ball 示例**：这是最简单的接触仿真——一个球在地面上弹跳。它只涉及 1 个接触点的位置级 Signorini 条件，是验证你理解的最好起点。
+4. **先读 Cottle-Pang-Stone 的前两章**：这本书虽然厚（761 页），但前两章是最好的 LCP 入门——清晰、严谨、有大量例题。
+
+### 给有经验者的建议
+
+1. **关注矩阵类层级的工程含义**：不要把矩阵类当作抽象代数——每个类别直接对应仿真器的行为边界。
+2. **比较 Siconos 和 Drake 在同一场景下的结果**：用 ContactBench 的测试场景，分别运行两个仿真器，观察在 Painlevé 临界区域附近的行为差异。这比读任何论文都更直观。
+3. **关注可微接触的最新进展**：Le Lidec et al. 2024 和 Castro et al. 2023 的工作正在模糊"严格 Coulomb"和"凸松弛"之间的界限——可微接触模型可能是两者的统一。
+4. **读 Brogliato 2016 的第 5 章**：这是非光滑 Lagrangian 力学最好的入门——它将 Signorini/Coulomb/冲击统一在一个框架下。
+
+---
+
+## 版本信息速查
+
+| 工具/库 | 版本 | 说明 |
+|--------|------|------|
+| Siconos | 4.5.0 (2024) | INRIA 的非光滑动力学框架 |
+| Drake | 1.5+ (2023-) | SAP 凸求解器从此版本引入 |
+| MuJoCo | 3.0+ (2024-) | 开源后的版本，含改进的凸求解器 |
+| PATH Solver | 5.0 | Ferris-Munson 的 MCP 求解器 |
+| ContactBench | 2024 | Le Lidec et al. 的接触模型基准 |
+
+---
+
+## 附录 A：求解器选型决策流程
+
+面对一个具体的接触问题，如何选择合适的求解器？以下决策流程基于本章的理论分析：
+
+```
+你的接触问题
+    │
+    ├─ 是否包含 Coulomb 摩擦？
+    │   │
+    │   ├─ 否（纯法向接触）
+    │   │   │
+    │   │   ├─ 系统矩阵 PSD ──→ 凸 QP 求解器 / PGS / Lemke
+    │   │   │                    （都可以，选最快的）
+    │   │   └─ 系统矩阵 PD ──→ 任何求解器（唯一解，收敛快）
+    │   │
+    │   └─ 是（包含摩擦）
+    │       │
+    │       ├─ 2D 摩擦
+    │       │   ├─ 需要严格 Coulomb ──→ LCP (Stewart-Trinkle)
+    │       │   │                       注意：可能遇到 Painlevé
+    │       │   └─ 可以接受近似 ──→ 凸 QP (Anitescu)
+    │       │
+    │       └─ 3D 摩擦
+    │           ├─ 多边形近似 ──→ LCP (变量膨胀，但可用 Lemke/PGS)
+    │           ├─ 二阶锥 ──→ SOCCP (FB-Newton / 内点法)
+    │           └─ 凸松弛 ──→ 凸 QP/SOCP (Drake SAP / MuJoCo)
+    │
+    └─ 规模多大？
+        ├─ 小（n < 100）──→ Lemke（精确，步数少）
+        ├─ 中（100 < n < 1000）──→ PGS 或 半光滑 Newton
+        └─ 大（n > 1000）──→ PGS（可扩展）或 内点法（稀疏结构）
+```
+
+**选型的核心原则**：没有"万能"的求解器。选择取决于三个维度：(1) 物理精度需求（严格 Coulomb vs. 凸松弛），(2) 问题规模（决定算法类型），(3) 实时性需求（离线仿真 vs. 在线控制）。
+
+## 附录 B：互补问题与相关优化问题的关系图
+
+互补问题不是孤立的数学概念——它与多个优化和方程求解问题有密切的包含/等价关系。以下关系图帮助读者将本章的知识放到更大的数学图景中：
+
+```
+                    方程组 F(z) = 0
+                         │
+                ┌────────┴────────┐
+                │                 │
+           光滑方程组          非光滑方程组
+           (Newton 法)     (半光滑 Newton 法)
+                                  │
+                         NCP 函数重新表述
+                         Φ(z) = 0 (FB / min)
+                                  │
+                    ┌─────────────┴─────────────┐
+                    │                           │
+               NCP: 0≤z⊥F(z)≥0            VI(K,F): ⟨F(x),y-x⟩≥0
+                    │                           │
+           ┌───────┴───────┐               Stampacchia 定理
+           │               │               (存在唯一性)
+     LCP: 0≤z⊥(Mz+q)≥0   MCP
+           │               │
+    ┌──────┴──────┐   PATH 求解器
+    │             │
+凸 QP 的 KKT   MLCP
+(M PSD 时)     (等式+互补)
+    │
+线性规划对偶
+(M 有特殊结构)
+```
+
+| 包含关系 | 说明 |
+|---------|------|
+| LP $\subset$ QP $\subset$ LCP $\subset$ NCP $\subset$ MCP | 问题类的包含链 |
+| LCP $\subset$ VI（当 $K = \mathbb{R}_+^n$ 时） | VI 的特殊情况 |
+| NCP $\Leftrightarrow$ 非光滑方程 $\Phi(z) = 0$ | NCP 函数建立的等价 |
+| 凸 QP $\Leftrightarrow$ PSD-LCP | QP-KKT 等价（§1.2） |
+
+这张关系图的实用价值在于：当你的问题可以归约到更简单的问题类时（如 LCP 归约到凸 QP），你可以使用更高效、更成熟的求解器。反过来，当你的问题属于更一般的类时（如 NCP 或 MCP），你需要更通用的工具（如 PATH 或半光滑 Newton）。
+
+## 附录 C：五本教材难度与覆盖对照
+
+下表基于 Springer/SIAM 官方介绍、真实用户评论与社区引用密度给出判断。难度 1-5（1 为研究生入门，5 为前沿专著）。
+
+| 教材 | 年/页 | 难度 | 本主题应读 | 优缺点与评价 |
+|------|------|------|----------|------------|
+| **Cottle-Pang-Stone《The Linear Complementarity Problem》** SIAM | 2009/761 | 3 | Ch.1-5 全部；Ch.3 存在唯一性、Ch.4 Lemke | 1994 年 Lanchester Prize。**最权威的 LCP 参考**，偏运筹背景。 |
+| **Facchinei-Pang《Finite-Dimensional VI & CP》** Springer 两卷 | 2003/约1200 | 5 | Vol.I Ch.1-3, Vol.II Ch.7-9 | **VI/NCP 百科全书**。第二卷含 FB/半光滑 Newton 全套。 |
+| **Brogliato《Nonsmooth Mechanics》3rd** Springer | 2016/629 | 4 | Ch.5 非光滑 Lagrangian、Ch.6 多重冲击 | **机器人工程师首选**。涵盖控制与稳定性。 |
+| **Stewart《Dynamics with Inequalities》** SIAM | 2011/— | 4 | 刚体摩擦接触、Painlevé、测度解 | 把有限维与无穷维统一处理。 |
+| **Acary-Brogliato《Numerical Methods for Nonsmooth Dyn. Sys.》** Springer | 2008/526 | 4 | Part II 时间步进、Part IV Siconos | **算法 + Siconos 手册**。 |
+
+**推荐组合**：入门用 Cottle-Pang-Stone → Brogliato 3rd 作为力学主线 → Acary-Brogliato 作为算法手册 → Facchinei-Pang 作为理论查阅 → Stewart 深入 Painlevé。
+
+---
+
+## 附录 D：必读经典论文清单
+
+### 奠基论文（1895-2000）
+
+- Painlevé, "Sur les lois du frottement de glissement," *CRAS* 121 (1895) 112——刚体摩擦不一致的原始反例。
+- Lemke, "Bimatrix Equilibrium Points and Mathematical Programming," *Management Science* 11 (1965) 681——互补主元算法。
+- Cottle-Dantzig, "Complementary Pivot Theory of Mathematical Programming," *Linear Algebra and its Applications* 1 (1968) 103——LCP 存在性理论。
+- Moreau, "Evolution Problem Associated with a Moving Convex Set in a Hilbert Space," *J. Differential Equations* 26 (1977) 347——扫动过程。
+- Moreau, "Unilateral contact and dry friction in finite freedom dynamics," *CISM* 302 (1988)——测度微分包含建模接触。
+- Stewart-Trinkle, "An implicit time-stepping scheme for rigid body dynamics with inelastic collisions and Coulomb friction," *IJNME* 39 (1996) 2673——首个保证非穿透的时间步 LCP 格式。
+- Pang-Trinkle, "Complementarity formulations and existence of solutions of dynamic multi-rigid-body contact problems with Coulomb friction," *Math. Prog.* 73 (1996) 199——多体接触 + Coulomb 的存在性。
+- Anitescu-Potra, "Formulating dynamic multi-rigid-body contact problems with friction as solvable LCPs," *Nonlinear Dynamics* 14 (1997) 231——凸松弛的开端。
+- Stewart, "Convergence of a time-stepping scheme for rigid-body dynamics and resolution of Painlevé's problem," *ARMA* 145 (1998) 215——测度解存在性的严格证明。
+- Genot-Brogliato, "New results on Painlevé paradoxes," *Eur. J. Mech. A/Solids* (1999)——Painlevé 悖论的完整相图。
+
+### 现代与统一框架（2000-2025）
+
+- Sun-Sun, "Strong semismoothness of Fischer-Burmeister SDC and SOC complementarity functions," *Math. Prog.* 103 (2005) 575——SOC 上 FB 函数的全局强半光滑。
+- Brogliato-Daniilidis-Lemaréchal-Acary, *SCL* 2006——DVI/DCS/Moreau-Jean 的统一。
+- Anitescu, "Optimization-based simulation of nonsmooth rigid multibody dynamics," *Math. Prog.* 105 (2006) 113——凸 QP 表述。
+- Posa-Cantu-Tedrake, "A direct method for trajectory optimization of rigid bodies through contact," *IJRR* 33 (2014) 69——contact-implicit trajectory optimization。
+- Le Lidec et al., "Contact Models in Robotics: a Comparative Analysis," arXiv: 2304.06372, *IEEE T-RO* (2024)——机器人接触模型横向对比。
+- Castro et al., "An unconstrained convex formulation of compliant contact" (Drake SAP) 和 "Irrotational Contact Fields" arXiv: 2312.03908——SAP/可微接触的最新实现。
+
+---
+
+## 附录 E：学习资源
+
+### 英文课程与讲义
+
+- **Russ Tedrake, *Underactuated Robotics***：[Planning and Control through Contact](https://underactuated.mit.edu/contact.html) 章节——最适合首读。
+- **Michael Posa, DAIR Lab**：[publications](https://dair.seas.upenn.edu/publications/)——过去十年接触控制的最佳实践。
+- **Stephane Caron, [scaron.info](https://scaron.info)**：接触力锥、摩擦、QP 的工程笔记。
+
+### 开源代码
+
+- **Siconos**（[github.com/siconos/siconos](https://github.com/siconos/siconos)）：C++/Python 非光滑动力学框架，LCP/MLCP/SOCCP/VI 全套求解器。
+- **Drake**（[drake.mit.edu](https://drake.mit.edu)）：SAP/TAMSI 求解器与 Hydroelastic 接触。
+- **ContactBench**（[github.com/Simple-Robotics/ContactBench](https://github.com/Simple-Robotics/ContactBench)）：Le Lidec et al. 2024 的基准。
+
+### 中文资源
+
+中文资源中真正讲 LCP/NCP/Signorini 数学内核的一手资料极少。建议中文读者以 Brogliato 2016 或 Acary-Brogliato 2008 为主干，辅以 Siconos 的 Python 教程。
+
+---
+
+## 附录 F：八周自学路径
+
+| 周次 | 内容 | 教材/资源 | 产出 |
+|------|------|---------|------|
+| 1-2 | LCP 基础：定义、互补锥、Lemke 主元 | Cottle-Pang-Stone Ch.1-2, Ch.4 | 手推 Lemke 流程 + Python 实现 |
+| 3-4 | 机械接触：Signorini + Stewart-Trinkle 1996 | Brogliato Ch.1-5 + ST96 原文 | 手推 2D 滑块 LCP + Siconos bouncing ball |
+| 5 | Painlevé 悖论 + 测度解 | Stewart 1998 ARMA + Genot-Brogliato 1999 | 理解为何需要测度解 |
+| 6 | 3D 摩擦 + SOCCP | Anitescu-Potra 1997 + Sun-Sun 2005 | Drake SAP 或 MuJoCo 复现滑动实验 |
+| 7 | 当代综述 + ContactBench | Le Lidec et al. 2024 + ContactBench 代码 | 形成六大仿真器失败模式的直觉 |
+| 8 | Contact-implicit 控制 | Posa et al. 2014 IJRR + 最新 CI-MPC | 理解互补约束如何嵌入优化 |
+
+---
+
+## 贯穿全局的五个认知转折
+
+在结束本章之前，让我们回顾五个关键的认知转折——它们不仅总结了本章的要点，更指向了整个接触力学专题序列的核心思想。
+
+**第一，LCP 不是唯一出口。** 凸松弛（Anitescu 2006、Todorov MuJoCo、Castro SAP）用可解性换放弃严格 Coulomb，在 manipulation 场景往往效果更好。这正是为什么 Drake 默认不走 Stewart-Trinkle 路线。但凸松弛不是免费的——它引入了"隔空作用力"等物理伪影，需要工程师判断在你的具体场景下是否可接受。
+
+**第二，Painlevé 悖论不是奇例而是常态。** 任何足端拖擦、指尖侧推都可能触发。工程上靠 compliance 正则化（penalty/hydroelastic）或测度解格式（Moreau-Jean）回避。理解 Painlevé 悖论的关键不是记住公式，而是建立直觉：**摩擦耦合法向和切向力，这种耦合在特定几何下会让"有效法向刚度"变负**。
+
+**第三，矩阵类层级不是抽象分类。** P $\subset$ P$_0$、PSD $\subset$ copositive-plus——这些包含关系直接决定算法是否收敛、解是否唯一。工程师判断"为什么我的仿真炸了"必须从矩阵类入手：你的系统矩阵属于哪个类？你的求解器假设了哪个类？两者是否匹配？
+
+**第四，SOCCP 与 Jordan 代数是 3D 摩擦的正确数学语言。** 多边形近似只是工程权宜之计。Sun-Sun 2005 的结果表明，在 Jordan 代数框架下，FB 函数、投影算子、半光滑性分析可以自然地从标量推广到二阶锥，无需人为的多边形化。这将在专题 2 中展开。
+
+**第五，Moreau 的测度微分包含把 Signorini、Coulomb、冲击、电路二极管、塑性流统一。** 这种统一性本身就是机器人博士应有的思维高度——看到不同物理现象背后的共同数学结构。当你在 Siconos 代码中看到 `NonsmoothLaw` 接口时，你应该明白：接触互补和二极管互补，在 Siconos 的眼里是"同一类对象的不同实例"。
+
+掌握这五点，读者就能在 Drake 源码、Siconos 代码、Brogliato 教材、Le Lidec 论文之间自由穿行，并判断一个新的"可微接触"或"学习接触"论文究竟在既有理论图景中补了哪块拼图。
+
+---

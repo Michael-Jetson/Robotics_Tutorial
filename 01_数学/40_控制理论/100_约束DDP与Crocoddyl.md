@@ -1192,7 +1192,7 @@ Step 3. 由 A4 和 Lyapunov 下降，$V_N$ 是 Lyapunov 函数→渐近稳定。
 - A1：取 $\mathcal X_f = \{x : x^\top Px \le \alpha\}$（椭球），$\alpha$ 足够小使 $Kx \in \mathcal U$
 - A2：LQR 使 $\dot V = x^\top(A-BK)^\top P + P(A-BK)x + x^\top(Q+K^\top RK)x - x^\top(Q+K^\top RK)x < 0$（Lyapunov 稳定→正不变）
 - A3：$V_f(f(x, \kappa_f)) - V_f(x) = -x^\top(Q + K^\top R K)x = -\ell(x, \kappa_f(x))$（DARE 恒等式）
-- A4：显然
+- A4：由 $V_f$ 的连续正定性和 $\mathcal{X}_f$ 的紧性直接满足
 
 > **本质洞察**：MPC 的终端代价 $V_f = x^\top Px$ 不是"随便取的大权重"——它有精确的理论含义：**视域结束后仍有 LQR 兜底**，整个无限时问题被两段式界定——前 $N$ 步显式优化 + 第 $N$ 步后 LQR 托底。
 
@@ -1829,6 +1829,20 @@ Mastalli-Lembono-Fernbach-Mansard (ICRA 2020)：
 **学习路径建议**：先看 CMU 16-745 Lecture 10 的视频理解 DDP/Box-DDP 的直觉，然后读 Tassa 2014 原文掌握 Box-QP 细节，接着读 Mastalli 2020 理解 FDDP 的 defect 修正。Howell 2019 的 ALTRO 论文数学最严谨，适合需要理论深度的读者。ProxDDP（Jallet 2025）最前沿但也最抽象，建议在理解前四种方法后再阅读。
 
 **代码学习路径**：从 Crocoddyl 的 `examples/` 目录开始（`double_pendulum.py` → `bipedal_walking.ipynb`），然后尝试修改代价权重和约束、切换求解器。当你能在 HyQ 四足上跑出稳定的 trot 步态时，就可以进入 MPC 部署阶段——这正是 §3.11-§3.12 的主题。
+
+---
+
+### 本章常见误解汇总
+
+| 误解 | 正确理解 |
+|------|---------|
+| 约束 DDP 只需要在无约束 DDP 上加 `clip` 就行 | `clip` 破坏了 backward pass 的 Riccati 结构——被裁剪的分量对应的反馈增益 $K$ 行必须置零（活动集），否则 $Q_{uu}$ 的条件化信息被丢弃，导致收敛退化甚至发散 |
+| 增广拉格朗日（AL）的罚参数 $\mu$ 越大收敛越快 | $\mu$ 过大导致 Hessian $Q_{uu} + \mu I_\mathcal{A}$ 的条件数恶化，内层 DDP 本身难以收敛；正确做法是从小 $\mu_0$（如 0.1-1）开始逐步递增 |
+| FDDP 和 DDP 的区别只是多射击 vs 单射击 | FDDP 的核心创新是允许动力学约束在迭代过程中被违反（infeasible warm-start），通过 defect 修正项 $V_x' \leftarrow V_x' + V_{xx}'\bar{f}$ 逐步恢复可行性；这使得 warm-start 策略根本性不同 |
+| Crocoddyl 的 `ActionModel` 中代价和动力学是独立的 | Crocoddyl 的 CRTP 设计将代价和动力学封装在同一个 `ActionModel` 中并共享同一次 Pinocchio 前向运动学调用——这不是偶然的 API 设计，而是为了避免重复的运动学/动力学计算 |
+| 摩擦锥约束用 4 面近似（线性化锥）就足够 | 4 面锥相比真实 Coulomb 锥最大偏差约 29%，在边界情况（如斜面行走）可能导致接触力不可行；8 面或 SOC 形式更安全 |
+| 终端代价 $V_f = x^\top P x$ 的 $P$ 矩阵可以随意取大值 | $P$ 必须是 DARE 的解——对应 LQR 无限时域值函数；随意取大 $P$ 破坏了 Mayne 四条件中的 A3（代价递减），可能导致 MPC 闭环不稳定 |
+| ProxDDP 比 Box-DDP 总是更好 | ProxDDP 在任意约束（等式+不等式+锥）上更通用，但对简单 box 约束场景，Box-DDP 的 Projected Newton 子问题更轻量；选择取决于约束结构 |
 
 ---
 

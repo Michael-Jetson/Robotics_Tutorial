@@ -2,6 +2,37 @@
 
 # M14 MoveIt2 + MTC 工业集成
 
+### 本章知识导航
+
+```
+M14 MoveIt2 + MTC 工业集成 知识体系
+│
+├── §1 MoveIt2 架构全景 ⭐⭐ ──── pluginlib 三层工厂架构
+├── §2 两套 API ⭐⭐ ──── MoveGroupInterface vs MoveItCpp
+├── §3 PlanningScene ⭐⭐ ──── 碰撞对象、ACM、diff 同步
+├── §4 MTC 深度 ⭐⭐ ──── Stage 体系、Composite Pattern
+├── §5 规划管线 ⭐⭐⭐ ──── 链式/并行、规划器选型
+├── §6 Servo ⭐⭐⭐ ──── 实时笛卡尔控制、奇异性管理
+├── §7 多机器人 ⭐⭐⭐⭐ ──── 双臂 ACM、协调策略
+└── §8 前沿展望 ⭐⭐⭐⭐ ──── 2026 路线图、Foundation Model
+```
+
+### 前置知识桥接
+
+**回顾 M07 OMPL**：OMPL 的 RRT-Connect 是 MoveIt2 默认的运动规划算法。MoveIt2 通过 pluginlib 加载 OMPL 作为规划器插件。
+
+**回顾 M12 ros2_control**：MoveIt2 的规划结果通过 `FollowJointTrajectory` Action 发送给 ros2_control 的 `JointTrajectoryController` 执行。
+
+### 预计阅读时间
+
+| 模式 | 时间 | 适合人群 |
+|------|------|---------|
+| 速查 | 30 分钟 | 只需了解 MoveIt2 架构和 MTC 概念 |
+| 精读 | 5-6 小时 | 需要掌握 MoveIt2 API 和 MTC 任务编排 |
+| 精读 + 实践 | 10 小时 | 需要从 Setup Assistant 到 Gazebo 搭建完整系统 |
+
+---
+
 ## 前置自测
 
 📋 **前置自测**（答不出 $\ge$ 2 题 → 先回 M07/M12/`02_C++基础与进阶/30_软件工程` 复习）
@@ -21,6 +52,73 @@
 4. **使用 MTC** 编排多阶段操作任务（pick-and-place 完整流程）
 5. **配置** 链式/并行规划管线，选择最优规划器组合
 6. **独立搭建** 从 MoveIt Setup Assistant 到 Gazebo 执行的完整系统
+7. **配置** MoveIt Servo 实时控制参数并理解安全约束
+8. **设计** 多机器人 PlanningScene 协调方案
+
+### 本章知识导航
+
+```
+MoveIt2 + MTC 工业集成
+├── M14.1 MoveIt2 架构全景 ⭐⭐ ─── 理解框架分层的起点
+│   ├── pluginlib 三层工厂（规划器/IK/碰撞检测全插件化）
+│   └── 用户 API 层 → 规划管线层 → 插件层 → 执行层
+├── M14.2 MoveGroupInterface vs MoveItCpp ⭐⭐ ─── 两套 API 的选型
+│   ├── MoveGroupInterface（ROS Action 封装，简单）
+│   ├── MoveItCpp（进程内直调，高频重规划）
+│   └── Python API（moveit_py，开发效率优先）
+├── M14.3 PlanningScene 管理 ⭐⭐ ─── 碰撞世界的核心
+│   ├── CollisionObject / AttachedObject 管理
+│   ├── ACM（Allowed Collision Matrix）
+│   └── diff-based 同步机制
+├── M14.4 MTC 深度 ⭐⭐ ─── 多阶段运动规划
+│   ├── Stage 三类型（Generator/Propagator/Connector）
+│   ├── Composite Pattern 应用（SerialContainer/Alternatives/Merger）
+│   └── 完整 pick-and-place 示例 + 自定义 Stage
+├── M14.5 规划管线配置 ⭐⭐⭐ ─── 规划器选型与组合
+│   ├── 链式规划（OMPL → STOMP）
+│   ├── 并行规划（多规划器取最优）
+│   └── 时间参数化（TOTG / Ruckig / IPTP）
+├── M14.6 MoveIt Servo ⭐⭐⭐ ─── 实时笛卡尔控制
+│   ├── 工作原理（雅可比逆+碰撞检测+关节限制）
+│   ├── 参数调优（频率/速度/奇异性/碰撞）
+│   └── Visual Servoing 集成模式
+├── M14.7 多机器人协调 ⭐⭐⭐⭐ ─── 双臂/多臂规划
+│   ├── 三种架构（共享PS/独立PS+互斥/时间分片）
+│   └── 双臂 SRDF 配置 + 工业案例
+└── M14.8 前沿展望 ⭐⭐⭐⭐ ─── 路线图与未来
+    ├── MoveIt2 2025-2026 路线图
+    ├── Servo 2.0 架构升级
+    └── Foundation Model 集成
+```
+
+**阅读路径建议**：
+- **必修主干**：M14.1 → M14.2 → M14.3 → M14.4（按顺序，构建完整理解链）
+- **规划进阶**：M14.5 在有实际规划经验后再深读
+- **实时控制**：M14.6 适合遥操作/视觉伺服场景
+- **多臂协调**：M14.7 适合双臂/多机器人工作站
+- **前沿跟踪**：M14.8 可选阅读
+
+### 前置知识桥接
+
+本章建立在以下前置知识之上：
+
+- **pluginlib 动态加载**（`02_C++基础与进阶/30_软件工程/10_设计模式与高级惯用法` 和 M12）：MoveIt2 几乎所有可变组件（规划器、IK 求解器、碰撞检测器）都是 pluginlib 插件。在 M12 中我们看到 ros2_control 如何用 pluginlib 加载硬件驱动；MoveIt2 把同样的模式推到了极致——替换任何组件只需改一行 YAML。
+- **OMPL 规划算法**（M07）：MoveIt2 的默认规划器是 OMPL。M07 中学习的 RRT-Connect、BIT*、PRM* 等算法是 MoveIt2 管线的核心后端。本章不重复算法原理，只讨论它们在 MoveIt2 工程中的配置和选型。
+- **ros2_control**（M12）：MoveIt2 规划的输出通过 ros2_control 的 JointTrajectoryController 执行。理解 M12 中的控制器架构是理解 MoveIt2 执行层的前提。
+- **Composite Pattern**（`02_C++基础与进阶/30_软件工程/10_设计模式与高级惯用法`）：MTC 的 Stage 体系是 Composite Pattern 的典型应用——SerialContainer 是 Composite，具体 Stage 是 Leaf，Wrapper 是 Decorator。
+
+### 如果跳过本章会怎样
+
+1. **无法让机械臂在真实环境中安全运动**：没有 PlanningScene 的碰撞管理和 MoveIt2 的规划管线，你的机械臂只能在无障碍的空间中盲目运动——在真实工作站中这意味着碰撞风险。
+2. **无法实现多阶段操作任务**：pick-and-place 涉及 8+ 个运动阶段，每个阶段的 PlanningScene 都在变化（物体从桌上 attach 到末端再 detach 到目标位置）。没有 MTC，手动管理这些阶段间的约束传播极其繁琐且容易出错。
+
+### 预计阅读时间
+
+| 模式 | 时间 | 覆盖内容 |
+|------|------|---------|
+| 精读 | 5-6 小时 | 全部内容 + 练习 + Gazebo 实验 |
+| 速读 | 2.5 小时 | M14.1-M14.4 正文 + 陷阱专栏 |
+| 速查 | 20 分钟 | 知识导航 + 小结表格 + 故障排查手册 |
 
 ---
 
@@ -1261,6 +1359,97 @@ servo:
     # 并把上面的 scale.linear / scale.rotational 调到保守值。
 ```
 
+**Servo 调参实战：三阶段渐进法** ⭐⭐⭐
+
+在真实硬件上部署 Servo 时，参数调优必须按以下三个阶段渐进式进行——从最保守的参数开始，逐步放宽，每步都在确认安全的前提下进行：
+
+**阶段 1：安全验证（速度极低，碰撞检测极严）**
+
+```yaml
+# 阶段 1 参数：先确认系统能跑起来
+servo:
+  ros__parameters:
+    publish_period: 0.02            # 50 Hz（保守）
+    scale:
+      linear: 0.05                  # 仅 5 cm/s
+      rotational: 0.1               # 仅 0.1 rad/s
+    joint_limit_margins: [0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2]
+    check_collisions: true
+    collision_check_rate: 25.0      # 碰撞检测频率 = 命令频率的一半
+    self_collision_proximity_threshold: 0.05
+    scene_collision_proximity_threshold: 0.08
+    hard_stop_singularity_threshold: 20.0
+```
+
+在这个阶段验证：(1) Servo 是否正确接收输入并产生运动，(2) 碰撞检测是否正常工作（故意引导末端靠近桌面看是否停止），(3) 奇异性管理是否生效（引导末端接近奇异构型看是否减速）。
+
+**阶段 2：性能调优（逐步放宽速度限制）**
+
+```yaml
+# 阶段 2 参数：在安全范围内提升操作体验
+servo:
+  ros__parameters:
+    publish_period: 0.01            # 100 Hz
+    scale:
+      linear: 0.3                   # 30 cm/s
+      rotational: 0.8               # 0.8 rad/s
+    joint_limit_margins: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+    collision_check_rate: 10.0
+    self_collision_proximity_threshold: 0.02
+    scene_collision_proximity_threshold: 0.03
+    hard_stop_singularity_threshold: 30.0
+```
+
+在这个阶段评估：操作手感是否流畅（延迟 <50ms 为佳）、速度是否足够完成任务、碰撞检测频率与安全间距的平衡。
+
+**阶段 3：产线定型（根据具体场景微调）**
+
+根据任务需求最终定型。遥操作和视觉伺服的参数侧重不同：
+
+| 参数 | 遥操作场景 | 视觉伺服场景 |
+|------|----------|-------------|
+| publish_period | 0.01（100 Hz） | 0.005（200 Hz） |
+| scale.linear | 0.3-0.5 | 0.1-0.2（精度优先） |
+| command_in_type | "unitless"（SpaceMouse） | "speed_units"（视觉反馈） |
+| collision_check_rate | 10 Hz | 20 Hz（更频繁检查） |
+
+> **反事实推理**：如果跳过阶段 1 直接使用高速参数会怎样？Servo 的碰撞检测不如离线规划可靠——在高速下，两次碰撞检测之间机器人可能已经移动了 5cm（0.5 m/s * 0.1s = 5cm），而碰撞阈值只有 3cm。这意味着碰撞检测可能来不及响应，末端直接撞上障碍物。阶段渐进法的核心原则是：**先确认安全机制有效，再逐步解除限制**。
+
+**Servo 输入平滑与滤波**：
+
+原始输入（特别是 SpaceMouse 或手柄）通常包含高频噪声。Servo 2.0 支持可选的输入平滑：
+
+```cpp
+// Servo 2.0 支持 Butterworth 低通滤波
+// 旧版本可在输入端自行添加滤波
+class InputSmoother {
+public:
+  geometry_msgs::msg::TwistStamped smooth(
+    const geometry_msgs::msg::TwistStamped& raw)
+  {
+    auto smoothed = raw;
+    // 一阶指数平滑：y[n] = alpha * x[n] + (1-alpha) * y[n-1]
+    // alpha = 0.3 适合遥操作（响应适中，噪声抑制好）
+    // alpha = 0.7 适合视觉伺服（响应快，平滑弱）
+    constexpr double alpha = 0.3;
+    smoothed.twist.linear.x =
+      alpha * raw.twist.linear.x +
+      (1.0 - alpha) * prev_.twist.linear.x;
+    smoothed.twist.linear.y =
+      alpha * raw.twist.linear.y +
+      (1.0 - alpha) * prev_.twist.linear.y;
+    smoothed.twist.linear.z =
+      alpha * raw.twist.linear.z +
+      (1.0 - alpha) * prev_.twist.linear.z;
+    // 角速度同理...
+    prev_ = smoothed;
+    return smoothed;
+  }
+private:
+  geometry_msgs::msg::TwistStamped prev_;
+};
+```
+
 **Servo 与 Visual Servoing 的集成模式**：
 
 ```cpp
@@ -1516,60 +1705,115 @@ void updateCrossArmCollision(
 3. **节拍时间**：整个上下料周期要在 CNC 加工时间内完成（通常 30-60 秒）
 4. **安全联锁**：CNC 门打开时机械臂才能进入，门关闭时机械臂必须退出
 
-### 动机
+### 工业案例深度分析 ⭐⭐⭐
 
-当工作站有多台机械臂（双臂系统、人机协作），需要在同一 PlanningScene 中协调规划。
+前面的 CNC 上下料案例展示了 BT + MTC 在单臂场景中的集成。以下两个案例分别展示双臂协调和力控集成场景，每个案例都包含完整的系统分析。
 
-### 配置要点
+**案例 A：双臂码垛工站（Dual-Arm Palletizing）**
 
-双臂 SRDF 需要定义联合规划组：
+```
+场景：两台 Franka Panda 共享一条传送带
+左臂负责：从传送带抓取，放到托盘左半区
+右臂负责：从传送带抓取，放到托盘右半区
+约束：
+  - 两臂工作空间在传送带取件区重叠
+  - 节拍要求：每箱 <6 秒（两臂交替 = 等效 3 秒/箱）
+  - 安全距离：两臂末端间距 >100mm
+```
+
+**系统架构**：
+
+```
+共享 PlanningScene（架构 A）
+├── left_arm (7-DOF)
+├── right_arm (7-DOF)
+├── both_arms (14-DOF 联合组)
+├── 传送带碰撞体（动态更新）
+└── ACM：同臂相邻 disable，跨臂碰撞必须检查
+```
+
+**BT 编排策略**：采用优先级交替而非时间分片——当一臂在传送带抓取时，另一臂在托盘放置，工作空间不重叠，不需要联合规划：
 
 ```xml
-<robot name="dual_arm_system">
-  <group name="left_arm">
-    <chain base_link="world" tip_link="left_hand"/>
-  </group>
-  <group name="right_arm">
-    <chain base_link="world" tip_link="right_hand"/>
-  </group>
-  <group name="both_arms">
-    <group name="left_arm"/>
-    <group name="right_arm"/>
-  </group>
-</robot>
+<root BTCPP_format="4">
+  <BehaviorTree ID="DualArmPalletize">
+    <Parallel success_count="2" failure_count="1">
+      <!-- 左臂：抓取→放到左半区 -->
+      <ReactiveSequence>
+        <IsSafeDistance min_dist="0.1"/>
+        <Sequence>
+          <WaitForConveyor side="left"/>
+          <MTC_Pick arm="left" object="{left_box}"/>
+          <MTC_Place arm="left" target="{left_grid}"/>
+        </Sequence>
+      </ReactiveSequence>
+
+      <!-- 右臂：抓取→放到右半区 -->
+      <ReactiveSequence>
+        <IsSafeDistance min_dist="0.1"/>
+        <Sequence>
+          <WaitForConveyor side="right"/>
+          <MTC_Pick arm="right" object="{right_box}"/>
+          <MTC_Place arm="right" target="{right_grid}"/>
+        </Sequence>
+      </ReactiveSequence>
+    </Parallel>
+  </BehaviorTree>
+</root>
 ```
 
-**三种规划策略**：
+**关键工程决策**：使用 `IsSafeDistance` 条件节点在 ReactiveSequence 中持续监控两臂距离。当距离小于阈值时整个分支暂停，等待另一臂离开重叠区。这比 14-DOF 联合规划高效得多——7-DOF 独立规划 <100ms，14-DOF 联合规划可能需要 2-5 秒。
 
-| 策略 | 方法 | 适用场景 |
-|------|------|---------|
-| 独立规划 | 分别为每臂规划，检查碰撞 | 工作空间不重叠 |
-| 联合规划 | 14-DOF 联合规划 | 需要同步配合 |
-| 优先级规划 | 先规划一臂，另一臂视其为障碍 | 一主一辅 |
+**案例 B：焊接工站（Welding Station）**
 
-### 工业集成案例
+焊接的独特之处在于它同时使用 MTC 做离线轨迹规划和 Servo 做在线焊缝跟踪——两种运动模式在一个任务中交替出现。
 
-**码垛案例**：
 ```
-BT.CPP (顶层)
-├── ScanPallet (视觉检测托盘状态)
-├── ForEachBox:
-│   ├── MTC PickBox (从传送带抓取)
-│   ├── MTC PlaceBox (放到托盘指定位置)
-│   └── VerifyPlacement (视觉确认)
-└── SignalConveyor (通知传送带继续)
+场景：6-DOF 焊接机器人 + 视觉焊缝跟踪系统
+阶段 1（MTC）：从安全位移动到焊接起点
+阶段 2（Servo）：沿焊缝实时跟踪（视觉反馈 30Hz）
+阶段 3（MTC）：焊完后退回安全位
 ```
 
-**焊接案例**：
+```cpp
+// 焊接 BT 节点内部：MTC→Servo 模式切换
+class WeldTask : public BT::StatefulActionNode {
+  BT::NodeStatus onStart() override {
+    // 1. 用 MTC 规划 approach 轨迹
+    mtc_task_ = createWeldApproachTask(weld_start_pose_);
+    if (!mtc_task_->plan(5)) {
+      return BT::NodeStatus::FAILURE;
+    }
+    mtc_task_->execute(*mtc_task_->solutions().front());
+
+    // 2. 切换到 Servo 模式（需要 switch_controller）
+    // 通过 ros2_control 的 controller_manager
+    // 从 JointTrajectoryController 切换到
+    // ForwardCommandController（Servo 需要直接命令接口）
+    switchToServoController();
+
+    // 3. 启动 Servo 和视觉跟踪
+    startServo();
+    startWeldSeamTracker();
+    return BT::NodeStatus::RUNNING;
+  }
+
+  BT::NodeStatus onRunning() override {
+    if (weld_complete_) {
+      stopServo();
+      switchToJTCController();
+      // 用 MTC 规划 retreat
+      auto retreat = createWeldRetreatTask();
+      retreat->plan(3);
+      retreat->execute(*retreat->solutions().front());
+      return BT::NodeStatus::SUCCESS;
+    }
+    return BT::NodeStatus::RUNNING;
+  }
+};
 ```
-BT.CPP (顶层)
-├── LoadWeldProgram (读取焊接路径)
-├── MTC ApproachWeldStart (移动到焊接起点)
-├── ReactiveSequence:
-│   ├── IsArcStable (监控焊接电弧)
-│   └── Servo FollowWeldPath (沿焊缝实时跟踪)
-└── MTC Retreat (焊完退回)
-```
+
+这个案例展示了 MTC（离线规划）和 Servo（在线控制）如何在同一任务中无缝衔接。关键点是控制器切换——Servo 需要的 command interface 与 JTC 不同，必须通过 ros2_control 的 `switch_controller` 服务切换。
 
 ### ⚠️ 常见陷阱
 
@@ -1580,11 +1824,24 @@ BT.CPP (顶层)
    正确做法：ACM 只 disable 同一臂内相邻连杆，跨臂碰撞必须检查
 ```
 
+```
+🧠 思维陷阱：认为双臂必须用 14-DOF 联合规划
+   新手想法："两臂必须同时规划才能避免碰撞"
+   实际上：如果两臂的工作空间在时间上可以错开（交替工作），
+          或空间上不重叠（各自负责不同区域），独立 7-DOF 规划
+          加上实时安全距离监控就足够了。联合规划只在需要精确
+          同步配合（如双臂共同搬运大物体）时才必要。
+   决策标准：先尝试独立规划 + 安全监控，
+            只有确认不够时才升级到联合规划。
+```
+
 ### 练习
 
 1. **[思考题]** 14-DOF 联合规划的 C-space 是独立 7-DOF 的两倍。OMPL 采样效率随维度急剧下降。替代策略？（考虑优先级规划、时间参数化协调）
 
 2. **[跨章综合题]** 结合 M12（ros2_control）、M13（BT.CPP）、M14（MoveIt2+MTC），设计一个完整的 pick-and-place 系统架构：(a) BT.CPP 顶层编排包含错误恢复，(b) BT Action 节点内部调用 MTC 做多阶段规划，(c) MTC 输出轨迹通过 JTC 执行，(d) PlanningScene 动态管理碰撞对象。画出完整的系统架构图和数据流。
+
+3. **[A 型]** 为焊接案例实现控制器切换逻辑：用 ros2_control 的 `switch_controller` 服务在 JTC 和 ForwardCommandController 之间切换。验证切换延迟和平滑性。
 
 ---
 
@@ -1643,17 +1900,56 @@ MTC Task (MoveIt2)
 
 ---
 
+## 本章常见误解汇总
+
+| 误解 | 正确理解 |
+|------|---------|
+| "MoveIt2 只是 OMPL 的封装" | OMPL 只是 MoveIt2 的规划器插件之一。MoveIt2 还包括 PlanningScene（碰撞世界管理）、5+ 种 IK 插件、轨迹处理管线（平滑+时间参数化）、执行管理（ros2_control 集成）、MTC（多阶段任务规划）。把 MoveIt2 等同于 OMPL 就像把 Linux 等同于 kernel |
+| "MoveItCpp 一定比 MoveGroupInterface 快" | 规划本身耗时（OMPL 搜索 100ms-2s）远大于通信开销（1-10ms）。MoveItCpp 的优势只有在高频重规划（如 visual servoing 每 100ms 重规划）时才显著。单次规划时两者差距可忽略 |
+| "PlanningScene 只包含静态障碍物" | PlanningScene 是动态的——运行时可添加/删除/移动碰撞对象。相机检测到新物体 → 添加；抓取物体 → attach 到末端；放下 → detach 到环境；障碍物移走 → 删除 |
+| "ACM 越多越好（跳过越多碰撞检查越快）" | ACM 中跳过不该跳过的碰撞对比检查多余的碰撞对危险得多。多余的碰撞检查只浪费微秒级 CPU 时间，缺失的碰撞检查可能导致物理碰撞（破坏设备）。Setup Assistant 自动生成的 ACM 已经足够 |
+| "MTC 只能做 pick-and-place" | MTC 的 Stage 抽象足够通用，可以编排任何多阶段运动：装配、焊接、打磨、工具切换、多臂协调。Stage 的 Generator/Propagator/Connector 三类型覆盖了运动规划的所有数据流模式 |
+| "最新/最快的规划器一定最好" | cuMotion 需要 GPU，且对碰撞场景有特定要求。对于大多数桌面 pick-and-place，OMPL RRT-Connect 100ms 内就能给出可行路径。选择规划器应基于场景需求，不是性能排行 |
+| "Servo 的碰撞检测和规划器一样可靠" | Servo 碰撞检测频率（10 Hz）远低于命令频率（100 Hz）。两次检测之间有 10 步运动未被检查。Servo 的碰撞检测是「尽力而为」的安全网，不是规划器级别的保证 |
+| "pluginlib 灵活性没有代价" | pluginlib 的代价包括：dlopen 延迟（10-100ms）、虚函数调用（比直接调用慢 2-5ns）、配置复杂度（plugin.xml + YAML + CMake 多处需一致）、调试困难（断点不易设在动态加载的代码中） |
+| "双臂必须用联合规划" | 如果两臂工作空间在时间上可以错开或空间上不重叠，独立 7-DOF 规划加上实时安全距离监控就足够。联合 14-DOF 规划在大多数场景下过于耗时且不必要 |
+| "addCollisionObjects 后可以立即规划" | addCollisionObjects 走 topic 发布，调用返回不代表所有 PlanningSceneMonitor 都已处理了 diff。推荐使用 applyCollisionObject（通过服务同步应用），或在规划前验证场景已更新 |
+
 ## 本章小结
 
 | 知识点 | 核心内容 | 难度 |
 |--------|---------|------|
 | M14.1 架构全景 | pluginlib 三层工厂、分层解耦 | ⭐⭐ |
-| M14.2 两套 API | MoveGroupInterface vs MoveItCpp | ⭐⭐ |
+| M14.2 两套 API | MoveGroupInterface vs MoveItCpp vs Python API | ⭐⭐ |
 | M14.3 PlanningScene | 碰撞对象、ACM、attached、diff 同步 | ⭐⭐ |
 | M14.4 MTC 深度 | Stage 体系、Composite Pattern、pick-and-place | ⭐⭐ |
-| M14.5 规划管线 | 链式/并行、规划器选型决策流程 | ⭐⭐⭐ |
-| M14.6 Servo | 实时笛卡尔控制、奇异性管理 | ⭐⭐⭐ |
-| M14.7 多机器人 | 双臂 ACM、三种协调策略、工业案例 | ⭐⭐⭐⭐ |
+| M14.5 规划管线 | 链式/并行、规划器选型决策流程、时间参数化 | ⭐⭐⭐ |
+| M14.6 Servo | 实时笛卡尔控制、参数调优、奇异性管理 | ⭐⭐⭐ |
+| M14.7 多机器人 | 三种架构、双臂 ACM、工业案例深度分析 | ⭐⭐⭐⭐ |
+| M14.8 前沿展望 | MoveIt2 路线图、Servo 2.0、Foundation Model | ⭐⭐⭐⭐ |
+
+### 术语速查表
+
+| 术语 | 英文 | 一句话定义 |
+|------|------|-----------|
+| MoveIt2 | MoveIt2 | ROS2 生态的机械臂运动规划框架，通过 pluginlib 统一规划器/IK/碰撞检测接口 |
+| MoveGroupInterface | MoveGroupInterface | MoveIt2 的高层用户 API，通过 ROS2 Action 与 move_group 节点通信 |
+| MoveItCpp | MoveItCpp | MoveIt2 的进程内直调 API，跳过 ROS 通信，适合高频重规划 |
+| PlanningScene | Planning Scene | MoveIt2 中管理机器人状态、环境碰撞对象和 ACM 的核心组件 |
+| ACM | Allowed Collision Matrix | 定义哪些碰撞对不需检查的矩阵，对碰撞检测性能至关重要 |
+| MTC | MoveIt Task Constructor | MoveIt2 的多阶段运动规划框架，用 Stage 抽象编排复杂操作 |
+| Stage | Stage | MTC 的基本规划单元，分为 Generator/Propagator/Connector 三类 |
+| InterfaceState | Interface State | MTC Stage 之间传递的状态，包含机器人关节状态和 PlanningScene 快照 |
+| SerialContainer | Serial Container | MTC 中顺序执行多个子 Stage 的容器（Composite Pattern） |
+| Alternatives | Alternatives | MTC 中尝试多种方案并保留所有可行解的容器 |
+| Merger | Merger | MTC 中合并多个子 Stage 的解的容器（用于双臂同步规划） |
+| PlanningPipeline | Planning Pipeline | MoveIt2 的规划管线，支持链式（OMPL→STOMP）和并行（多规划器取最优） |
+| MoveIt Servo | MoveIt Servo | 接收笛卡尔/关节速度命令，实时计算 IK 并发送给 ros2_control 的组件 |
+| TOTG | Time-Optimal Time Parameterization | MoveIt2 默认的时间参数化器，满足速度+加速度约束 |
+| Ruckig | Ruckig | Jerk-limited 时间参数化器，输出更平滑的轨迹 |
+| CollisionObject | Collision Object | PlanningScene 中的环境碰撞体（桌子、障碍物等） |
+| AttachedCollisionObject | Attached Collision Object | 附着到机器人连杆上的碰撞体（如被抓取的物体） |
+| SRDF | Semantic Robot Description Format | 定义规划组、ACM、末端执行器等语义信息的文件 |
 
 ## 累积项目：本章新增模块
 
@@ -1694,3 +1990,277 @@ mini_manip_ws/
 | Servo 奇异性失控 | 未设奇异性管理 | 1. 设置奇异性减速/硬停止阈值 2. 降低速度缩放 | M14.6 |
 | 双臂互穿 | ACM 错误跳过跨臂碰撞 | 1. 检查 SRDF 2. 确认跨臂碰撞未 disable | M14.7 |
 | pluginlib 加载失败 | 插件未安装或路径错误 | 1. `ros2 pkg list` 2. 检查 plugin.xml | M14.1 |
+| MTC 执行超时 | Action Server 响应慢 | 1. 增大 MTC 执行超时 2. 检查 ros2_control 状态 3. 检查网络延迟 | M14.4 |
+| Servo 抖动 | 控制频率不足或增益过高 | 1. 检查 Servo 频率 (应 ≥ 100 Hz) 2. 降低速度缩放 3. 检查 IK 求解器 | M14.6 |
+
+---
+
+## 本章常见误解汇总
+
+| 误解 | 正确理解 | 相关章节 |
+|------|---------|---------|
+| "MoveIt2 是一个规划算法" | MoveIt2 是规划框架——通过 pluginlib 统一 IK/规划器/碰撞检测/时间参数化的接口 | §1 |
+| "MoveGroupInterface 和 MoveItCpp 功能相同" | MoveGroupInterface 走 ROS2 Action（跨进程），MoveItCpp 直接调用（进程内）——后者更快 | §2 |
+| "PlanningScene 是实时的" | PlanningScene 通过 diff 机制同步，有延迟——规划前需确认已同步 | §3 |
+| "MTC 替代了 MoveIt2" | MTC 是 MoveIt2 的上层——它用 MoveIt2 的规划能力处理多阶段操作任务 | §4 |
+| "Servo 可以替代离线规划" | Servo 适合在线微调/遥操作，不适合长距离运动——两者定位互补 | §6 |
+| "MoveIt2 只支持单臂" | MoveIt2 支持多 move group，可以配置双臂——但需要正确设置 ACM | §7 |
+| "Foundation Model 可以替代 MoveIt2" | FM 提供高层语义理解，MoveIt2 提供安全保证——两者互补而非替代 | §8 |
+| "Python API 不如 C++ API" | MoveIt2 的 moveit_py 已成为推荐入口——80%+ 新部署使用 Python | §8 |
+
+### 术语速查表
+
+| 术语 | 英文 | 一句话定义 |
+|------|------|-----------|
+| MoveGroupInterface | MoveGroup 接口 | MoveIt2 的 ROS2 Action 封装 API |
+| MoveItCpp | MoveIt C++ | MoveIt2 的进程内直调 API |
+| PlanningScene | 规划场景 | 包含机器人状态、碰撞对象、ACM 的环境模型 |
+| MTC | MoveIt Task Constructor | MoveIt2 的多阶段操作任务编排框架 |
+| ACM | Allowed Collision Matrix | 允许碰撞矩阵——标记哪些 link 对可以跳过碰撞检查 |
+| Servo | MoveIt Servo | 实时笛卡尔/关节空间增量控制组件 |
+| pluginlib | ROS2 Plugin Library | ROS2 的运行时插件加载框架 |
+| SRDF | Semantic Robot Description Format | 语义机器人描述——定义 move group、默认位姿、ACM |
+| Setup Assistant | MoveIt2 设置助手 | 生成 MoveIt2 配置包的 GUI 工具 |
+
+## 本章与后续章节的关系
+
+本章是机械臂章节的集成终点——前面所有章节的知识在这里汇聚为一个可部署的工业系统。
+
+| 前置章节 | 在 MoveIt2 中的体现 |
+|---------|-------------------|
+| M01 Pinocchio | pick-ik 插件的底层动力学引擎 |
+| M03 IK 求解器 | MoveIt2 的 kinematics_solver 插件 |
+| M04 碰撞检测 | FCL/Bullet 碰撞检测插件 |
+| M07 OMPL | 默认规划器插件 |
+| M08 轨迹优化 | CHOMP/STOMP response adapter |
+| M09 GPU 加速 | cuMotion 插件 |
+| M10 时间参数化 | TOTG/Ruckig response adapter |
+| M12 ros2_control | 执行层——JointTrajectoryController |
+| M13 BehaviorTree | 任务编排层——BT + MTC |
+
+## 研究实践建议
+
+### 入门级
+1. 用 **MoveIt Setup Assistant** 为你的机器人生成配置包
+2. 在 RViz 中用 MoveGroupInterface 做简单的 pick-and-place
+
+### 进阶级
+1. 用 **MTC** 编排完整的 pick-and-place 流程（包含 approach/grasp/lift/place）
+2. 配置 **链式管线**（OMPL → STOMP），对比与单独 OMPL 的路径质量
+
+### 研究级
+1. 将 **cuMotion** 集成到 MoveIt2，在动态环境中测试实时重规划
+2. 实现 **Foundation Model + MTC** 集成——VLM 输出抓取策略，MTC 执行
+
+## 版本信息速查
+
+| 工具 | 版本 | ROS2 发行版 | 许可证 |
+|------|------|------------|--------|
+| MoveIt2 | 2.14.x (Kilted) | Humble/Jazzy/Kilted/Rolling | BSD-3 |
+| MTC | 2.x | Humble/Jazzy/Rolling | BSD-3 |
+| MoveIt Setup Assistant | 2.x | 同上 | BSD-3 |
+| MoveIt Servo | 2.0 | Jazzy+ | BSD-3 |
+| moveit_py | 2.x | Jazzy+ (推荐入口) | BSD-3 |
+| cuMotion (Isaac ROS) | 3.x | Humble/Jazzy | NVIDIA License |
+
+> **版本注意**：MoveIt2 在 Humble、Jazzy、Kilted 三个发行版之间有 API 差异。特别是 MTC 的 Stage API 和 Servo 2.0 的配置方式在 Jazzy+ 中有重大变化。部署前请核对你使用的 ROS2 发行版对应的 MoveIt2 文档。moveit_py (Python API) 在 Jazzy 之后成为推荐入口——新项目建议优先使用 Python。
+
+---
+
+## MoveIt2 全栈部署检查清单 ⭐⭐
+
+从零搭建 MoveIt2 系统的完整步骤和常见陷阱：
+
+```
+MoveIt2 全栈部署
+│
+├── Step 1: URDF/XACRO 准备
+│   ├── 确认关节限位正确 (joint_limits.yaml)
+│   ├── 确认碰撞几何与视觉几何匹配
+│   └── 确认 base_link 和 end_effector_link 正确
+│
+├── Step 2: MoveIt Setup Assistant
+│   ├── 生成 SRDF (语义描述)
+│   ├── 配置 move group (planning_group)
+│   ├── 设置 ACM (禁用相邻 link 碰撞)
+│   └── 生成 config 包
+│
+├── Step 3: 配置验证
+│   ├── 在 RViz 中加载 MoveIt2
+│   ├── 用 MoveGroupInterface 做简单 plan
+│   ├── 检查 FK/IK 结果是否合理
+│   └── 检查碰撞检测是否正确
+│
+├── Step 4: 执行层连接
+│   ├── 配置 ros2_control 硬件接口
+│   ├── 配置 controllers.yaml
+│   ├── 测试 JointTrajectoryController
+│   └── 在仿真中验证完整链路
+│
+├── Step 5: 高级配置 (可选)
+│   ├── 替换 IK 求解器 (KDL → pick-ik)
+│   ├── 配置链式管线 (OMPL → STOMP)
+│   ├── 添加 MTC 任务编排
+│   └── 集成 cuMotion (GPU 加速)
+│
+└── Step 6: 生产部署
+    ├── 参数调优 (规划超时、速度缩放)
+    ├── 安全参数设置 (碰撞裕度、速度限制)
+    ├── 监控和日志配置
+    └── 故障降级策略
+```
+
+### MoveIt2 组件替换速查
+
+MoveIt2 的核心价值在于**每个组件都可以通过修改 YAML 配置替换**——以下是最常见的替换场景：
+
+| 组件 | 默认 | 推荐替代 | 何时替换 |
+|------|------|---------|---------|
+| IK 求解器 | KDL | pick-ik (Pinocchio) | 需要更快 IK 或碰撞感知 IK |
+| 规划器 | OMPL | cuMotion | 有 GPU 且需要实时重规划 |
+| 碰撞检测 | FCL | Bullet | 需要连续碰撞检测 (CCD) |
+| 时间参数化 | TOTG | Ruckig Filter | 需要 jerk 连续轨迹 |
+| 可视化 | RViz | Foxglove | 需要 Web 远程监控 |
+
+### MTC Stage 设计深度——pick-and-place 完整实例 ⭐⭐⭐
+
+MTC 将复杂操作任务分解为 Stage 序列。以下是一个完整 pick-and-place 的 Stage 结构：
+
+```
+MTC pick-and-place Task
+│
+├── current_state (CurrentState)
+│   └── 获取当前机器人状态
+│
+├── open_gripper (MoveTo)
+│   └── 打开夹爪
+│
+├── pick (SerialContainer)
+│   ├── approach_grasp (MoveRelative)
+│   │   └── 沿抓取方向移动 10cm
+│   ├── generate_grasp_pose (GenerateGraspPose)
+│   │   └── 在目标物体周围生成多个候选抓取位姿
+│   ├── allow_collision (ModifyPlanningScene)
+│   │   └── 允许夹爪与目标物体碰撞
+│   ├── close_gripper (MoveTo)
+│   │   └── 闭合夹爪
+│   ├── attach_object (ModifyPlanningScene)
+│   │   └── 将物体附着到夹爪 link
+│   └── lift (MoveRelative)
+│       └── 沿 Z 轴向上抬起 10cm
+│
+├── connect (Connect)
+│   └── 用 OMPL 连接 pick 和 place 的路径
+│
+└── place (SerialContainer)
+    ├── approach_place (MoveRelative)
+    ├── generate_place_pose (GeneratePlacePose)
+    ├── open_gripper (MoveTo)
+    ├── detach_object (ModifyPlanningScene)
+    ├── forbid_collision (ModifyPlanningScene)
+    └── retreat (MoveRelative)
+```
+
+**MTC 的关键设计思想**：
+
+1. **Stage 是独立的规划单元**——每个 Stage 可以有不同的规划器、约束、超时
+2. **Connect Stage 自动搜索**——连接两个 Stage 之间的空闲运动，不需要手动指定
+3. **多解探索**——GenerateGraspPose 生成多个候选，MTC 自动选择成功率最高的
+
+> **本质洞察**：MTC 的 Stage 体系本质上是 Composite Pattern 的应用——SerialContainer 是 Composite，具体 Stage 是 Leaf。这和 BT 的 Sequence/Action 结构完全同构——但 MTC 的 Stage 处理的是运动规划问题（每个 Stage 调用 MoveIt2 的规划能力），而 BT 的节点处理的是任务编排逻辑。MTC 和 BT 的分工是：BT 决定"做什么"（检测→抓取→放置），MTC 决定"怎么做"（沿什么方向接近、从哪里抓、怎么放）。
+
+---
+
+## 跨章综合练习 ⭐⭐⭐
+
+**题目**：综合 M03（IK）+ M07（OMPL）+ M10（时间参数化）+ M13（BT）+ M14（MoveIt2），搭建完整的工业 pick-and-place 系统：
+
+1. 用 **MoveIt Setup Assistant** 为 Franka Panda 生成配置包
+2. 替换 IK 求解器：KDL → **pick-ik** (Pinocchio)
+3. 配置**链式管线**：OMPL → STOMP
+4. 配置**时间参数化**：TOTG → Ruckig Filter
+5. 用 **MTC** 编排 pick-and-place 多阶段任务
+6. 用 **BT.CPP** 编排高层任务逻辑（含错误恢复）
+7. 在 **Gazebo** 中仿真验证完整链路
+8. 收集 10 次执行的性能数据（规划时间、执行时间、成功率）
+
+**评分标准**：成功率 > 80%，端到端延迟 < 3 秒，路径质量（无明显绕路或抖动）。
+
+---
+
+## MoveIt2 生态系统全景 ⭐⭐
+
+```
+MoveIt2 生态系统 (2026)
+│
+├── 核心框架
+│   ├── moveit_core — 基础数据结构和接口
+│   ├── moveit_ros — ROS2 集成层
+│   └── moveit_planners — 规划器插件集合
+│
+├── 规划器生态
+│   ├── OMPL — 默认采样规划
+│   ├── CHOMP — 协变梯度优化
+│   ├── STOMP — 随机轨迹优化
+│   ├── Pilz — 工业标准运动
+│   └── cuMotion — NVIDIA GPU 加速
+│
+├── IK 求解器生态
+│   ├── KDL — 默认数值 IK
+│   ├── TRAC-IK — 双线程竞速 IK
+│   ├── IKFast — 解析 IK (OpenRAVE)
+│   ├── pick-ik — Pinocchio IK (最新)
+│   └── BioIK — 进化算法 IK
+│
+├── 上层框架
+│   ├── MTC — 多阶段操作任务
+│   ├── MoveIt Servo — 实时笛卡尔控制
+│   └── moveit_py — Python API
+│
+├── 工业扩展
+│   ├── Tesseract — SwRI 工业级替代
+│   ├── MoveIt Pro — PickNik 商业版
+│   └── Isaac ROS — NVIDIA 集成
+│
+└── 可视化
+    ├── RViz — 默认
+    ├── Foxglove — Web 远程
+    └── Groot2 — BT 可视化
+```
+
+> **跨领域类比**：MoveIt2 的 pluginlib 架构类似于 Web 框架中的**中间件模式**——Express.js 不规定你用什么数据库、什么模板引擎、什么认证方式，它只提供中间件接口和请求/响应管线。MoveIt2 不规定你用什么 IK 求解器、什么规划器、什么碰撞检测器，它只提供 pluginlib 接口和规划请求/响应管线。两者的核心价值都在于**接口标准化和可替换性**。
+
+---
+
+## MoveIt2 实际部署经验——常见错误和教训 ⭐⭐
+
+| 常见错误 | 后果 | 正确做法 |
+|---------|------|---------|
+| 不设置 PlanningScene 碰撞对象 | 轨迹穿过桌面或其他障碍物 | 在规划前通过 PlanningSceneInterface 添加所有已知障碍物 |
+| 用 MoveGroupInterface 做高频规划 | ROS2 Action 通信延迟 ~10ms | 切换到 MoveItCpp 进程内直调 |
+| 不等待 PlanningScene 同步 | 碰撞对象未生效就开始规划 | 调用 `applyPlanningScene()` 后等待确认 |
+| ACM 配置过于宽松 | 相邻但不应碰撞的 link 被跳过检查 | 只禁用物理上永远不会碰撞的 link 对 |
+| MTC 的 GenerateGraspPose 采样不足 | 成功率低 | 增加采样数量和角度范围 |
+| Servo 奇异性管理未开启 | 接近奇异构型时末端失控 | 设置奇异性减速阈值（如条件数 > 100 时开始减速） |
+
+### MoveIt2 vs Tesseract 选型 ⭐⭐
+
+Tesseract (SwRI, San Antonio) 是 MoveIt2 的主要替代框架：
+
+| 维度 | MoveIt2 | Tesseract |
+|------|---------|-----------|
+| 社区规模 | 大（PickNik + 全球社区） | 中等（SwRI + 工业用户） |
+| TrajOpt 支持 | ❌ (用 CHOMP/STOMP 替代) | ✅ 原生 TrajOpt |
+| 碰撞检测 | FCL / Bullet | Bullet / FCL / Tesseract 自研 |
+| 工业认证 | 部分（PickNik 协助） | 深度（SwRI 面向工业用户） |
+| ROS2 集成 | ✅ 原生 | ✅ 但独立维护 |
+| Python API | moveit_py (Jazzy+) | tesseract_python (有限) |
+| 学习曲线 | 中 | 中-高 |
+
+**何时选择 Tesseract？** 当你需要 TrajOpt 的硬碰撞约束保证，且不想用 CHOMP/STOMP 的软约束方式时。SwRI 的工业客户（如焊接、切割）通常选择 Tesseract。
+
+**何时选择 MoveIt2？** 大多数情况——更大的社区、更多的教程、更好的 Python 支持、更活跃的维护。
+
+> **延伸阅读**：
+> - Coleman et al., "Reducing the Barrier to Entry of Complex Robotic Software: a MoveIt! Case Study", *Journal of Software Engineering for Robotics*, 2014——MoveIt 最早的系统性论文，阐述了 pluginlib 架构设计的动机
+> - Gorner et al., "MoveIt Task Constructor for Task-Level Motion Planning", *ICRA*, 2019——MTC 的核心论文，展示了如何将复杂操作任务分解为可组合的阶段

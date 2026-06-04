@@ -61,6 +61,14 @@ LQR/LQG 与 Riccati 方程
     └── 卫星姿态控制 LQR
 ```
 
+### 预计阅读时间
+
+| 阅读方式 | 时间 | 适合谁 |
+|---------|------|--------|
+| 精读（含推导练习） | 10-12 小时 | 需要完整掌握 Riccati 四条推导路径和 LQR-RL 连接的读者 |
+| 速读（跳过证明细节） | 4-5 小时 | 已有控制理论基础、需要快速理解 LQR 框架的读者 |
+| 速查（只看表格和速查卡） | 30 分钟 | 遇到具体 ARE 求解或 LQR 调参问题时回来查阅 |
+
 ---
 
 ### 0. 为什么 LQR 是最优控制的"果蝇"
@@ -1624,32 +1632,6 @@ $$\boxed{-\dot P=A^\top P+PA-PBR^{-1}B^\top P+Q,\quad P(T)=Q_f.}$$
 
 ---
 
-### 补充：课程路线图调研记录（来自「第三批·专题2」）
-
-> **编者注**：以下三节"补充"材料来自早期版本（旧编号"第三批·专题 2"），对应最终编排的专题 3.5（LQR/LQG 与 Riccati 方程）。这些材料提供了独立的学时规划、习题和进阶路线，与上方正文互为补充。其中引用的"专题 1"对应 3.1+3.2、"专题 3"对应 3.3+3.4、"专题 4"对应 3.9。
-
-**任务定位**：本指南是博士前数学路线图第三批专题 2（现专题 3.5），承接专题 3.1--3.2（变分法与 PMP）的理论基础，向前桥接专题 3.9（DDP/iLQR）、第五批（Kalman 滤波/状态估计）与全栈 RL 理论。学生背景为 RL 运动控制 + SLAM 工程师，已掌握凸分析、对偶、AD/隐式微分与 PMP/HJB，故可省略基础部分，把篇幅集中在 **Riccati 方程的双重推导、数值稳健解法、LQR-RL 连接** 三大主线。
-
-**调研策略**：采用「广度优先 + 主题分包」的并行子代理方案。原计划 4 个子代理（教材、ML/RL 论文、软件库、教学资源），首轮因 prompt 体量超限失败 2 个，第二轮拆细重发，最终成功获取四类素材：
-
-1. **经典教材链接核实**（Anderson-Moore、Bertsekas、Kwakernaak-Sivan、Zhou-Doyle-Glover、Tedrake、Liberzon、Lewis-Vrabie-Syrmos、Åström-Murray），共 8 本，均给出可访问 URL；其中 **Bertsekas 第 4 版 Vol.1 中"Perfect State Information"实为第 3 章而非第 4 章**——任务描述存在小错位，本指南按正确章号引用。
-2. **现代 LQR-RL 论文调研**：12 篇核心论文（Dean 2020、Mania 2019、Fazel 2018、Simchowitz-Foster 2020、Abbasi-Yadkori 2011、Tu-Recht 2019、Cohen-Koren-Mansour 2019、Bradtke 1994、Recht 2019 综述、Bhandari-Russo 2019、Malik 2020、Li-Todorov 2004），arXiv/PMLR 链接均已核实，并梳理出 **"LQR 作为连续控制 RL 果蝇模型"** 的统一叙事。
-3. **经典源头论文**（Kalman 1960×2、Doyle 1978、Kalman 1964 inverse optimality）DOI 全部核实。
-4. **软件库 API**：scipy / python-control / Drake / Crocoddyl / acados / MATLAB 全部核实并给出函数签名。
-5. **教学资源**：Boyd EE363、Tedrake 6.832、Manchester 16-745、Levine CS285、Abbeel CS287、Recht argmin 博客、DR_CAN B 站、知乎专栏。
-
-**关键发现与修正**：(a) Kwakernaak-Sivan 全书在 Twente 官网的免费 PDF 实际无法找到，改用 Internet Archive 借阅版与目录 PDF；(b) Anderson-Moore 在 e-booksdirectory 的 PDF 流通已久，标记为"作者默许"；(c) Bertsekas 章号修正；(d) Recht 博客域名已迁至 archives.argmin.net；(e) acados 没有独立 LQR API，需通过 OCP + HPIPM Riccati 内核实现。
-
-**篇幅与结构决策**：因学生已掌握 PMP，把 PMP→Riccati 的推导压缩为半小时即可完成，节省学时给 ARE 数值解、Schur/Hamilton 矩阵法、policy gradient 全局收敛证明这三个新内容；档位 3+4 共 22 学时，按"6 大块 × ~3.5h"分配，留 1h 弹性。
-
----
-
-
-
----
-
-### 补充附录（来自「第三批·专题2：LQR与Riccati方程体系」）
-
 ### 附录 A：扩展书单
 
 **A.1 控制理论纵深**
@@ -1782,9 +1764,11 @@ D18. 设计实验对比 model-based LQR（直接解 ARE）与 model-free policy 
 
 ---
 
-### 补充：课程路线图主体内容（来自「第三批·专题2：LQR与Riccati方程体系」）
+### 深入学习路线图
 
-### 1. 学习目标
+本节将 LQR/LQG 的学习分为核心与进阶两个档位，并给出详细的教材、学时和实验指导。
+
+### 学习目标细化
 
 完成本专题后，你应当能够：
 
@@ -1797,9 +1781,9 @@ D18. 设计实验对比 model-based LQR（直接解 ARE）与 model-free policy 
 
 ---
 
-### 2. 核心章节清单（带教材 + 学时）
+### 核心章节清单（带教材与学时）
 
-下表为档位 3 的 22 小时基线方案，章节按教材正文顺序，**学时含动手实验**。
+下表为核心档位的 22 小时基线方案，章节按教材正文顺序，**学时含动手实验**。
 
 | 模块 | 章节与教材 | 学时 | 关键产出 |
 |---|---|---|---|
@@ -1810,13 +1794,13 @@ D18. 设计实验对比 model-based LQR（直接解 ARE）与 model-free policy 
 | **M5 LQR 作为 RL 特例** | Recht 2019 综述 + Fazel 2018 + Dean 2020 + Bertsekas DP Ch.3.2 | 4.5h | 实现 policy gradient + certainty-equivalence baseline |
 | **M6 机器人实战：TVLQR/iLQR/MPC** | Tedrake Ch.8.3–8.7 + Manchester 16-745 Lec5–9 + Li-Todorov 2004 | 3.5h | Drake 四旋翼 LQR + Crocoddyl iLQR 跑通 |
 
-档位 4（25h）扩展项见 §3。**每模块结束都需在自测题 + 习题 D 中各完成 2 题**，否则不得继续下一模块——这是控制系工程师常见的"会算不会判"陷阱的唯一防御。
+进阶档位（25h）扩展项见下节。**每模块结束都需在自测题 + 习题 D 中各完成 2 题**，否则不得继续下一模块——这是控制系工程师常见的"会算不会判"陷阱的唯一防御。
 
 ---
 
-### 3. 进阶章节（档位 4 扩展，+3h）
+### 进阶章节（+3h 扩展）
 
-档位 4 在档位 3 基础上选做以下专题之一即可，**强烈推荐 ADV-1 与 ADV-2 任选**，因为它们直接关联学生的 RL 兴趣：
+在核心档位基础上选做以下专题之一即可，**强烈推荐 ADV-1 与 ADV-2 任选**，因为它们直接关联 RL 方向的进一步学习：
 
 **ADV-1 Policy Gradient 全局收敛的完整证明**（+1.5h）：精读 Fazel et al. 2018 §3–4，亲手验证 LQR cost $C(K)$ 的 PL 不等式 $\|\nabla C(K)\|_F^2 \ge \mu (C(K)-C^*)$，理解 gradient dominance 为何打破"非凸 ⇒ 局部极小"的直觉。
 
@@ -1828,7 +1812,7 @@ D18. 设计实验对比 model-based LQR（直接解 ARE）与 model-free policy 
 
 ---
 
-### 4. 核心教材对照（≥ 5 本）
+### 核心教材对照
 
 下表为本专题的"金字塔"参考书。**优先阅读顺序：Tedrake Ch.8 → Liberzon Ch.6 → Anderson-Moore Part I → Bertsekas Vol.1 Ch.3 → Kwakernaak-Sivan Ch.3-5 → Zhou-Doyle-Glover Ch.14 → Lewis-Vrabie-Syrmos Ch.11**。
 
@@ -1847,7 +1831,7 @@ D18. 设计实验对比 model-based LQR（直接解 ARE）与 model-free policy 
 
 ---
 
-### 5. 关键定理（10 条）
+### 关键定理速查（10 条）
 
 下面 10 条定理是本专题的"骨架"，**每条都需自己手写至少一遍证明**或熟到可在白板上 5 分钟讲完。
 
@@ -1873,7 +1857,7 @@ D18. 设计实验对比 model-based LQR（直接解 ARE）与 model-free policy 
 
 ---
 
-### 6. 必读论文（10 篇）
+### 必读论文（10 篇）
 
 10 篇论文按"经典源头 → 现代 RL 理论 → 算法工程"三条线分组。**优先级 ★★★ 必读 / ★★ 选读 / ★ 参考**。
 
@@ -1897,7 +1881,7 @@ D18. 设计实验对比 model-based LQR（直接解 ARE）与 model-free policy 
 
 ---
 
-### 7. C++/Python 库映射
+### C++/Python 库映射
 
 下面是 LQR 工程实现的"五件套"，**每个库都至少跑通一个示例**。
 
@@ -1928,7 +1912,7 @@ D18. 设计实验对比 model-based LQR（直接解 ARE）与 model-free policy 
 
 ---
 
-### 8. 学习资源（在线）
+### 在线学习资源
 
 **课程讲义（按推荐度排序）**
 
@@ -1954,9 +1938,9 @@ D18. 设计实验对比 model-based LQR（直接解 ARE）与 model-free policy 
 
 ---
 
-### 9. 时间预算
+### 时间预算
 
-档位 3（22h 基线）：
+核心档位（22h 基线）：
 
 | 模块 | 学时 | 阅读 | 推导/证明 | 编程实验 |
 |---|---|---|---|---|
@@ -1968,11 +1952,11 @@ D18. 设计实验对比 model-based LQR（直接解 ARE）与 model-free policy 
 | M6 机器人实战 | 3.5h | 1.0 | 0.5 | 2.0 |
 | **合计** | **22h** | **8.0** | **7.0** | **7.0** |
 
-档位 4（25h）：在档位 3 基础上加 ADV-1（Fazel 证明，1.5h）+ ADV-3（H₂/H∞ 桥梁，1.5h）；或选 ADV-2 + ADV-4 组合。**节奏建议**：连续 4 周，每周 5–6h，周末 2h 实战 + 周中 1h/天理论；不要一次性赶完，Riccati 的几何直觉需要"睡眠加固"。
+进阶档位（25h）：在核心基础上加 ADV-1（Fazel 证明，1.5h）+ ADV-3（$H_2/H_\infty$ 桥梁，1.5h）；或选 ADV-2 + ADV-4 组合。**节奏建议**：连续 4 周，每周 5--6h，周末 2h 实战 + 周中 1h/天理论；不要一次性赶完，Riccati 的几何直觉需要"睡眠加固"。
 
 ---
 
-### 10. 自测题（5 道）
+### 章末自测题（5 道）
 
 完成本专题后，闭卷在 90 分钟内做完以下 5 题。**通过线：4/5 正确，且每题需写出关键步骤而非只给答案**。
 
@@ -1988,7 +1972,7 @@ D18. 设计实验对比 model-based LQR（直接解 ARE）与 model-free policy 
 
 ---
 
-### 11. 常见陷阱（10 条）
+### 易错陷阱汇总（10 条）
 
 1. **混淆 PMP 协态 $p$ 与 Riccati $P$ 的角色**——前者是逐轨迹的对偶变量（向量），后者是状态独立的反馈增益生成矩阵；只有线性协态假设 $p = P(t)x$ 才把两者联系起来。这一假设的合法性来自 LQR 的二次值函数结构，对一般非线性系统不成立。
 
@@ -2012,7 +1996,7 @@ D18. 设计实验对比 model-based LQR（直接解 ARE）与 model-free policy 
 
 ---
 
-### 补充练习题
+### 综合练习题
 
 **练习 LQR.1** ⭐（手算 ARE）：对一维不稳定系统 $\dot{x} = 2x + u$，$Q = 1$，$R = 1$，手算连续 ARE 的正定解 $P$。验证闭环极点 $a - b^2P/r = 2 - P$ 在左半平面。
 
@@ -2026,7 +2010,22 @@ D18. 设计实验对比 model-based LQR（直接解 ARE）与 model-free policy 
 
 ---
 
-### 12. 桥梁：与前后专题的衔接
+### 本章常见误解汇总
+
+| 误解 | 正确理解 |
+|------|---------|
+| LQR 是过时的经典方法，RL 已经替代了它 | LQR 是现代 RL 理论的核心 benchmark，Policy Gradient 全局收敛的证明首先在 LQR 上完成（Fazel 2018） |
+| Riccati 方程只是一个特殊的数学公式 | Riccati 方程是 HJB、DP、PMP、完成平方法四条独立路径的汇聚点，其不爆破性源于 Hamilton 矩阵的辛几何结构 |
+| LQG = LQR + Kalman 滤波器，自动继承 LQR 的鲁棒性 | Doyle 1978 证明 LQG 没有保证的增益/相位裕度，一个微小的模型误差就能让闭环不稳定 |
+| $Q$ 和 $R$ 越大控制效果越好 | $Q$ 和 $R$ 的相对比例才有意义：$Q/R$ 大则响应快但控制量大，$Q/R$ 小则响应慢但节能；绝对大小只影响 $P$ 的缩放 |
+| LQR 的最优增益 $K$ 在全状态空间都有效 | $K$ 仅在线性化点的邻域内最优，远离平衡点时增益方向可能完全错误，需用 TVLQR 或 MPC |
+| 可控性和可稳定性是同一回事 | 可控蕴含可稳定，但可稳定（仅要求不稳模态可控）才是 ARE 良定的最小条件 |
+| iLQR 就是 LQR 的非线性版本 | iLQR 每次迭代解一个 TVLQR 子问题，但全局是 Newton-like 方法，必须配合 line search 使用 |
+| Policy Gradient 在 LQR 上全局收敛意味着非凸优化总能找到全局最优 | 全局收敛依赖 LQR 代价函数满足 PL 不等式（gradient dominance），一般非凸问题不具备此性质 |
+
+---
+
+### 与前后专题的衔接
 
 **承接（来自前批）**
 
@@ -2040,17 +2039,17 @@ D18. 设计实验对比 model-based LQR（直接解 ARE）与 model-free policy 
 - **专题 3.9（DDP/iLQR）**：iLQR 直接以 LQR 为内核；理解本专题后专题 3.9 阅读量减半。Crocoddyl 的 `ActionModelLQR` 即为 unit test。
 - **专题 3.11--3.13（MPC 系列）**：unconstrained 线性 MPC = 有限时域 LQR + receding horizon；约束 MPC 在没有 active constraint 时退化为 LQR。理解 LQR 即理解 MPC 内核。
 - **第五批（状态估计 / SLAM）**：Kalman 滤波器 = LQR 的对偶；EKF 在测量更新阶段解一个微型 LQ 问题。LQG 直接复用 SLAM 的状态估计 + 控制律设计。
-- **第六批（学习控制 / RL 理论）**：本专题的 §M5 是整批 RL 理论的"证明范本"，所有 sample complexity / regret 论证都先在 LQR 上验证再推广。
+- **学习控制 / RL 理论**：LQR 的 RL 连接（Policy Gradient 全局收敛、Coarse-ID 样本复杂度）是整个 RL 理论的"证明范本"，所有 sample complexity / regret 论证都先在 LQR 上验证再推广。
 
 ---
 
-### 13. 总结
+### 本章总结
 
-LQR 不是一个"老控制方法"，而是 **现代连续控制 RL 的果蝇**：足够简单可证明，足够复杂有代表性。本专题的 22 学时投入在三件事上才不浪费——(1) 把 PMP 与 DP 两条路径压缩到 5 分钟可推；(2) 把 ARE 数值解、可控/可观、闭环稳定性串成一条因果链；(3) 把 Fazel-Dean-Mania-Simchowitz 这条 RL 理论叙事吃透。
+LQR 不是一个"老控制方法"，而是 **现代连续控制 RL 的果蝇**：足够简单可证明，足够复杂有代表性。学习本章的核心投入应集中在三件事上——(1) 把 PMP 与 DP 两条路径推导到可以随时复现；(2) 把 ARE 数值解、可控/可观、闭环稳定性串成一条因果链；(3) 把 Fazel-Dean-Mania-Simchowitz 这条 RL 理论叙事吃透。
 
 最深的 takeaway 有三条。**第一，LQR 的"奇迹"不在线性二次本身，而在 Riccati 方程不爆破——这是辛几何里 Hamilton 矩阵的稳定不变子空间永远存在的几何事实**。理解这一点后，对一般 HJB 数值困难（值函数可能非光滑、最优控制可能 chattering）会有正确的悲观。**第二，LQG 的分离原理是 RL 理论中"决策-估计可分"梦想的唯一精确实例；任何更复杂的设定（部分可观 RL、POMDP）都要为打破这一对偶付出复杂度代价**。**第三，policy gradient 在 LQR 上全局收敛说明"非凸 ≠ 不可学"，但代价是 $d_x$ 阶的样本复杂度损失（Tu-Recht 2019）；这给 RL 工程师一个清晰的判据：能用 model-based 就别用 model-free**。
 
-完成本专题后立刻开始专题 3（HJB 数值）与专题 4（DDP/iLQR），它们会让你在四旋翼、机械臂、足式机器人上把 LQR 的内核反复重用。RL 兴趣线则推进到 Recht 综述 + Fazel + Dean，三篇精读后即可独立阅读 minimax LQR、robust adaptive control、neural-LQR 全部当代文献。
+完成本章后建议立刻进入 HJB 方程与 DDP/iLQR 专题，它们会让你在四旋翼、机械臂、足式机器人上把 LQR 的内核反复重用。RL 方向则推进到 Recht 综述 + Fazel + Dean，三篇精读后即可独立阅读 minimax LQR、robust adaptive control、neural-LQR 全部当代文献。
 
 ---
 

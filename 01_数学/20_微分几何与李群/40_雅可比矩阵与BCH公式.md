@@ -4,6 +4,14 @@
 > **核心档位**：档位3（能推导核心定理） | **进阶档位**：档位4（能证明收敛性、理解前沿）
 > **建议时长**：档位3约30–40小时，档位4额外15–20小时，建议2–3周完成
 
+### 预计阅读时间
+
+| 阅读方式 | 时间 | 适合谁 |
+|---------|------|--------|
+| 精读（含练习与手推） | 8–10 小时 | 需要独立推导所有 Jacobian 的读者 |
+| 速读（跳过推导细节） | 3–4 小时 | 已有李群基础、只需补全 BCH 与 convention 知识的读者 |
+| 速查（只看表格和速查卡） | 30–45 分钟 | 遇到具体 Jacobian 公式或 convention 问题时回来查 |
+
 ---
 
 ### 前置自测 ⭐
@@ -62,7 +70,7 @@ $$\mathbf{J}_r(\boldsymbol{\phi}) = \int_0^1 \exp(-t\,\mathrm{ad}(\boldsymbol{\p
 
 ##### §4.3 SO(3)上的闭式Jacobian ⭐⭐
 
-由于SO(3)上 $\mathrm{ad}(\boldsymbol{\phi})^3 = -\theta^2\,\mathrm{ad}(\boldsymbol{\phi})$（其中 $\theta=\|\boldsymbol{\phi}\|$），级数可以封闭求和，得到**3×3闭式**：
+由于SO(3)上 $\mathrm{ad}(\boldsymbol{\phi})^3 = -\theta^2\,\mathrm{ad}(\boldsymbol{\phi})$（其中 $\theta=\|\boldsymbol{\phi}\|$），级数可以封闭求和，得到 **$3\times3$ 闭式**：
 
 $$\mathbf{J}_l(\boldsymbol{\phi}) = \frac{\sin\theta}{\theta}\mathbf{I} + \left(1-\frac{\sin\theta}{\theta}\right)\mathbf{a}\mathbf{a}^T + \frac{1-\cos\theta}{\theta}[\mathbf{a}]_\times$$
 
@@ -79,7 +87,7 @@ $$\mathbf{J}_l(\boldsymbol{\phi}) = \frac{\sin\theta}{\theta}\mathbf{I} + \left(
 
 ##### §4.4 SE(3)上的Jacobian ⭐⭐⭐
 
-SE(3)的Jacobian是**6×6块矩阵**。以下采用 Sola/Barfoot 约定，切向量排序为 $[\boldsymbol{\rho}, \boldsymbol{\phi}]$（**平移在前**），结构为：
+SE(3)的Jacobian是 **$6\times6$ 块矩阵**。以下采用 Sola/Barfoot 约定，切向量排序为 $[\boldsymbol{\rho}, \boldsymbol{\phi}]$（**平移在前**），结构为：
 
 $$\mathbf{J}_l^{\mathrm{SE}(3)} = \begin{bmatrix} \mathbf{J}_l^{\mathrm{SO}(3)} & \mathbf{Q}_l \\ \mathbf{0} & \mathbf{J}_l^{\mathrm{SO}(3)} \end{bmatrix}$$
 
@@ -87,7 +95,7 @@ $$\mathbf{J}_l^{\mathrm{SE}(3)} = \begin{bmatrix} \mathbf{J}_l^{\mathrm{SO}(3)} 
 
 **Q矩阵** 编码了旋转与平移之间的耦合项，其表达式涉及 $\boldsymbol{\phi}$（旋转部分）和 $\boldsymbol{\rho}$（平移部分）的多项交叉乘积。Q矩阵与专题3中的V矩阵密切相关——V矩阵是exp映射中从 $\boldsymbol{\rho}$ 到平移分量的线性映射，而Q矩阵出现在对 $\boldsymbol{\phi}$ 微分时的耦合效应中。
 
-此处闭式表达式冗长但结构清晰，建议直接参考Solà论文Appendix D或Barfoot §8.2.4的Q矩阵定义，不必死记。实际工程中优先使用manif库的 `w.ljac()` / `w.rjac()` 来获取6×6数值结果。
+此处闭式表达式冗长但结构清晰，建议直接参考Solà论文Appendix D或Barfoot §8.2.4的Q矩阵定义，不必死记。实际工程中优先使用manif库的 `w.ljac()` / `w.rjac()` 来获取 $6\times6$ 数值结果。
 
 ##### §4.5 常用表达式的Jacobian速查 ⭐⭐
 
@@ -105,7 +113,7 @@ $$\mathbf{J}_l^{\mathrm{SE}(3)} = \begin{bmatrix} \mathbf{J}_l^{\mathrm{SO}(3)} 
 
 ##### §4.6 Adjoint Jacobian：扰动模型间的桥梁 ⭐⭐⭐
 
-$\mathrm{Ad}(\mathbf{T})$ 本质上就是**从右扰动到左扰动的Jacobian**。对于SO(3)，$\mathrm{Ad}(\mathbf{R})=\mathbf{R}$（一个巧合性简化）。对于SE(3)，Adjoint是6×6矩阵且含平移-旋转耦合项。以下采用"平移在前" $[\boldsymbol{v}, \boldsymbol{\omega}]$ 排序（Sola/Barfoot 约定）：$\mathrm{Ad}(\mathbf{T}) = \begin{bmatrix}\mathbf{R} & [\mathbf{t}]_\times\mathbf{R}\\\mathbf{0}&\mathbf{R}\end{bmatrix}$。若用"旋转在前" $[\boldsymbol{\omega}, \boldsymbol{v}]$ 排序（GTSAM 约定），耦合项 $[\mathbf{t}]_\times\mathbf{R}$ 的位置从右上变为左下。
+$\mathrm{Ad}(\mathbf{T})$ 本质上就是**从右扰动到左扰动的Jacobian**。对于SO(3)，$\mathrm{Ad}(\mathbf{R})=\mathbf{R}$（一个巧合性简化）。对于SE(3)，Adjoint是 $6\times6$ 矩阵且含平移-旋转耦合项。以下采用"平移在前" $[\boldsymbol{v}, \boldsymbol{\omega}]$ 排序（Sola/Barfoot 约定）：$\mathrm{Ad}(\mathbf{T}) = \begin{bmatrix}\mathbf{R} & [\mathbf{t}]_\times\mathbf{R}\\\mathbf{0}&\mathbf{R}\end{bmatrix}$。若用"旋转在前" $[\boldsymbol{\omega}, \boldsymbol{v}]$ 排序（GTSAM 约定），耦合项 $[\mathbf{t}]_\times\mathbf{R}$ 的位置从右上变为左下。
 
 当你读到一篇用左扰动写的论文、而代码库用右扰动时，转换公式为：$\mathbf{J}^\text{left} = \mathrm{Ad}(\bar{\mathbf{T}})\cdot\mathbf{J}^\text{right}$。这是跨convention的"翻译词典"。
 
@@ -190,7 +198,7 @@ $$\mathrm{Log}(\mathrm{Exp}(\boldsymbol{\phi})\cdot\mathrm{Exp}(\delta\boldsymbo
 #### 6. 在SLAM/VIO/BA中的直接应用 ⭐⭐
 
 - **BA重投影误差Jacobian**：$\partial e_\text{reproj}/\partial\delta\boldsymbol{\xi}$ 是 $2\times 6$ 矩阵，由 $\mathbf{T}\cdot\mathbf{p}$ 对扰动的Jacobian经相机投影链式法则得到（高翔《十四讲》第7讲）
-- **PGO的between factor Jacobian**：$\partial\mathrm{Log}(\mathbf{T}_i^{-1}\mathbf{T}_j\cdot\mathbf{T}_{ij}^{-1})/\partial\delta\boldsymbol{\xi}_i$ 和 $\partial/\partial\delta\boldsymbol{\xi}_j$，是6×6矩阵，依赖Adjoint和 $\mathbf{J}_r^{-1}$
+- **PGO的between factor Jacobian**：$\partial\mathrm{Log}(\mathbf{T}_i^{-1}\mathbf{T}_j\cdot\mathbf{T}_{ij}^{-1})/\partial\delta\boldsymbol{\xi}_i$ 和 $\partial/\partial\delta\boldsymbol{\xi}_j$，是 $6\times6$ 矩阵，依赖Adjoint和 $\mathbf{J}_r^{-1}$
 - **IMU预积分协方差传播**：Forster论文的核心——通过BCH一阶近似把噪声从exp内部提取出来，用 $\mathbf{J}_r$ 做线性化传播 $15\times 15$ 协方差矩阵
 - **IEKF的更新步Jacobian**：InEKF（不变扩展卡尔曼滤波器）的优越性正是因为其Jacobian对状态无关——利用了Adjoint的群结构
 - **VIO Marginalization**：Schur消元时需要所有因子的Jacobian，FEJ（First Estimate Jacobian）策略要求固定线性化点处的Jacobian以保持一致性
@@ -205,7 +213,7 @@ $$\mathrm{Log}(\mathrm{Exp}(\boldsymbol{\phi})\cdot\mathrm{Exp}(\delta\boldsymbo
 | 2 | $\mathbf{J}_r(\boldsymbol{\phi})=\mathbf{J}_l(-\boldsymbol{\phi})$ | 3 |
 | 3 | $\mathbf{J}_l(\boldsymbol{\phi})=\mathrm{Ad}(\mathrm{Exp}(\boldsymbol{\phi}))\cdot\mathbf{J}_r(\boldsymbol{\phi})$ | 3 |
 | 4 | SO(3)闭式 $\mathbf{J}_l$, $\mathbf{J}_r$, $\mathbf{J}_l^{-1}$, $\mathbf{J}_r^{-1}$ | 3 |
-| 5 | SE(3)上的Q矩阵与6×6块Jacobian结构 | 3 |
+| 5 | SE(3)上的Q矩阵与 $6\times6$ 块Jacobian结构 | 3 |
 | 6 | BCH前三阶：$\mathbf{X}+\mathbf{Y}+\tfrac{1}{2}[\mathbf{X},\mathbf{Y}]+\cdots$ | 3 |
 | 7 | BCH一阶Jacobian形式：$\mathrm{Log}(\mathrm{Exp}(\boldsymbol{\phi})\mathrm{Exp}(\delta\boldsymbol{\phi}))\approx\boldsymbol{\phi}+\mathbf{J}_r^{-1}\delta\boldsymbol{\phi}$ | 3 |
 | 8 | BCH完整级数的存在性与收敛性（紧致李群） | 4 |
@@ -1210,7 +1218,7 @@ $$
 
 这一步就是右 Jacobian 在预积分中的直接应用——它把"指数内部的噪声"搬运到"乘法右侧的切空间小扰动"。如果忽略 $J_r$（令 $J_r = I$），相当于忽略了旋转对噪声的搬运效应。在低速运动下（$\|\phi_k\| \ll 1$），$J_r \approx I$，忽略可以接受；但在高动态场景下（无人机快速转弯、四足机器人步态切换），$\|\phi_k\|$ 可能达到 0.1-0.5 rad，$J_r$ 与 $I$ 的差异不可忽略。
 
-#### 15×15 协方差传播矩阵的逐步推导
+#### $15\times15$ 协方差传播矩阵的逐步推导
 
 定义误差状态向量为 $\delta = [\delta\phi, \delta v, \delta p, \delta b_g, \delta b_a]^\top \in \mathbb{R}^{15}$，其中：
 
@@ -1316,9 +1324,9 @@ $$
 - 采样间隔 $\Delta t = 0.01$ s（100 Hz）
 - 10 步积分，总时间 0.1 s
 - 角速度（恒定）：$\omega_m = [0.0, 0.0, 1.0]^\top$ rad/s（绕 $z$ 轴旋转）
-- 加速度（恒定）：$a_m = [0.0, 0.0, 9.81]^\top$ m/s²（静止，只有重力）
+- 加速度（恒定）：$a_m = [0.0, 0.0, 9.81]^\top$ $\text{m/s}^2$（静止，只有重力）
 - 陀螺仪偏差 $b_g = 0$，加速度计偏差 $b_a = 0$
-- 重力 $g = [0, 0, -9.81]^\top$ m/s²
+- 重力 $g = [0, 0, -9.81]^\top$ $\text{m/s}^2$
 
 **Step 1**：计算每步旋转增量：
 
@@ -1355,7 +1363,7 @@ $$
 
 在这个简化场景中，$a_m - b_a = [0, 0, 9.81]^\top$ 而 $R_i^\top g = [0, 0, 9.81]^\top$（假设初始姿态为单位阵），所以比力（specific force）在世界坐标中恰好被重力抵消，预积分速度接近零。这与直觉一致——物体静止不动。
 
-**Step 5**：协方差传播。假设陀螺仪噪声密度 $\sigma_g = 1.7 \times 10^{-4}$ rad/s/$\sqrt{\text{Hz}}$，加速度计噪声密度 $\sigma_a = 2.0 \times 10^{-3}$ m/s²/$\sqrt{\text{Hz}}$。10 步后旋转预积分的协方差约为：
+**Step 5**：协方差传播。假设陀螺仪噪声密度 $\sigma_g = 1.7 \times 10^{-4}$ rad/s/$\sqrt{\text{Hz}}$，加速度计噪声密度 $\sigma_a = 2.0 \times 10^{-3}$ $\text{m/s}^2/\sqrt{\text{Hz}}$。10 步后旋转预积分的协方差约为：
 
 $$
 \Sigma_{\Delta\phi} \approx \sum_{k=0}^{9} (J_r(\phi_k))^2 \sigma_g^2 \Delta t \approx 10 \times 1 \times (1.7 \times 10^{-4})^2 \times 0.01 \approx 2.9 \times 10^{-10} \text{ rad}^2
@@ -1977,6 +1985,20 @@ print("BCH 2阶误差:", np.linalg.norm(exact - bch2))
 
 ---
 
+### 本章常见误解汇总
+
+| 误解 | 正确理解 |
+|------|----------|
+| "左 Jacobian 和右 Jacobian 是两套独立的公式" | 它们是同一微分对象在不同平凡化（左/右）下的表达，满足 $J_r(\phi) = J_l(-\phi)$ 和 $J_l = \mathrm{Ad} \cdot J_r$ |
+| "BCH 公式的高阶项在工程中永远可以忽略" | 一阶近似只在扰动量足够小时成立；当旋转增量较大（如 IMU 长时间积分）时，$\frac{1}{2}[A,B]$ 项不可忽略 |
+| "SE(3) 的 Jacobian 是两个 SO(3) Jacobian 的对角拼接" | SE(3) 是半直积，$6\times6$ Jacobian 含非对角的 $Q_l$ 块，编码旋转与平移的耦合 |
+| "SO(3) 上 $\mathrm{Ad}_R = R$ 的简化可以推广到 SE(3)" | 这是 SO(3) 的巧合；SE(3) 的 Adjoint 是 $6\times6$ 矩阵，含 $[t]_\times R$ 耦合项 |
+| "不同库的 Jacobian 可以直接互相抄用" | 切向量排序（$[\rho,\phi]$ vs $[\phi,\rho]$）和扰动方向（左 vs 右）不同，会导致矩阵块位置互换和符号差异 |
+| "小角度分支只是性能优化" | 小角度分支是正确性要求：$\sin\theta/\theta$ 在 $\theta \to 0$ 时的浮点消减会产生 NaN |
+| "$J_l^{-1}$ 可以通过数值反转 $J_l$ 得到" | 在 $\theta$ 接近 $2\pi$ 时条件数极差，应使用闭式 $J_l^{-1}$ 表达式 |
+
+---
+
 #### 总结 ⭐
 
 本专题将专题3建立的李群 exp/log 框架转化为可微分的计算工具。核心脉络是一条清晰的链条：**扰动模型（§4.1）定义了"对什么求导" → $\mathbf{J}_l$/$\mathbf{J}_r$（§4.2--4.4）给出 exp 映射本身的导数 → 常用 Jacobian（§4.5）将基本导数组合成 SLAM 中的实际残差导数 → BCH 公式（§4.7）处理两个 exp 的乘积 → Adjoint（§4.6）在不同 convention 间翻译 → convention 对照表（§4.8）保证代码实现不出错**。
@@ -1996,5 +2018,20 @@ print("BCH 2阶误差:", np.linalg.norm(exact - bch2))
 2. **调试验证能力**：写完解析 Jacobian 后，能用数值有限差分独立验证每一列的正确性——包括正确设置扰动方向、切向量排序和步长大小。这个能力在 SLAM/VIO 系统开发中几乎每天都会用到。
 
 这两个能力的组合，意味着你不再是公式的搬运工，而是公式的制造者。面对新的传感器模型、新的运动约束或新的代价函数形式，你可以从零推导出正确的 Jacobian 并用系统化的方法验证它——这正是从"使用现有框架"到"设计新框架"的关键跨越。
+
+### 符号表
+
+| 符号 | 含义 | 首次出现 |
+|------|------|---------|
+| $\mathbf{J}_r(\phi)$ | 右 Jacobian（右扰动下 exp 映射的导数） | §14.1 |
+| $\mathbf{J}_l(\phi)$ | 左 Jacobian（左扰动下 exp 映射的导数） | §14.2 |
+| $\mathbf{J}_r^{-1}(\phi)$ | 右 Jacobian 的逆矩阵 | §15.3 |
+| $\phi$ | 旋转向量 $\phi = \theta n \in \mathbb{R}^3$ | §14.1 |
+| $\delta\phi$ | 右扰动增量（$R' = R \exp(\delta\phi^\wedge)$） | §14.1 |
+| $\operatorname{Ad}_R$ | $SO(3)$ 的 Adjoint（$\operatorname{Ad}_R = R$） | §14.5 |
+| $[A, B]$ | 矩阵交换子（Lie bracket）$AB - BA$ | §13.2 |
+| $Q_l$ | $SE(3)$ 左 Jacobian 中的旋转-平移耦合块 | §本章常见误解汇总 |
+| $\theta$ | 旋转角度 $\theta = \|\phi\|$ | §15.1 |
+| $\operatorname{BCH}(\phi_1, \phi_2)$ | Baker-Campbell-Hausdorff 公式 $\log(\exp(\phi_1^\wedge)\exp(\phi_2^\wedge))^\vee$ | §13 |
 
 ---

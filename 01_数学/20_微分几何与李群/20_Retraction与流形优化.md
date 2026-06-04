@@ -1,5 +1,13 @@
 ## 专题2：Retraction理论与流形优化基础
 
+### 预计阅读时间
+
+| 阅读方式 | 时间 | 适合谁 |
+|---------|------|--------|
+| 精读（含练习与推导验证） | 8–10 小时 | 需要理解 Retraction 框架并实现流形优化算法的读者 |
+| 速读（跳过推导细节） | 3–4 小时 | 已有优化基础、只需补全流形优化视角的读者 |
+| 速查（只看表格和算法伪代码） | 30–40 分钟 | 遇到具体 Retraction 选型或 Armijo 条件问题时回来查 |
+
 ### 前置自测
 
 📋 **前置自测**（答不出 >= 2 题 → 先回专题1「光滑流形一般理论」复习）
@@ -52,7 +60,7 @@
 ##### 1.3 Vector transport ⭐⭐⭐
 
 - **定义**：两个切空间 $T_xM$ 与 $T_{R_x(\xi)}M$ 之间的线性映射，作为 parallel transport 的一阶近似
-- **为什么需要**：共轭梯度法需要将上一步梯度"搬运"到新切空间做 β 系数计算；动量方法同理
+- **为什么需要**：共轭梯度法需要将上一步梯度"搬运"到新切空间做 $\beta$ 系数计算；动量方法同理
 - Vector transport 与 retraction 的相容性条件（differentiated retraction 自然诱导 vector transport）
 - 实践中常用的三种方式：投影型、differentiated retraction 型、parallel transport 型
 
@@ -115,7 +123,7 @@ end
 |------|------|
 | 出版 | Cambridge University Press, 2023 |
 | **免费 PDF** | nicolasboumal.net/book（预出版版，含 errata 批注） |
-| 配套视频 | **EPFL MATH-512**（2023 春），14 周 × 90 分钟完整录像，附习题解答 |
+| 配套视频 | **EPFL MATH-512**（2023 春），14 周 $\times$ 90 分钟完整录像，附习题解答 |
 | edX 课程 | 前 6 周内容，edx.org 可注册旁听 |
 | Bilibili | **BV1hHFJe8E7z**，66 集完整搬运，约 3100 播放 |
 | 档位3 必读 | Ch.1-4（几何基础 + 一阶算法）+ Ch.7 选读（球面、Stiefel、SO(n) 的例子） |
@@ -218,7 +226,7 @@ end
 
 1. **Boumal EPFL MATH-512**（2023）— 14 周完整课程，配套习题解答。nicolasboumal.net/book/#lectures。Bilibili 搬运：BV1hHFJe8E7z（66 集）
 2. **Simons Institute 1h talk** — 浓缩入门。YouTube: youtube.com/watch?v=UjaoZE0GBpg
-3. **SIAM Optimization 2023 Minitutorial** — 2×90 分钟，含 Max-Cut 代码示例
+3. **SIAM Optimization 2023 Minitutorial** — $2\times90$ 分钟，含 Max-Cut 代码示例
 4. **IROS'22 Tutorial "Riemann and Gauss meet Asimov"**（Noémie Jaquier）— 机器人学习视角。Bilibili: BV1WtWae7ErR
 
 ##### 中文社区资源
@@ -1993,8 +2001,38 @@ print("差异:", diff)  # O(theta^2) 项不同 -> retraction 只保证一阶一�
 
 ---
 
+### 本章常见误解汇总
+
+| 误解 | 正确理解 |
+|------|----------|
+| "流形优化必须使用指数映射" | 一阶优化只需一阶 Retraction；QR/polar/Cayley 往往更快且数值更稳定 |
+| "Riemannian 梯度下降就是先梯度下降再投影" | 正确顺序是先在切空间计算 Riemannian gradient（已是投影后的），然后经 Retraction 回到流形 |
+| "李群 exp 和 Riemannian Exp 是同一回事" | 李群 $\exp(tX)$ 是单参数子群生成元，Riemannian $\mathrm{Exp}_x(\xi)$ 是测地线终点；仅在 bi-invariant metric 下重合 |
+| "更新后归一化就是通用的 Retraction" | 归一化只适用于球面；对 Stiefel、Grassmann 等流形，不存在简单的"归一化"操作 |
+| "Vector transport 在动量方法中不重要" | 欧氏空间中 $v_k$ 和 $\nabla f(x_{k+1})$ 在同一空间；流形上不然，必须将 $v_k$ transport 到新切空间 |
+| "Retraction 的二阶正确性对所有算法都必要" | 一阶 Retraction 对梯度下降已经足够；只有 Newton/trust-region 等二阶方法才需要二阶 Retraction |
+| "商流形上可以直接做梯度下降" | 需要 horizontal lift 约束到水平子空间，否则会沿 fiber 方向浪费计算 |
+
+---
+
 #### 总结
 
 Retraction 理论是将欧氏优化算法"提升"到流形上的数学桥梁。**对机器人工程师而言，这不是抽象的纯数学——GTSAM 的 `retract` 接口、Ceres 的 `Manifold::Plus`、SE-Sync 的可认证全局最优，底层都是 retraction 在工作。** 学习路径建议以 Boumal 书 + EPFL 视频为主线（Bilibili 有完整搬运），Absil 书作参考，配合 Pymanopt/Geoopt 的编程实践。档位3 聚焦一阶 retraction 定义、常见例子、Riemannian gradient 和 RGD 算法，确保能独立实现球面和 SO(3) 上的优化；档位4 扩展到二阶方法、商流形和 Burer-Monteiro 理论，为理解 SE-Sync 的全局最优性证明打下基础。完成本专题后，进入专题3（李群）将拥有一个更成熟的视角：不再把 exp 当作唯一选择，而是看到它在 retraction 大家族中的特殊位置。
+
+### 符号表
+
+| 符号 | 含义 | 首次出现 |
+|------|------|---------|
+| $R_x$ | Retraction 映射，$R_x: T_xM \to M$ | §14.1 |
+| $T_xM$ | 流形 $M$ 在 $x$ 处的切空间 | §12 |
+| $\mathrm{Exp}_x(\xi)$ | Riemannian 指数映射（测地线终点） | §15.1 |
+| $\exp$ | 李群指数映射（矩阵指数） | §15.2 |
+| $\operatorname{grad} f(x)$ | Riemannian 梯度 | §14.4 |
+| $\xi$ | 切空间中的增量向量 | §14.1 |
+| $\alpha$ | 线搜索步长 | §14.4 |
+| $DR_x(0_x)$ | Retraction 在零向量处的微分 | §14.1 |
+| $\operatorname{qf}(A)$ | QR 分解中的 Q 因子（QR retraction） | §综合题D |
+| $\mathcal{T}_{\xi}$ | 向量迁移（vector transport） | §本章常见误解汇总 |
+| $St(k, n)$ | Stiefel 流形 $\{X \in \mathbb{R}^{n \times k} \mid X^\top X = I_k\}$ | §综合题A |
 
 ---

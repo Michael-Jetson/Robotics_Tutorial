@@ -523,7 +523,7 @@ static_assert(container_traits<std::array<double, 3>>::fixed_size);
 static_assert(container_traits<std::array<double, 3>>::static_size == 3);
 ```
 
-这段代码证明了偏特化能把类型中已有的编译期信息（`N = 3`）转化为 traits 中可查询的编译期常量（`static_size = 3`）。没有任何运行时判断——`std::array<double, 3>` 的大小在类型本身里就已经确定了，偏特化只是把这个事实翻译成算法能理解的协议格式。如果不用偏特化而改成全特化，就需要为 `array<double, 3>`、`array<double, 6>`、`array<int, 10>` 各写一份——这显然不可行，因为 `N` 的取值范围是无限的。偏特化正是为"匹配一族类型"而设计的。
+这段代码证明了偏特化能把类型中已有的编译期信息（`N = 3`）转化为 traits 中可查询的编译期常量（`static_size = 3`）。没有任何运行时判断——`std::array<double, 3>` 的大小在类型本身里就已经确定了，偏特化只是把这个事实翻译成算法能理解的协议格式。如果不用偏特化而改成全特化，就需要为 `array<double, 3>`、`array<double, 6>`、`array<int, 10>` 各写一份——这在实践中不可行，因为 `N` 的取值范围是无限的。偏特化正是为"匹配一族类型"而设计的。
 
 理解全特化和偏特化的区分，可以类比数据库中的精确查询和范围查询。全特化像 `WHERE type = 'Pose3'`，只匹配一个具体类型；偏特化像 `WHERE type LIKE 'Jet<%>'`，匹配一族类型。编译器的匹配策略也类似数据库优化器：先找最具体的匹配（全特化），找不到再退到范围匹配（偏特化），都没有就用默认值（主模板）。
 

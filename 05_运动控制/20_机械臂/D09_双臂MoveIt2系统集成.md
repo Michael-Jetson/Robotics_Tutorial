@@ -14,6 +14,48 @@
 
 ---
 
+## 知识导航
+
+```
+本章知识结构全景：
+
+D09 双臂 MoveIt2 / ros2_control 系统集成
+│
+├─ D9.1 双臂 URDF/Xacro 建模 ⭐⭐         ← 基础层：双臂描述文件
+│      （Xacro prefix 参数化、基座布局）
+├─ D9.2 SRDF 双臂 Planning Group ⭐⭐      ← 配置层：MoveIt2 语义描述
+│      （left_arm/right_arm/both_arms 三组）
+├─ D9.3 同步/异步规划与执行 ⭐⭐⭐          ← 规划层：14D vs 7D+7D 选型
+│      （DualArmPlanner 含 fallback）
+├─ D9.4 双臂碰撞矩阵 ACM 优化 ⭐⭐         ← 性能层：规划加速核心
+│      （组合数分析、三种优化方法）
+├─ D9.5 MTC 双臂任务编排 ⭐⭐⭐             ← 任务层：Merger 并行 + 协同
+│      （attach/touch_links 闭链注意事项）
+├─ D9.6 ros2_control 双臂同步策略 ⭐⭐⭐    ← 执行层：三种同步方案
+│      （合并轨迹/并行执行/同步触发）
+├─ D9.7 MuJoCo/Gazebo 双臂仿真 ⭐⭐        ← 验证层：仿真环境搭建
+│      （launch 文件、actuator 映射）
+├─ D9.8 MoveIt2 新特性与 Servo 2.0 ⭐⭐⭐  ← 前沿层：社区最新进展
+│      （Multi-Robot Support、计划中特性）
+└─ D9.9 安全与限制管理 ⭐⭐                 ← 安全层：分层防御体系
+       （跨臂距离监控、降级策略）
+```
+
+**推荐阅读路径**：
+- **首次学习**：D9.1 → D9.2 → D9.3 → D9.4 → D9.5 → D9.6 → D9.7 → D9.9（跳过 D9.8 新特性）
+- **已有 MoveIt2 经验**：D9.2 → D9.3 → D9.5 → D9.6（重点在双臂特有的规划与同步）
+- **仿真环境搭建**：D9.1 → D9.7（快速搭建双臂仿真）
+- **安全评审参考**：D9.4 → D9.9（碰撞与安全子系统）
+
+**预计阅读时间**：
+| 模式 | 时间 | 说明 |
+|------|------|------|
+| 精读（含练习） | 12-16 小时 | 逐节阅读 + 动手完成所有编程练习 |
+| 速读（仅理论） | 4-5 小时 | 阅读正文和代码注释，跳过练习 |
+| 速查（查表参考） | 30-45 分钟 | 仅查阅 ACM 优化表、同步策略对比表、故障排查手册 |
+
+---
+
 ## 前置自测 ⭐
 
 > 📋 **答不出 >= 2 题 → 先回前置章节复习**
@@ -28,6 +70,43 @@
 
 ---
 
+### 本章知识导航
+
+```
+D9.1 双臂 URDF 构建 ⭐
+ │  └─ URDF 合并 / 坐标系定义
+ │
+ ▼
+D9.2 SRDF 与 MoveIt2 配置 ⭐
+ │  ├─ 规划组（left/right/both）
+ │  ├─ ACM 矩阵
+ │  └─ 末端执行器
+ │
+ ▼
+D9.3 双臂规划组与约束规划 ⭐⭐
+ │  └─ both_arms 组 + 路径约束
+ │
+ ▼
+D9.4 控制器管理（ros2_control） ⭐⭐
+ │  ├─ 力矩控制器 / 位置控制器
+ │  └─ 控制器切换
+ │
+ ├─→ D9.5 行为树双臂编排 ⭐⭐
+ ├─→ D9.6 仿真与真机部署 ⭐⭐
+ └─→ D9.7 系统集成实战 ⭐⭐⭐
+```
+
+### 前置知识桥接
+
+**回顾 D01-D08**：D01-D03 建立了双臂的运动学、规划和力控理论，D04 建立了学习型方法，D05-D08 建立了遥操作管线。D09 的任务是将所有这些理论和算法**集成到一个可运行的 ROS2 系统中**——从 URDF 模型到 MoveIt2 规划到 ros2_control 执行到行为树编排。
+
+### 如果跳过本章会怎样
+
+1. **无法从理论到工程**：前 8 章的所有理论和算法都需要通过 D09 的系统集成才能在真实/仿真平台上运行。
+2. **配置错误难以调试**：双臂 MoveIt2 配置（SRDF、ACM、规划组）的细节错误很难从日志中定位——需要系统化的理解。
+
+---
+
 ## 本章目标
 
 学完本章后，你应该能够：
@@ -38,6 +117,16 @@
 4. **编写** MTC 双臂任务流（Merger stage 并行、both_arms 协同搬运）
 5. **搭建** Gazebo Harmonic 或 MuJoCo 中的双臂仿真环境，并与 MoveIt2 联调
 6. **配置** ros2_control 双臂控制器，实现合并轨迹/并行执行/同步触发三种同步策略
+
+### 预计阅读时间
+
+| 模式 | 时间 | 建议 |
+|------|------|------|
+| 精读（含推导和实践） | 10-14 小时 | 完整阅读，手推关键公式，运行代码示例 |
+| 速读（抓核心概念） | 3-5 小时 | 重点读核心理论节，跳过实现细节 |
+| 速查 | 15-30 分钟 | 利用知识导航和术语速查表定位目标 |
+| 复习 | 1-2 小时 | 读本章小结和常见误解，做自测题 |
+
 
 ---
 
@@ -1731,15 +1820,21 @@ MoveIt2 在 ROS2 Jazzy (2024) 和 Rolling (2025-2026) 版本中引入了多项�
 
 **Multi-Robot Support 重构**：MoveIt2 Rolling 引入了 `robot_model_loader` 的多实例支持——允许在同一个 `move_group` 节点中加载多个独立的 URDF/SRDF 模型。这对双臂系统的意义在于：不再需要把两臂合并到一个 URDF 中，而是可以保持各臂 URDF 独立，在运行时动态组合。优势是维护更简单（上游 URDF 更新不需要重新合并），劣势是跨臂碰撞检查需要额外配置。
 
-**OMPL 2.0(规划中)集成**：OMPL 2.0 引入了 Informed RRT* 的改进变体和 Experience-based Planning——规划器可以利用历史成功路径加速后续规划。对 14D 双臂规划的提速效果显著：D9.3 中讨论的 both_arms 规划超时问题（14D 空间太大）可以通过 experience database 缓解——首次规划可能需要 5 秒，但相似构型下的后续规划可降至 <0.5 秒。
+**OMPL 2.0（规划中/实验性）集成**：OMPL 2.0 引入了 Informed RRT* 的改进变体和 Experience-based Planning——规划器可以利用历史成功路径加速后续规划。对 14D 双臂规划的提速效果显著：D9.3 中讨论的 both_arms 规划超时问题（14D 空间太大）可以通过 experience database 缓解——首次规划可能需要 5 秒，但相似构型下的后续规划可降至 <0.5 秒。
 
-**Parallel Planning API**：MoveIt2 2025+ 提供了 `planMultipleGoals()` API，允许对同一请求并行运行多个规划器（RRT*, BIT*, PRM*），取最先成功的结果。这直接解决了 D9.3 中"同步规划选型困难"的问题——不必在规划器之间做选择，而是让它们赛跑。
+> ⚠️ **状态说明**：截至 2026-06，OMPL 2.0 尚在规划阶段，上述特性基于社区讨论和 RFC 描述，可能随正式发布发生变化。请关注 [OMPL GitHub](https://github.com/ompl/ompl) 获取最新进展。
 
-### Servo 2.0 双臂联动 ⭐⭐⭐
+**Parallel Planning API（实验性）**：MoveIt2 2025+ 讨论中的 `planMultipleGoals()` API 设计，允许对同一请求并行运行多个规划器（RRT*, BIT*, PRM*），取最先成功的结果。这有望解决 D9.3 中"同步规划选型困难"的问题——不必在规划器之间做选择，而是让它们赛跑。
 
-MoveIt Servo（实时关节速度/笛卡尔速度命令接口）在 2.0 版本中增加了多组联动支持——可以同时对 `left_arm` 和 `right_arm` 发送笛卡尔速度命令，Servo 内部保证两组的速度指令在同一控制周期内下发。这对双臂遥操作（D08）和 Object Impedance 实时控制（D03.4）至关重要。
+> ⚠️ **状态说明**：截至 2026-06，`planMultipleGoals()` API 尚未在 MoveIt2 主线正式发布，基于社区 PR 讨论和设计文档描述。如需使用请关注 [MoveIt2 GitHub](https://github.com/moveit/moveit2) 的相关 PR 和 issue。
 
-Servo 2.0 的双臂模式支持两种协调方式：
+### Servo 2.0 双臂联动（计划中特性）⭐⭐⭐
+
+> ⚠️ **状态说明**：截至 2026-06，以下关于 Servo 2.0 双臂联动的描述基于 MoveIt2 社区开发路线图和相关 PR/issue 讨论，尚未在 MoveIt2 主线正式发布。具体 API 和行为可能随正式发布发生变化。请关注 [MoveIt2 Servo GitHub](https://github.com/moveit/moveit2/tree/main/moveit_ros/moveit_servo) 获取最新状态。
+
+MoveIt Servo（实时关节速度/笛卡尔速度命令接口）在计划中的 2.0 版本中将增加多组联动支持——可以同时对 `left_arm` 和 `right_arm` 发送笛卡尔速度命令，Servo 内部保证两组的速度指令在同一控制周期内下发。这对双臂遥操作（D08）和 Object Impedance 实时控制（D03.4）至关重要。
+
+Servo 2.0 的双臂模式设计支持两种协调方式：
 
 | 模式 | 输入 | 适用场景 |
 |------|------|---------|
@@ -1762,6 +1857,30 @@ Servo 2.0 的双臂模式支持两种协调方式：
 
 ---
 
+## 本章常见误解汇总
+
+| 误解 | 正确理解 |
+|------|---------|
+| 双臂 MoveIt2 = 两个单臂 MoveIt2 | 需要 `both_arms` 联合规划组，ACM 需要臂间碰撞对，约束规划配置不同 |
+| URDF 合并只是拼接 XML | 需要定义连接 joint、统一坐标系、避免名称冲突 |
+| ACM 自动生成总是正确的 | 自动生成可能过度 disable 臂间碰撞对——需手动检查 |
+| MoveIt2 自带约束规划 | MoveIt2 的约束规划需要额外配置 `ConstrainedStateSpace` |
+| ros2_control 控制器切换是瞬时的 | 控制器切换有过渡期，需要设计平滑过渡策略 |
+| 行为树只是 FSM 的替代品 | BT 提供了模块化、可组合、可恢复的任务编排，比 FSM 更强大 |
+| 仿真验证通过即可直接部署 | Sim2Real gap 包括动力学差异、传感器噪声、通信延迟等 |
+| URDF 中的惯性参数不重要 | 力控性能对惯性参数敏感——错误的惯性参数导致重力补偿失败 |
+
+## 本章常见误解汇总
+
+| 误解 | 正确理解 |
+|------|---------|
+| 理论模型可以完美描述实际系统 | 实际系统存在建模误差、传感器噪声、通信延迟等非理想因素 |
+| 参数越大/越小越好 | 参数设计是多目标权衡，需要在性能指标之间寻找平衡 |
+| 仿真验证通过即可部署 | 仿真与实物存在 Sim2Real gap，需要在实物上再次验证和调参 |
+| 经典方法已被学习方法取代 | 经典方法提供安全性和稳定性保证，学习方法提供自适应能力，两者互补 |
+| 高频控制总是更好 | 高频控制增加计算负担，且传感器噪声在高频被放大 |
+| 线性分析工具可以完全预测非线性行为 | 线性分析提供局部近似和设计指导，但非线性效应需要额外验证 |
+
 ## 本章小结
 
 | 知识点 | 核心内容 | 难度 | 关联章节 |
@@ -1774,6 +1893,88 @@ Servo 2.0 的双臂模式支持两种协调方式：
 | ros2_control 同步 | 合并轨迹/并行/导纳三策略、选型 | ⭐⭐ | M12 ros2_control |
 | 仿真环境 | MuJoCo/Gazebo/Isaac Sim 选型与搭建 | ⭐⭐ | P02 sim-to-real |
 | MoveIt2 2026 新特性 | Parallel Planning、Experience-based、Servo 2.0 双臂联动 | ⭐⭐⭐ | — |
+
+### 双臂系统的 ROS2 话题设计 ⭐⭐
+
+双臂 ROS2 系统的话题命名和消息类型设计直接影响系统可维护性：
+
+```
+话题命名约定：
+  /left_arm/joint_states          # 左臂关节状态
+  /right_arm/joint_states         # 右臂关节状态
+  /both_arms/joint_states         # 联合关节状态（14D）
+  
+  /left_arm/effort_controller/command   # 左臂力矩指令
+  /right_arm/effort_controller/command  # 右臂力矩指令
+  
+  /coordination/object_pose       # 物体位姿（协调控制器发布）
+  /coordination/internal_force    # 内力状态（监控用）
+  /coordination/grasp_state       # 抓取状态（GRASPED/RELEASED/TRANSITIONING）
+```
+
+**消息类型选择**：
+
+| 数据 | 消息类型 | 备注 |
+|------|---------|------|
+| 关节状态 | `sensor_msgs/JointState` | 标准消息，包含 position/velocity/effort |
+| 力矩指令 | `std_msgs/Float64MultiArray` | 用于 effort_controllers |
+| 末端位姿 | `geometry_msgs/PoseStamped` | 带时间戳的 SE(3) 位姿 |
+| Wrench | `geometry_msgs/WrenchStamped` | 力/力矩测量或指令 |
+| 内力 | 自定义 `InternalForce.msg` | 包含 6D 内力 + 安全状态 |
+| 抓取状态 | 自定义 `GraspState.msg` | 枚举状态 + 过渡进度 |
+
+**ROS2 QoS 配置**：
+
+```python
+# 力控话题使用 BEST_EFFORT（低延迟优先于可靠性）
+from rclpy.qos import QoSProfile, ReliabilityPolicy
+force_qos = QoSProfile(
+    reliability=ReliabilityPolicy.BEST_EFFORT,
+    depth=1  # 只保留最新消息
+)
+
+# 状态话题使用 RELIABLE（确保不丢失状态变化）
+state_qos = QoSProfile(
+    reliability=ReliabilityPolicy.RELIABLE,
+    depth=10
+)
+```
+
+#### 系统调试的常见时间分配
+
+根据工程经验，双臂 MoveIt2 系统从零配置到稳定运行的时间分配大致为：URDF/SRDF 配置占 20%，碰撞矩阵调试占 15%，规划器参数调优占 25%，控制器集成占 25%，系统联调占 15%。初学者应预留 2-3 周的纯调试时间。
+
+## 部署检查清单 ⭐
+
+从仿真到真机部署的系统化检查：
+
+```
+□ Phase 1: 仿真验证
+  □ MuJoCo/Gazebo 中运行完整管线
+  □ 约束规划路径无碰撞
+  □ 力控跟踪精度 < 5mm RMS
+  □ 内力在安全范围内
+
+□ Phase 2: 硬件连接
+  □ 通信延迟 < 2ms（1kHz 控制）
+  □ 紧急停止功能正常
+  □ 力矩限制正确设置
+  □ 关节限位保护开启
+
+□ Phase 3: 低速测试
+  □ 最大速度限制为 10% 额定
+  □ 单臂独立运动验证
+  □ 双臂协调运动（无物体）
+  □ 碰撞回避功能验证
+
+□ Phase 4: 全速测试
+  □ 逐步提升速度限制
+  □ 搬运任务完整执行
+  □ 力控性能指标达标
+  □ 操作者安全评估通过
+```
+
+---
 
 ## 累积项目：本章新增模块
 
@@ -1791,6 +1992,27 @@ D09 新增:
   └─ [下一步] D10: 综合实战集成
 ```
 
+## 符号表
+
+| 符号 | 含义 | 首次出现 |
+|------|------|---------|
+| $\mathbf{p}_L, \mathbf{p}_R$ | 左臂/右臂末端位置 (m) | D9.9 |
+| $d_{LR}$ | 两臂末端之间的欧氏距离 (m) | D9.9 |
+| $d_{\min}$ | 两臂安全最小距离 (m) | D9.9 |
+| ACM | Allowed Collision Matrix，碰撞允许矩阵 | D9.4 |
+| SRDF | Semantic Robot Description Format，语义机器人描述格式 | D9.2 |
+| JTC | JointTrajectoryController，关节轨迹控制器 | D9.6 |
+| MTC | MoveIt Task Constructor，MoveIt 任务构造器 | D9.5 |
+
+## 本章与后续章节的关系
+
+| 后续章节 | 关系 | 本章铺垫的知识点 |
+|---------|------|----------------|
+| D10 综合实战 | 直接下游 | 全部 D09 配置作为 D10 系统的基础 |
+| D08 遥操作 | 并行 | D09.6 同步策略用于遥操作模式的控制器配置 |
+| P02 sim-to-real | 支撑 | D09.7 仿真环境搭建是 P02 资产管道的具体应用 |
+| M14 MoveIt2 | 回顾 | D09 是 M14 单臂配置到双臂的扩展 |
+
 ## 延伸阅读
 
 | 资源 | 难度 | 说明 |
@@ -1799,8 +2021,19 @@ D09 新增:
 | ros2_control 官方文档 "Multi-interface Robot" | ⭐⭐ | 多接口/多控制器配置 |
 | Coleman et al. (2014) "Reducing the Barrier to Entry of Complex Robotic Software: a MoveIt! Case Study" | ⭐⭐⭐ | MoveIt 的设计哲学 |
 | MoveIt Task Constructor GitHub Wiki | ⭐⭐⭐ | MTC 的 stage 类型和用法 |
-| Aertbelien et al. (2026) "Simplifying ROS2 Controllers" arXiv 2601.08514 | ⭐⭐⭐⭐ | 模块化参考生成器 |
+| Risi et al. (2026) "Simplifying ROS2 Controllers" arXiv 2601.08514 | ⭐⭐⭐⭐ | 模块化参考生成器 |
 | PickNik MoveIt Pro 文档 | ⭐⭐⭐ | 双臂 MTC 工业化参考 |
+| RoboTwin Dual-Arm Collaboration Challenge (CVPR 2025) | ⭐⭐⭐ | 双臂操作 benchmark，17 个任务覆盖刚性/柔性/触觉场景 |
+
+
+## 研究实践建议
+
+| 层次 | 建议 | 适用读者 |
+|------|------|---------|
+| 入门级 | 复现本章核心算法的最简版本，在仿真中验证正确性 | 本科高年级/硕一新生 |
+| 进阶级 | 在真实平台或高保真仿真器（MuJoCo/Isaac）中实现完整系统 | 硕士研究生 |
+| 研究级 | 针对本章理论的局限性提出改进方案，发表会议论文 | 博士研究生 |
+| 前沿级 | 将本章方法与学习/基础模型结合，构建下一代系统 | 博士高年级/博后 |
 
 ## 🔧 故障排查手册
 
@@ -1811,5 +2044,28 @@ D09 新增:
 | 两臂执行不同步 | 控制器配置不匹配 | 1.确认是一个 14D JTC 还是两个 7D 2.检查 action topic 3.打印时间戳 | D9.6 |
 | MTC Merger 失败 | 子 stage 合并后碰撞 | 1.检查 approach 方向 2.增大 max_solutions 3.检查 ACM 4.调整起始构型 | D9.5 |
 | Gazebo 中关节不响应 | gz_ros2_control 配置错误 | 1.检查 hardware plugin 2.确认 joint 名称匹配 3.检查 update_rate | D9.7 |
+
+### 术语速查表
+
+> 本章核心术语的中英对照，按首次出现顺序排列。详细定义见正文对应小节。
+
+
+### 跨章综合练习
+
+1. **[综合 D01-D09]** 从零搭建完整的双 Franka MoveIt2 系统：URDF 合并 $\to$ SRDF 配置 $\to$ 规划组定义 $\to$ 约束规划测试 $\to$ 力控执行。记录每个步骤遇到的问题和解决方案。
+
+2. **[综合 D08+D09]** 在 D09 的 MoveIt2 系统上集成 D08 的遥操作数据采集管线。用遥操作采集 50 个双臂搬运 episode，验证数据质量指标。
+
+---
+
+## 版本信息速查
+
+| 库 / 工具 | 推荐版本 | 备注 |
+|-----------|---------|------|
+| Pinocchio | $\ge$ 2.6.x | 运动学和动力学计算 |
+| Eigen | $\ge$ 3.4 | 矩阵运算和 SVD |
+| MuJoCo | $\ge$ 2.3.x | 物理仿真验证 |
+| ROS2 | Humble+ | 通信框架 |
+
 
 ---

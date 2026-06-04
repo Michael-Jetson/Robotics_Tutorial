@@ -1497,7 +1497,7 @@ if (angle > 1e-12) {
 
 ### Rodrigues 公式与 SO(3) 指数映射
 
-`delta theta` 更严格的名字是李代数元素 `phi`。给定 `phi ∈ R^3`，定义反对称矩阵：
+`delta theta` 更严格的名字是李代数元素 `phi`。给定 $\boldsymbol{\phi} \in \mathbb{R}^3$，定义反对称矩阵：
 
 ```text
 [phi]_x =
@@ -1518,10 +1518,13 @@ theta = ||phi||
 
 这就是 Rodrigues 公式。它解释了为什么“小角度向量”不是欧拉角：`phi` 不是三个独立轴角依次旋转，而是一个切向量，通过指数映射一次性进入 SO(3)。当 `theta` 很小时，直接计算 `sin(theta)/theta` 和 `(1-cos(theta))/theta^2` 会有数值消失问题，需要用泰勒展开：
 
-```text
-sin(theta) / theta             ≈ 1 - theta^2 / 6
-(1 - cos(theta)) / theta^2     ≈ 1/2 - theta^2 / 24
-```
+$$
+\frac{\sin\theta}{\theta} \approx 1 - \frac{\theta^2}{6}
+$$
+
+$$
+\frac{1 - \cos\theta}{\theta^2} \approx \frac{1}{2} - \frac{\theta^2}{24}
+$$
 
 Eigen 的 `AngleAxisd` 适合普通构造，但它不会替你表达整套李群扰动约定。SLAM 项目中常用 Sophus、manif 或自写 `ExpSO3`，原因就是需要统一左扰动、右扰动、雅可比和小角度展开。
 
@@ -2341,11 +2344,11 @@ x^T A^T b = b^T A x
 J(x) = 1/2 x^T A^T A x - x^T A^T b + 1/2 b^T b
 ```
 
-对 `x` 求梯度：
+对 $\mathbf{x}$ 求梯度：
 
-```text
-∇J(x) = A^T A x - A^T b
-```
+$$
+\nabla J(\mathbf{x}) = \mathbf{A}^T \mathbf{A} \mathbf{x} - \mathbf{A}^T \mathbf{b}
+$$
 
 最优点的一阶条件是梯度为 0：
 
@@ -2357,9 +2360,9 @@ A^T A x = A^T b
 
 在非线性最小二乘中，当前估计附近有：
 
-```text
-r(x + delta) ≈ r(x) + J delta
-```
+$$
+\mathbf{r}(\mathbf{x} + \boldsymbol{\delta}) \approx \mathbf{r}(\mathbf{x}) + \mathbf{J} \boldsymbol{\delta}
+$$
 
 于是求：
 
@@ -2521,40 +2524,41 @@ Eigen::Matrix3d solveRotationSvd(const Eigen::MatrixXd& source,
 
 点到点配准要解：
 
-```text
-minimize_{R,t} Σ_i ||R p_i + t - q_i||^2
-subject to R^T R = I, det(R)=1
-```
+$$
+\min_{\mathbf{R},\,\mathbf{t}} \sum_{i} \|\mathbf{R}\mathbf{p}_i + \mathbf{t} - \mathbf{q}_i\|^2, \quad \text{s.t.}\; \mathbf{R}^T\mathbf{R} = \mathbf{I},\; \det(\mathbf{R})=1
+$$
 
 第一步先消掉平移。
 
 对固定的 `R`，令目标函数对 `t` 的梯度为 0：
 
-```text
-Σ_i (R p_i + t - q_i) = 0
-```
+$$
+\sum_{i} (\mathbf{R}\mathbf{p}_i + \mathbf{t} - \mathbf{q}_i) = \mathbf{0}
+$$
 
 得到：
 
-```text
-N t = Σ_i q_i - R Σ_i p_i
-t = μ_q - R μ_p
-```
+$$
+N\,\mathbf{t} = \sum_{i}\mathbf{q}_i - \mathbf{R}\sum_{i}\mathbf{p}_i
+$$
+
+$$
+\mathbf{t} = \boldsymbol{\mu}_q - \mathbf{R}\,\boldsymbol{\mu}_p
+$$
 
 也就是说，最优平移一定把源点质心变到目标点质心。
 
 定义去中心化点：
 
-```text
-p'_i = p_i - μ_p
-q'_i = q_i - μ_q
-```
+$$
+\mathbf{p}'_i = \mathbf{p}_i - \boldsymbol{\mu}_p, \quad \mathbf{q}'_i = \mathbf{q}_i - \boldsymbol{\mu}_q
+$$
 
 问题变成：
 
-```text
-minimize_R Σ_i ||R p'_i - q'_i||^2
-```
+$$
+\min_{\mathbf{R}} \sum_{i} \|\mathbf{R}\mathbf{p}'_i - \mathbf{q}'_i\|^2
+$$
 
 展开单项：
 
@@ -2574,15 +2578,15 @@ minimize_R Σ_i ||R p'_i - q'_i||^2
 
 因此最小化距离等价于最大化：
 
-```text
-Σ_i q_i'^T R p'_i
-```
+$$
+\sum_{i} \mathbf{q}_i'^{\,T} \mathbf{R}\,\mathbf{p}'_i
+$$
 
 把相关矩阵定义为：
 
-```text
-W = Σ_i p'_i q_i'^T
-```
+$$
+\mathbf{W} = \sum_{i} \mathbf{p}'_i \,\mathbf{q}_i'^{\,T}
+$$
 
 可以把目标写成：
 
@@ -2592,9 +2596,9 @@ maximize_R trace(R W)
 
 对 `W` 做 SVD：
 
-```text
-W = U Σ V^T
-```
+$$
+\mathbf{W} = \mathbf{U}\,\boldsymbol{\Sigma}\,\mathbf{V}^T
+$$
 
 最优旋转为：
 

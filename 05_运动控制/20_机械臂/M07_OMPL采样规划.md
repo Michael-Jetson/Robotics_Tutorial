@@ -661,7 +661,7 @@ $$
 
 $\gamma$ 的常数门槛 $\gamma > \gamma^* = 2(1+1/d)^{1/d}(\mu(\mathcal{C}_{\text{free}})/\zeta_d)^{1/d}$ 就是把"恰好越过连通相变"这件事写成了显式公式（$\zeta_d$ 是 $d$ 维单位球体积）。
 
-> **前沿勘误（研究级 ⭐⭐⭐⭐）**：Solovey、Kleinbort 与 Halperin 等人在 *Revisiting the Asymptotic Optimality of RRT\** (ICRA/IJRR 2020) 中指出，Karaman & Frazzoli 原始证明在处理"样本到达顺序"时存在一个逻辑缺口——RRT* 的边代价依赖样本被加入的**时间顺序**，而原证明把它当作了顺序无关的 RGG。他们给出了修正后的严格证明，并指出为吃掉"时间这一额外维度"，RRT* 的连接半径指数应从 $(\log n/n)^{1/d}$ 收紧到 $(\log n/n)^{1/(d+1)}$。结论（RRT* 是 AO）不变，但条件更严。这说明：**即便是被引用上万次的经典结果，其证明细节也可能在近十年后被修补**——读论文时对"显然成立"的引理保持警惕，是研究者的基本素养。
+> **前沿勘误（研究级 ⭐⭐⭐⭐）**：Solovey、Janson、Schmerling、Frazzoli 与 Pavone 等人在 *Revisiting the Asymptotic Optimality of RRT\** (ICRA 2020) 中指出，Karaman & Frazzoli 原始证明在处理"样本到达顺序"时存在一个逻辑缺口——RRT* 的边代价依赖样本被加入的**时间顺序**，而原证明把它当作了顺序无关的 RGG。他们给出了修正后的严格证明，并指出为吃掉"时间这一额外维度"，RRT* 的连接半径指数应从 $(\log n/n)^{1/d}$ 收紧到 $(\log n/n)^{1/(d+1)}$。结论（RRT* 是 AO）不变，但条件更严。这说明：**即便是被引用上万次的经典结果，其证明细节也可能在近十年后被修补**——读论文时对"显然成立"的引理保持警惕，是研究者的基本素养。
 
 **工程含义：渐近最优 $\neq$ 实践最优**。AO 是 $n \to \infty$ 的极限性质；在有限时间预算里，"渐近最优规划器 + 短超时"未必比"可行规划器 + 轨迹优化"质量更好。回顾上面的维度诅咒表：7-DOF 下 RRT* 要十万级采样才接近最优。所以 MoveIt2 默认 RRT-Connect 而非 RRT*——把"找最优"这件事交给 M08 的局部优化器在一条好的可行路径上做，往往比硬等 RRT* 全局收敛更快得到可执行的高质量轨迹（这正是 M07.4 末尾"RRT* 一定比 RRT-Connect 好"那条概念误区的理论根据）。
 
@@ -1985,6 +1985,30 @@ VAMP 的 2024 年后续工作 VAMP-MR（RSS 2024）进一步扩展到多臂协�
 **研究级（站到前沿）**：复现 Informed-RRT* 的椭球采样（M07.2 公式），或基于 OMPL 实现一个自定义采样器/MotionValidator。若对加速感兴趣，提前读 VAMP（ICRA 2024）论文，思考"为什么加速碰撞检测比改进算法逻辑更有杠杆"——这是 M09 的核心命题。
 
 **通用纪律**：每改一个参数只改一个、跑 50 次取统计分布（而非单次运行），安全相关参数（`longest_valid_segment_fraction`）下降立即回退——这是 M07.8 系统调参方法论的精髓，也是工业落地与学术 demo 的分水岭。
+
+---
+
+## 符号表
+
+本章引入的核心数学符号汇总如下。首次出现的小节标注在"出处"列，方便回查上下文。
+
+| 符号 | 含义 | 出处 |
+|------|------|------|
+| $\mathcal{C}$ | 构型空间（Configuration Space），机械臂所有关节角构成的高维空间 | M07.1 |
+| $\mathcal{C}_{\text{free}}$ | 自由构型空间，$\mathcal{C}$ 中不与障碍物碰撞的子集 | M07.1 |
+| $\mathcal{C}_{\text{obs}}$ | 障碍物构型空间，$\mathcal{C} \setminus \mathcal{C}_{\text{free}}$ | M07.1 |
+| $\mathcal{W}$ | 工作空间（Workspace），通常为 $\mathbb{R}^3$ 或 $SE(3)$ | M07.1 |
+| $d$ | 构型空间维度（$d = n_{\text{DOF}}$），如 7-DOF 臂 $d=7$ | M07.1 |
+| $n$ | 采样点数量 | M07.2 |
+| $q_{\text{start}}, q_{\text{goal}}$ | 起始构型与目标构型 | M07.1 |
+| $r(n)$ | 连接半径，PRM*/RRT* 中随采样数衰减的邻域半径 | M07.3/M07.4 |
+| $\gamma$ | 连接半径公式中的常数因子，需满足 $\gamma > \gamma^*$ 以保证渐近最优 | M07.4 |
+| $\gamma^*$ | 渐近最优的临界常数门槛，$\gamma^* = 2(1+1/d)^{1/d}(\mu(\mathcal{C}_{\text{free}})/\zeta_d)^{1/d}$ | M07.4 |
+| $\zeta_d$ | $d$ 维单位球的体积，$\zeta_d = \pi^{d/2}/\Gamma(d/2+1)$ | M07.4 |
+| $\mu(\mathcal{C}_{\text{free}})$ | 自由构型空间的 Lebesgue 测度（"体积"） | M07.4 |
+| $\epsilon$ | RRT 步长（extend 距离），控制树每次生长的最大长度 | M07.4 |
+| $d_{\text{eff}}$ | Informed-RRT* 椭球采样的有效维度，$d_{\text{eff}} < d$ | M07.4 |
+| $c_{\text{best}}$ | 当前已知最优路径代价，用于 Informed-RRT* 的椭球约束 | M07.4 |
 
 ---
 

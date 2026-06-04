@@ -1997,4 +1997,16 @@ $$
 
 **结论**：iLQR + Pinocchio 解析导数 = ms 级求解，比通用 NLP 快 100x，比 acados RTI 慢 10x（但 acados 是 direct method 不给 K）。
 
+### 本章常见误解汇总
+
+| 误解 | 正确理解 |
+|------|---------|
+| iLQR 和 DDP 是完全不同的算法 | iLQR 是 DDP 的 Gauss-Newton 近似——在 backward pass 中丢弃 $V_{xx}$ 的二阶项 $f_{xx}^\top V_x$；两者共享相同的 Bellman 递推结构，仅 $Q_{uu}$ 的 Hessian 近似方式不同 |
+| DDP 是全局最优算法 | DDP/iLQR 本质是牛顿法（或 GN 法），只能找到局部最优；不同初始轨迹可能收敛到不同局部极小，实践中需要多初始点或 MPPI warm-start |
+| 正则化参数 $\mu$ 是固定超参数 | $\mu$ 需要自适应调整——backward pass $Q_{uu}$ 不正定时增大（Levenberg-Marquardt 策略），line search 成功后减小；固定 $\mu$ 会导致收敛缓慢或不收敛 |
+| DDP 比 direct method（直接配点法）更优 | DDP 利用 Bellman 结构实现 $O(Nm^3)$ 复杂度，适合无约束或简单约束；但 direct method + 稀疏 NLP solver 对复杂约束更灵活，两者互补 |
+| 有限差分计算导数足够用 | 有限差分引入 $O(\epsilon + h^2)$ 的截断/舍入误差，且计算量是解析导数的 $O(n+m)$ 倍；Pinocchio 的解析导数在精度和速度上均远优于有限差分 |
+| iLQR 的 forward pass 只是简单积分 | forward pass 是非线性 rollout + 沿 $\alpha$ 的 line search——步长 $\alpha$ 的选择直接影响收敛率；贪心地取 $\alpha=1$ 在远离最优时常导致发散 |
+| DDP 只能处理欧氏状态空间 | 李群 DDP 已将算法推广到 $SO(3)$、$SE(3)$ 等流形——关键修改是用 $\oplus/\ominus$ 替代加减法，用流形上的 Jacobian 替代欧氏导数 |
+
 ---

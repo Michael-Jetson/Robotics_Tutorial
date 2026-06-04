@@ -40,6 +40,154 @@
 6. **精读** libfranka 的 1 kHz 实时控制接口，理解 callback 风格的 RT 安全设计
 7. **对比** 机械臂与足式机器人在实时工程上的异同
 
+### 本章知识导航
+
+本章覆盖实时 C++ 工程的完整知识体系，知识点之间存在明确的递进关系：
+
+```
+实时 C++ 工程知识体系
+│
+├── 基础层：为什么需要实时（§1）
+│   ├── 1 ms 预算分析
+│   ├── SLAM C++ vs RT C++ 差异
+│   └── 实时 vs 低延迟概念辨析
+│
+├── 内核层：操作系统支持（§2）
+│   ├── PREEMPT_RT 主线化历程
+│   ├── 内核编译与配置实战
+│   ├── cyclictest 验证方法论
+│   └── Xenomai 对比与选型决策
+│
+├── 编程层：RT 安全编码规范（§3-4）
+│   ├── 禁止操作清单（§3）——核心必背
+│   ├── 允许操作清单（§3）
+│   ├── SCHED_FIFO + mlockall + EIGEN_NO_MALLOC 三件套（§4）
+│   ├── pmr 内存池在 RT 中的应用（§4）
+│   └── CPU 频率锁定与核心隔离（§4）
+│
+├── 通信层：RT-非RT 线程间数据交换（§5-6）
+│   ├── RealtimeBuffer / RealtimeThreadSafeBox（§5）
+│   ├── RealtimePublisher（§5）
+│   ├── Lock-Free Queue（SPSC / MPMC）（§5）
+│   ├── Triple Buffer（§5）
+│   └── 优先级反转与解决方案（§6）
+│
+├── 接口层：工业级 RT API（§7-8）
+│   ├── libfranka 1 kHz 回调精读（§7）
+│   └── EtherCAT DC 同步与 PDO 映射（§8）
+│
+├── 框架层：ROS2 实时控制架构（§10-11）
+│   ├── ros2_control 主循环精读（§10）
+│   ├── ros2_control 线程模型（§11）
+│   └── Orocos RTT 替代方案简析（§10）
+│
+├── 调试层：非侵入式性能分析（§12）
+│   ├── ftrace 内核跟踪
+│   ├── perf 性能采样
+│   └── trace-cmd + KernelShark 可视化
+│
+└── 对比层：机械臂 vs 足式实时需求（§9）
+    ├── 架构差异（同步 vs 异步）
+    ├── 安全差异（ISO 10218 vs 无标准）
+    └── 调试难度差异
+```
+
+**阅读路径建议**：
+
+| 读者类型 | 推荐路径 | 预计时间 |
+|---------|---------|---------|
+| **SLAM 工程师转控制** | §1 → §3（背诵禁区）→ §4 → §5 → §7 → §12 | 精读 6 小时 |
+| **已有 RT 经验** | §2.7（新实践）→ §5.4-5.6（无锁队列）→ §7.2（walkthrough）→ §8.3-8.4（EtherCAT 细节） | 精读 3 小时 |
+| **足式转机械臂** | §9 → §7 → §8 → §11 | 精读 2 小时 |
+| **速查用途** | 本章小结 + API 速查表 + 故障排查手册 | 30 分钟 |
+
+### 如果跳过本章会怎样
+
+1. **你的 1 kHz 控制循环会偶发超时**：在 SLAM 中养成的 `std::vector` / `std::string` 编程习惯，会在控制循环中埋下隐藏的 malloc 地雷。第一次 push_back 时程序表现正常，但当 capacity 不足触发重分配时，50-500 us 的延迟尖峰让 libfranka 报 `communication_constraints_violation`，机器人停机。你无法定位 bug，因为这是概率性的——只有在内存碎片化严重时才触发。
+
+2. **你不知道如何在 RT 和非 RT 线程间传递数据**：你可能会用 `std::mutex` 保护共享数据——这在 SLAM 中完全正确，但在 RT 上下文中会导致优先级反转。高优先级控制线程被低优先级日志线程"间接阻塞"——1997 年火星探路者号就因此反复重启。
+
+### 预计阅读时间
+
+| 模式 | 内容覆盖 | 时间 |
+|------|---------|------|
+| **精读** | 全部内容 + 代码实践 + 练习 | 10-12 小时 |
+| **速读** | 跳过 ⭐⭐⭐ 和 ⭐⭐⭐⭐ 节，重点读禁区清单、三件套、realtime_tools | 4-5 小时 |
+| **速查** | 直接翻本章小结 + API 速查表 + 故障排查手册 | 30 分钟 |
+
+---
+
+### 本章知识导航
+
+```
+M11 实时 C++ 工程
+│
+├── §1 为什么 SLAM 的 C++ 不够用 ⭐
+│   ├── 1 ms 铁律与控制循环预算
+│   ├── SLAM 代码在 RT 中的地雷
+│   └── 实时 vs 低延迟概念辨析
+│
+├── §2 PREEMPT_RT 主线化 ⭐
+│   ├── 历史：20 年补丁进入 Linux 6.12 主线
+│   ├── RT 内核编译实战
+│   ├── cyclictest 完整验证流程
+│   ├── Xenomai 对比
+│   └── 实时 Rust 前沿展望 ⭐⭐⭐⭐
+│
+├── §3 RT 安全 C++ 禁区清单 ⭐
+│   ├── 绝对禁止的操作（malloc / throw / cout / mutex）
+│   ├── 允许的操作（atomic / fixed Eigen / memcpy）
+│   └── 灰色地带评估
+│
+├── §4 标准三件套 ⭐⭐
+│   ├── SCHED_FIFO 实时调度策略
+│   ├── mlockall 内存页面锁定
+│   ├── EIGEN_RUNTIME_NO_MALLOC 堆分配审计
+│   └── CPU 频率锁定与核心隔离
+│
+├── §5 无锁数据结构 ⭐⭐
+│   ├── RealtimeBuffer / RealtimePublisher
+│   ├── SPSC Lock-Free Ring Buffer
+│   ├── Triple Buffer
+│   └── std::atomic 内存序与 ARM 陷阱
+│
+├── §6 优先级反转与解决方案 ⭐⭐
+│
+├── §7 libfranka 实时接口精读 ⭐⭐
+│   ├── 1 kHz callback 模式
+│   ├── 完整 walkthrough（PD + 重力补偿 + 安全检查）
+│   └── 计算预算分析
+│
+├── §8 EtherCAT 实时通信 ⭐⭐⭐
+│   ├── DC 同步与 PDO 映射
+│   └── 与足式硬件栈对比
+│
+├── §9 与足式实时工程的对比 ⭐⭐
+│   ├── 同步 vs 异步控制架构
+│   ├── 安全响应时间差异
+│   └── 调试难度差异
+│
+├── §10 ros2_control 主循环精读 ⭐⭐⭐
+│
+├── §11 ros2_control 线程模型 ⭐⭐
+│   ├── RT / 非 RT 线程分离
+│   └── 控制器生命周期与 RT 安全
+│
+└── §12 实时调试方法论 ⭐⭐⭐
+    ├── ftrace / perf / trace-cmd
+    └── 实时调试决策树
+```
+
+### 预计阅读时间
+
+| 阅读模式 | 时间估算 | 适用场景 |
+|---------|---------|---------|
+| **精读** | 5-7 小时 | 首次学习，逐段理解 RT 原理和代码实现 |
+| **速读** | 2-3 小时 | 已有 Linux 系统编程经验，重点看禁区清单和 realtime_tools |
+| **速查** | 30-45 分钟 | 查阅 RT 配置三件套代码模板、cyclictest 合格标准、调试决策树 |
+
+> 精读模式不含实验时间。建议配合 RT 内核环境实际运行 cyclictest（§2）和 EIGEN_RUNTIME_NO_MALLOC 审计（§4）。
+
 ---
 
 ## 1. 为什么 SLAM 的 C++ 在这里不够用 ⭐
@@ -736,6 +884,68 @@ taskset -c 2 ./my_rt_controller
 
 `isolcpus` 告诉调度器不在这些核心上运行普通任务。`nohz_full` 关闭定时器中断。`rcu_nocbs` 把 RCU 回调移走——消除周期性内核干扰。
 
+### 4.7 pmr 内存池——在 RT 上下文中使用动态容器的唯一安全方式 ⭐⭐⭐
+
+前面的禁区清单禁止了 `std::vector`、`std::string` 等动态容器。但某些场景确实需要在 RT 线程中使用变长数据——例如关节数量在运行时确定的通用控制器、或需要动态长度消息的诊断接口。C++17 引入的 PMR（Polymorphic Memory Resource，多态内存资源）为此提供了一条出路。
+
+**核心思想**：PMR 将"内存分配策略"从容器类型中解耦。`std::pmr::vector<double>` 和 `std::vector<double>` 接口完全相同，但前者的内存来源由一个 `std::pmr::memory_resource` 对象控制——你可以让它从预分配的固定大小内存池中分配，而非调用 `malloc`。
+
+回顾前置章节 `02_C++基础与进阶/20_并发与系统编程/50_内存分配策略与pmr`：PMR 的核心抽象是 `std::pmr::memory_resource`，它定义了 `allocate()` / `deallocate()` 虚接口。`std::pmr::monotonic_buffer_resource` 从预分配缓冲区中线性分配，永不调用 `free`——这是 RT 场景的理想选择，因为分配操作的时间复杂度为 $O(1)$（仅移动指针）。
+
+```cpp
+#include <memory_resource>
+#include <vector>
+#include <array>
+
+// === 在 on_configure() 中预分配（非 RT 阶段） ===
+// 预分配 4 KB 缓冲区，足够 500 个 double
+alignas(alignof(double)) std::array<std::byte, 4096> buffer;
+
+// monotonic_buffer_resource: 从 buffer 中线性分配
+// 第二个参数 nullptr 表示耗尽时不回退到默认分配器（直接失败）
+std::pmr::monotonic_buffer_resource pool(
+    buffer.data(), buffer.size(), std::pmr::null_memory_resource());
+
+// === 在 RT 线程中使用 ===
+void update_rt(std::pmr::monotonic_buffer_resource& pool) {
+    pool.release();  // 重置分配指针（O(1)，不调用 free）
+
+    // pmr::vector 从 pool 分配，不触发 malloc
+    std::pmr::vector<double> joint_torques(7, &pool);  // ✅ RT 安全
+    for (int i = 0; i < 7; ++i) {
+        joint_torques[i] = compute_torque(i);
+    }
+
+    // 即使 push_back 也安全（只要 pool 有足够空间）
+    // joint_torques.push_back(extra_value);  // ✅ 从 pool 分配
+
+    // pool.release() 在下次调用时批量"回收"所有分配
+    // 无 free/delete，零碎片，确定性时间
+}
+```
+
+**pmr 在 RT 中的使用规则**：
+
+| 规则 | 原因 |
+|------|------|
+| 缓冲区必须在非 RT 阶段预分配 | 避免 RT 中的 `malloc` |
+| 使用 `null_memory_resource` 作为上游 | 溢出时立即报错而非回退到 `malloc` |
+| 每个 RT 周期开头调用 `release()` | 重置分配指针，"批量回收"上周期的所有分配 |
+| 缓冲区大小必须覆盖最坏情况 | 溢出 = 运行时错误（而非延迟尖峰） |
+
+> **反事实推理**：如果不用 `null_memory_resource` 作为上游会怎样？默认的上游是 `std::pmr::new_delete_resource()`——当预分配缓冲区耗尽时，PMR 会回退到 `new`，即 `malloc`。这完全违背了 RT 安全的初衷。`null_memory_resource` 在溢出时直接抛出 `std::bad_alloc`（在开发阶段暴露问题），而非静默地调用 `malloc`（在生产环境中埋雷）。
+
+**pmr vs 固定大小 Eigen 的选型**：
+
+| 场景 | 推荐方案 | 原因 |
+|------|---------|------|
+| 关节数编译期已知（如 Franka 7-DOF） | `Eigen::Matrix<double, 7, 1>` | 零分配，栈上 |
+| 关节数运行期确定（通用控制器） | `std::pmr::vector<double>` + 预分配池 | 灵活且 RT 安全 |
+| 需要 Eigen 矩阵运算的通用 DOF | `Eigen::VectorXd` + 预分配 in-place | Pinocchio 接口需要 |
+| 诊断/日志数据（变长） | `std::pmr::string` + 预分配池 | 避免堆分配 |
+
+> **本质洞察**：PMR 的设计哲学是"控制策略而非控制类型"——同一个 `std::pmr::vector<double>` 在非 RT 线程中可以用默认分配器（方便），在 RT 线程中切换到 `monotonic_buffer_resource`（安全）。容器的接口不变，只有内存来源不同。这种"正交分离"的设计在 C++ 实时编程中至关重要：它让你不需要为 RT 重写所有数据结构，只需替换内存来源。
+
 ### ⚠️ 常见陷阱
 
 > ⚠️ **编程陷阱**：忘记预 fault 栈空间
@@ -1000,7 +1210,78 @@ private:
 | 读者得到 | 最新完整帧 | 最新完整帧 | 按顺序所有帧 |
 | 适用场景 | 命令传递 | 状态传递/可视化 | 日志/诊断 |
 
-### 5.6 std::atomic 的内存序——ARM 陷阱 ⭐⭐⭐
+### 5.6 realtime_tools 新一代 API：LockFreeSPSCQueue 与 LockFreeMPMCQueue ⭐⭐
+
+从 2025 年起，`realtime_tools` 包对无锁通信组件进行了系统性重构，引入了基于 Boost.Lockfree 的 `LockFreeSPSCQueue` 和 `LockFreeMPMCQueue`，同时将 `RealtimeBuffer` 的语义重新定义为 `RealtimeThreadSafeBox`（线程安全盒子）。这些变化反映了 ros2_control 社区对 RT 通信模式更精细化的认知。
+
+**新旧 API 映射**：
+
+| 旧名称 / 概念 | 新名称 | 语义 |
+|--------------|--------|------|
+| `RealtimeBuffer<T>` | `RealtimeThreadSafeBox<T>` | 最新值覆盖（只关心最新消息） |
+| 自定义 SPSC 队列 | `LockFreeSPSCQueue<T>` | 先进先出（不丢中间消息，单生产者单消费者） |
+| 自定义 MPMC 队列 | `LockFreeMPMCQueue<T>` | 先进先出（多生产者多消费者） |
+| `RealtimePublisher<T>` | `RealtimePublisher<T>` | RT 安全的 ROS2 发布（不变） |
+
+**选型决策树**：
+
+```
+需要在 RT 和非 RT 线程间传递数据？
+│
+├── 只关心最新值？（如目标位姿、控制命令）
+│   └── 用 RealtimeThreadSafeBox<T>
+│
+├── 中间消息也重要？（如日志、诊断、轨迹采样点）
+│   ├── 单生产者 + 单消费者？
+│   │   └── 用 LockFreeSPSCQueue<T>（性能最优）
+│   └── 多生产者或多消费者？
+│       └── 用 LockFreeMPMCQueue<T>
+│
+├── 需要从 RT 线程发布 ROS2 话题？
+│   └── 用 RealtimePublisher<T>
+│
+└── 数据是简单标量（int/double/bool）？
+    └── 用 std::atomic<T>（最简洁）
+```
+
+**LockFreeSPSCQueue 使用示例**：
+
+```cpp
+#include <realtime_tools/lock_free_queue.hpp>
+
+struct TrajectoryPoint {
+    double timestamp;
+    std::array<double, 7> positions;
+    std::array<double, 7> velocities;
+};
+
+// 队列容量 256，在 on_configure() 中创建（非 RT）
+realtime_tools::LockFreeSPSCQueue<TrajectoryPoint> traj_queue(256);
+
+// 非 RT 线程：规划器推入轨迹点
+void planner_callback(const TrajectoryMsg::SharedPtr msg) {
+    TrajectoryPoint pt;
+    pt.timestamp = msg->header.stamp.sec;
+    std::copy_n(msg->positions.begin(), 7, pt.positions.begin());
+    std::copy_n(msg->velocities.begin(), 7, pt.velocities.begin());
+    traj_queue.push(pt);  // 底层 Boost.Lockfree，非阻塞
+}
+
+// RT 线程：控制器取出轨迹点
+void update_rt() {
+    TrajectoryPoint pt;
+    if (traj_queue.pop(pt)) {
+        // 成功取到新点，更新控制目标
+        execute_trajectory_point(pt);
+    } else {
+        // 队列空，继续使用上次的控制目标
+    }
+}
+```
+
+> **"不是X而是Y"句式**：`LockFreeSPSCQueue` 不是"更好的 RealtimeBuffer"——两者解决的是不同问题。RealtimeBuffer（Box）是"最新值语义"——写入总是覆盖旧值，读取总是得到最新值。Queue 是"先进先出语义"——所有写入都被保留（除非队列满），读取按顺序取出。选错了数据结构比用了次优实现更危险：如果用 Queue 传递控制命令，当命令更新频率高于消费频率时，控制器会在过时的命令上落后越来越远。
+
+### 5.7 std::atomic 的内存序——ARM 陷阱 ⭐⭐⭐
 
 | 内存序 | 保证 | 用途 | ARM 开销 |
 |--------|------|------|---------|
@@ -1011,7 +1292,31 @@ private:
 
 **关键陷阱**：x86（TSO）上 acquire/release 几乎免费，但 **ARM/RISC-V（弱序）上需要实际屏障指令**。代码在 x86 上"正确"但在 ARM 上崩溃是真实 bug——Jetson 平台（ARM）是常见踩雷场景。
 
-### 5.7 ros2_control 的设计原则 ⭐⭐
+**具体场景**：你在 x86 开发机上用 `memory_order_relaxed` 写了一个无锁 flag 来通知 RT 线程"新数据已就绪"。x86 的 TSO（Total Store Order）模型恰好保证了 store 的顺序——所以即使用了 relaxed，数据也在 flag 之前可见。但部署到 Jetson Orin（ARM Cortex-A78AE）后，ARM 的弱内存序允许 store 被重排——RT 线程可能看到 flag=true 但读到的数据还是旧的。修复方法：flag 的写入用 `memory_order_release`，读取用 `memory_order_acquire`。
+
+```cpp
+// ❌ x86 上"碰巧正确"，ARM 上数据竞争
+std::atomic<bool> data_ready{false};
+SharedData shared_data;
+
+// 写者（非 RT）
+shared_data.value = new_value;                           // store 1
+data_ready.store(true, std::memory_order_relaxed);       // store 2
+// ARM 上 store 2 可能重排到 store 1 之前!
+
+// ✅ 正确：release/acquire 配对
+shared_data.value = new_value;                           // store 1
+data_ready.store(true, std::memory_order_release);       // store 2
+// release 保证 store 1 在 store 2 之前对其他线程可见
+
+// 读者（RT）
+if (data_ready.load(std::memory_order_acquire)) {        // load 1
+    use(shared_data.value);                              // load 2
+    // acquire 保证 load 2 看到 store 2 之前的所有写入
+}
+```
+
+### 5.8 ros2_control 的设计原则 ⭐⭐
 
 > **本质洞察**：ros2_control 的整个设计围绕一个核心原则——**所有内存分配都在 `on_configure()`（非 RT 阶段）完成，`update()`（RT 阶段）中不涉及任何分配**。realtime_tools 存在的根本原因就是确保 RT-非RT 通信不需要在 RT 端做任何分配或等待。
 
@@ -1467,10 +1772,34 @@ PDO（Process Data Object）定义了主站与从站之间交换哪些数据。E
 
 机械臂调试更困难的原因：工业机器人出错后的恢复成本高（可能损坏工件、末端工具、甚至人身安全）。足式机器人摔倒后通常可以自行站起或手动扶起。这导致机械臂的 RT 代码需要更多防御性检查（力矩限幅、速度监控、碰撞检测），这些检查本身也必须是 RT 安全的。
 
+**差异 4：接触状态建模**
+
+机械臂和足式机器人的接触状态有本质区别，这深刻影响了控制架构中实时计算的内容。
+
+| 维度 | 机械臂 | 足式 |
+|------|--------|------|
+| 接触状态 | 持续且已知（末端持续接触工件或自由运动） | 离散切换（摆动相→支撑相，每步切换一次） |
+| 接触力建模 | 阻抗/导纳控制，连续力反馈 | 接触力受步态时序约束，需要接触检测 |
+| RT 计算内容 | PD + 重力补偿 + 力矩限幅（计算量小） | WBC QP + MPC + 接触力分配（计算量大） |
+| 状态估计 | 编码器直读（高精度） | IMU + 腿部运动学融合（需 EKF/UKF） |
+
+**关键洞察**：足式机器人的 RT 线程需要在每个周期内完成**状态估计 + WBC QP 求解 + 接触力分配**，计算量远大于机械臂的 PD 控制。但足式的控制频率通常允许 500 Hz（2 ms 预算），而机械臂在 libfranka 模式下只有 300-500 us 计算预算——预算更紧但计算量更小。这是两种系统在"计算复杂度 vs 时间预算"维度上的不同权衡。
+
+**差异 5：通信拓扑与冗余**
+
+| 维度 | 机械臂 | 足式 |
+|------|--------|------|
+| 总线拓扑 | 菊花链 EtherCAT（串行依赖） | EtherCAT / CAN / SPI（可按腿分组） |
+| 单点故障影响 | 一个从站故障→整条链路中断 | 一条腿故障→三腿运动降级 |
+| 冗余设计 | 通常无（工业标准靠 FSoE 安全协议） | 可按腿独立供电和通信 |
+
+> **反事实推理**：如果把足式的异步 MPC + WBC 架构直接移植到机械臂会怎样？MPC 以 20-50 Hz 异步运行，WBC 在 RT 线程中以 1 kHz 执行。这在原理上可行——问题在于 libfranka 的 callback 模式要求**所有计算都在一个函数中完成**，不允许在回调之间保持异步线程的共享状态（libfranka 的 UDP 协议假设每个回调是独立的）。要实现异步架构，必须绕过 libfranka 的 callback 模式，直接使用 ros2_control 的 read/update/write 循环——这正是 `franka_ros2` 的做法。
+
 ### 练习
 
 1. ⭐⭐ 列出 MIT Cheetah 和 Franka Panda 控制循环中共同的 RT 安全设计。至少 5 个。
 2. ⭐⭐ 为什么足式把 MPC 放在独立线程异步执行（5-50 ms），而机械臂把控制计算放在 callback 中同步执行？
+3. ⭐⭐⭐ 如果要在 Franka Panda 上运行 MPC（求解时间 5 ms），设计一个异步架构方案：MPC 线程和 RT 控制线程如何通信？当 MPC 求解未完成时，RT 线程使用什么？
 
 ---
 
@@ -1514,10 +1843,41 @@ void rt_main_loop() {
 >
 > **正确做法**：`on_configure()` 中预加载参数。运行时更新通过 `RealtimeBuffer` 从非 RT 线程传入
 
+### 10.2 Orocos RTT——ros2_control 之外的替代框架 ⭐⭐⭐
+
+在 ros2_control 成为 ROS2 生态标准之前，**Orocos RTT**（Open Robot Control Software, Real-Time Toolkit）是机器人实时控制的主流框架。理解 Orocos RTT 有两个意义：（1）许多工业机器人系统仍在使用它；（2）对比两种框架的设计哲学有助于深入理解"实时控制框架应该解决什么问题"。
+
+**Orocos RTT 核心概念**：
+
+| 概念 | Orocos RTT | ros2_control 对应 |
+|------|-----------|------------------|
+| **TaskContext** | 实时组件的基类，包含 `updateHook()` | `ControllerInterface::update()` |
+| **Port** | 组件间数据流通道（RT 安全） | `state_interfaces` / `command_interfaces` |
+| **Activity** | 线程调度策略（周期/非周期） | `ControllerManager` 的 RT 主循环 |
+| **Property** | 运行时可配置参数 | ROS2 parameter |
+| **Operation** | 远程可调用方法 | ROS2 service |
+| **Deployment** | XML 配置组件连接关系 | `ros2_control` YAML + URDF |
+
+**Orocos RTT 的独特优势**：
+
+1. **组件间通信天然 RT 安全**：Orocos 的 Port 使用无锁环形缓冲区实现数据流——这与 ros2_control 中手动使用 `RealtimeBuffer` 不同。Orocos 的设计假设是"所有组件都在 RT 上下文中"，因此默认通信方式就是 RT 安全的
+2. **细粒度调度控制**：每个 TaskContext 可以绑定到不同的 Activity（不同频率、不同优先级）。ros2_control 中所有控制器共享一个 RT 主循环——如果某个控制器的 `update()` 偶尔超时，会影响所有其他控制器
+3. **无 ROS 依赖**：Orocos RTT 可以独立于 ROS 运行，适合没有 ROS 的嵌入式场景
+
+**为什么 ros2_control 逐渐取代了 Orocos**：
+
+1. **生态系统**：ros2_control 与 MoveIt2、nav2、Gazebo 深度集成——Orocos 的孤立生态无法竞争
+2. **学习曲线**：Orocos 的 Deployment XML 和 scripting 语言学习成本高；ros2_control 用标准 ROS2 工具（YAML、launch 文件）
+3. **社区活跃度**：Orocos 的核心开发团队小（主要是 KU Leuven），ros2_control 有 Bosch、PAL Robotics、PickNik 等公司持续投入
+4. **PREEMPT_RT 主线化的影响**：Orocos 早期的价值之一是封装了 RT 线程管理的复杂性。PREEMPT_RT 主线化后，直接用 POSIX RT API 的门槛大幅降低，Orocos 的这一优势减弱
+
+> **跨领域类比**：Orocos RTT 之于 ros2_control，类似于 CMake 之于 Bazel。前者功能强大、概念完备，但生态孤立、学习曲线陡峭；后者利用现有生态的网络效应，用"够用"的功能覆盖 90% 场景。两者在特定场景下都有存在价值：需要超细粒度 RT 调度的工业系统可能仍需 Orocos，正如超大规模 monorepo 仍需 Bazel。但对大多数机器人项目而言，ros2_control 是更务实的选择。这个类比的局限在于：CMake 和 Bazel 可以共存于同一项目，但 Orocos 和 ros2_control 很难在同一控制栈中混用。
+
 ### 练习
 
 1. ⭐⭐ 精读 `ros2_control_node.cpp` 主循环。标注 SCHED_FIFO、nanosleep、read/update/write。
 2. ⭐⭐⭐ 用 `CLOCK_MONOTONIC` 测量 read+update+write 执行时间。运行 10000 次画直方图。
+3. ⭐⭐⭐ 对比 Orocos RTT 的 `updateHook()` 和 ros2_control 的 `update()` 在 RT 安全保证上的差异。哪种框架更容易让初学者犯 RT 安全错误？
 
 ---
 
@@ -1750,6 +2110,42 @@ trace-cmd report trace.dat | grep "sched_switch" | \
     └── 算法本身太慢? → 优化或异步化
 ```
 
+### 12.6 实战调试案例 ⭐⭐⭐
+
+以下三个案例来自真实的机械臂 RT 开发场景，展示如何用上述工具链定位根因。
+
+**案例 1：每 30 秒一次 200 us 延迟尖峰**
+
+- **症状**：cyclictest 压力测试下，每 30 秒出现一次 200 us 尖峰，其余时间 < 20 us
+- **排查过程**：
+  1. ftrace 追踪 `sched_switch` 事件——发现尖峰时刻 RT 线程被 `kworker` 抢占
+  2. 进一步追踪 `kworker` 的调用栈——指向 `writeback_sb_inodes`（磁盘脏页回刷）
+  3. 检查 `/proc/sys/vm/dirty_writeback_centisecs`——默认 500（即 5 秒触发一次 writeback），但 writeback 的实际执行间隔受脏页量影响
+- **根因**：系统日志（syslog/journald）持续写磁盘，积累的脏页触发周期性回刷。回刷的 `kworker` 线程优先级高于某些内核线程，间接延迟了 RT 线程的中断响应
+- **修复**：`echo 0 > /proc/sys/vm/dirty_writeback_centisecs`（禁用周期回刷），同时将日志输出重定向到 tmpfs 或 ramdisk
+
+**案例 2：Pinocchio RNEA 偶发 500 us 延迟**
+
+- **症状**：控制循环中调用 `pinocchio::rnea()` 偶尔耗时 500 us（正常 2-3 us）
+- **排查过程**：
+  1. `EIGEN_RUNTIME_NO_MALLOC` 审计——未触发 abort，说明 Eigen 没有堆分配
+  2. `LD_PRELOAD` malloc 拦截——捕获到 `pinocchio::Data` 内部的一次 `realloc`
+  3. GDB backtrace 定位——`pinocchio::Data::oMi` 向量在首次调用时被 lazy-initialized
+- **根因**：Pinocchio 的 `Data` 结构中某些成员采用延迟初始化（lazy initialization），首次 `rnea()` 调用触发内部缓冲区分配。后续调用复用已分配缓冲区
+- **修复**：在非 RT 阶段（`on_configure()`）预调用一次 `pinocchio::rnea()` "预热" Data 结构，确保所有延迟初始化在 RT 循环前完成
+
+**案例 3：ARM 平台（Jetson Orin）上无锁队列数据损坏**
+
+- **症状**：SPSC Ring Buffer 在 Jetson Orin（ARM Cortex-A78AE）上偶发数据损坏，x86 开发机上从未出现
+- **排查过程**：
+  1. 检查 `memory_order`——`push()` 中 `head_` 的 store 使用了 `memory_order_relaxed`
+  2. 在 x86（TSO 内存模型）上 relaxed store 等价于 release store——ARM 上不等价
+  3. 消费者 `pop()` 可能在 ARM 上看到更新后的 `head_` 但读到**未完全写入的** `buffer_[head]`
+- **根因**：ARM 的弱序内存模型允许 store 重排——`buffer_[head] = item` 可能在 `head_.store(next)` **之后**对其他核心可见
+- **修复**：将 `head_.store(next, std::memory_order_relaxed)` 改为 `head_.store(next, std::memory_order_release)`，保证 buffer 写入在 head 更新之前对消费者可见
+
+> **"不是X而是Y"句式**：这类跨平台 bug 不是"代码写错了"——在 x86 上它是完全正确的。这是"内存模型假设不匹配"——代码隐含地依赖了 x86 的强序保证，而 ARM 不提供该保证。教训：无锁代码必须在目标平台上测试，不能只在开发机上验证。
+
 ### ⚠️ 常见陷阱
 
 > ⚠️ **编程陷阱**：在 RT 线程中使用 `printf` 做"临时调试"
@@ -1770,7 +2166,28 @@ trace-cmd report trace.dat | grep "sched_switch" | \
 
 ---
 
+## 本章常见误解汇总
+
+| 误解 | 正确理解 |
+|------|---------|
+| "用 C++ 就自动是实时的" | C++ 的平均性能高，但 `new/delete/mutex/cout` 的最坏延迟不确定。实时需要消除所有不确定性来源 |
+| "PREEMPT_RT 让代码跑得更快" | PREEMPT_RT 不改变平均速度，只保证最坏情况延迟有界。RT 内核下代码的平均性能甚至可能略降（更多抢占点的开销） |
+| "实时 = 低延迟" | 低延迟是平均值小，实时是最坏值有界。一个平均 10 us 但最坏 5 ms 的函数不是实时安全的 |
+| "EtherCAT 自动保证实时" | EtherCAT 只保证总线层实时。主站软件仍需 PREEMPT_RT + SCHED_FIFO 保证调度确定性 |
+| "`std::shared_ptr` 是安全的" | `shared_ptr` 的引用计数归零时触发 `delete` → `free`，这在 RT 线程中是不确定性来源 |
+| "`std::vector` 预留够容量就安全" | 首次 `reserve()` 本身就是 `malloc`。即使容量足够，某些操作（如 `insert`）仍可能触发重分配。用 `std::array` 或 `std::pmr::vector` + 预分配池 |
+| "只要代码 < 1 ms 就不会超时" | libfranka 的 UDP 通信本身占 200 us，留给用户计算的只有 300-500 us |
+| "`memory_order_relaxed` 在 x86 上没问题" | x86 的 TSO 模型恰好掩盖了 relaxed 的不安全性。部署到 ARM（Jetson）后会出现数据竞争 |
+| "printf 可以临时用来调试延迟问题" | `printf` 自身引入 100-1000 us 延迟，用"导致问题的工具"调试该问题——海森堡 bug |
+| "RT 线程用 `std::mutex` 保护数据就行" | `std::mutex` 不支持优先级继承，会导致优先级反转。用 `RealtimeBuffer` 或 `std::atomic` |
+| "Orocos RTT 比 ros2_control 更好" | Orocos 的 RT 隔离更彻底，但生态孤立。对大多数项目，ros2_control 的生态优势远大于 Orocos 的 RT 细粒度优势 |
+| "PMR 内存池解决了所有动态分配问题" | PMR 需要 `null_memory_resource` 作上游防止回退到 `malloc`；缓冲区大小必须覆盖最坏情况；仍需在非 RT 阶段预分配 |
+
+---
+
 ## 本章小结
+
+### 知识点总表
 
 | 知识点 | 核心内容 | 难度 | 关键收获 |
 |--------|---------|------|---------|
@@ -1778,15 +2195,42 @@ trace-cmd report trace.dat | grep "sched_switch" | \
 | PREEMPT_RT 主线化 | Linux 6.12 合并，编译实战，cyclictest 验证 | ⭐ | 20 年里程碑 |
 | RT 禁区清单 | 禁止/允许/灰色操作列表 | ⭐ | 必须背诵 |
 | 标准三件套 | SCHED_FIFO + mlockall + EIGEN_NO_MALLOC | ⭐⭐ | RT 环境标准配置 |
+| pmr 内存池 | 预分配缓冲区 + monotonic_buffer_resource | ⭐⭐⭐ | RT 中使用动态容器 |
 | 内存分配检测 | EIGEN_NO_MALLOC + LD_PRELOAD malloc 拦截 | ⭐⭐ | 彻底消除隐藏分配 |
-| realtime_tools | RealtimeBuffer + RealtimePublisher | ⭐⭐ | 无锁 RT-非RT 通信 |
+| realtime_tools | RealtimeBuffer + RealtimePublisher + LockFreeQueue | ⭐⭐ | 无锁 RT-非RT 通信 |
 | Lock-Free 数据结构 | SPSC Ring Buffer + Triple Buffer | ⭐⭐ | RT 安全的队列/缓冲 |
 | 优先级反转 | 问题定义 + 优先级继承 | ⭐⭐ | 经典 RT 问题 |
 | libfranka RT | callback 模式 + 完整 walkthrough | ⭐⭐ | 工业级 RT API |
 | EtherCAT | DC 同步 + PDO 映射 + SOEM | ⭐⭐⭐ | 工业通信协议 |
 | 足式对比 | 架构差异 + 安全差异 + 调试差异 | ⭐⭐ | 跨方向迁移 |
 | ros2_control 线程模型 | 生命周期 + RT/非RT 分离 | ⭐⭐ | ROS2 控制架构核心 |
+| Orocos RTT | ros2_control 之外的替代框架 | ⭐⭐⭐ | 框架选型视野 |
 | RT 调试方法论 | ftrace / perf / trace-cmd | ⭐⭐⭐ | 非侵入式延迟分析 |
+
+### 术语速查表
+
+| 术语 | 英文 | 一句话定义 |
+|------|------|-----------|
+| 硬实时 | Hard Real-Time | 最坏情况执行时间有确定上界，超过 deadline 即为系统失败 |
+| 确定性 | Determinism | 每次执行的时间偏差在已知范围内 |
+| PREEMPT_RT | Fully Preemptible Kernel | Linux 内核实时补丁（6.12+ 已主线化），使几乎所有内核代码可被抢占 |
+| SCHED_FIFO | First-In First-Out Scheduling | POSIX 实时调度策略，任务只被更高优先级任务抢占 |
+| mlockall | Memory Lock All | 锁定进程所有当前和未来内存页，防止被换出到磁盘 |
+| 优先级反转 | Priority Inversion | 高优先级任务被低优先级任务间接阻塞的现象 |
+| 优先级继承 | Priority Inheritance | 持有 mutex 的低优先级线程暂时提升到等待者的优先级 |
+| RealtimeBuffer | Realtime Thread-Safe Box | ros2_control 的无锁数据交换容器（最新值覆盖语义） |
+| SPSC | Single-Producer Single-Consumer | 单生产者单消费者无锁队列 |
+| MPMC | Multiple-Producer Multiple-Consumer | 多生产者多消费者无锁队列 |
+| EtherCAT | Ethernet for Control Automation Technology | 工业实时以太网协议，保证微秒级确定性通信 |
+| DC 同步 | Distributed Clock Synchronization | EtherCAT 从站间亚微秒级时钟同步机制 |
+| PDO | Process Data Object | EtherCAT 周期性数据交换的数据映射单元 |
+| SOEM | Simple Open EtherCAT Master | 轻量级开源 EtherCAT 主站库（C 语言） |
+| PMR | Polymorphic Memory Resource | C++17 多态内存资源，将分配策略从容器类型中解耦 |
+| ftrace | Function Tracer | Linux 内核内置的函数跟踪框架 |
+| cyclictest | Cyclic Latency Test | RT 延迟测试标准工具，测量周期性唤醒的最坏延迟 |
+| False Sharing | 伪共享 | 不同核心写同一缓存行的不同变量，导致反复缓存失效 |
+| SSO | Small String Optimization | `std::string` 短字符串直接存储在对象内部（通常 16-23 字节），避免堆分配 |
+| Orocos RTT | Open Robot Control Software Real-Time Toolkit | 比利时 KU Leuven 开发的实时机器人控制框架 |
 
 ---
 
@@ -1847,3 +2291,96 @@ trace-cmd report trace.dat | grep "sched_switch" | \
 5. 测量单次循环总时间 < 300 us
 
 **评分标准**：零堆分配、cyclictest < 50 us、循环 < 300 us、目标切换时轨迹连续。
+
+---
+
+## 本章与后续章节的关系
+
+| 后续章节 | 关系 | 本章铺垫的知识点 |
+|---------|------|----------------|
+| **M12 ros2_control 硬件接口** | 直接后继 | RT 线程模型（§11）、RealtimeBuffer（§5）、hardware_interface 的 read/write RT 要求（§11.3）。M12 在 M11 的基础上实现具体的硬件驱动——本章教"RT 循环怎么跑"，M12 教"循环里怎么和硬件通信" |
+| **M14 MoveIt2 系统集成** | 上下文依赖 | MoveIt2 的轨迹规划结果通过 RealtimeBuffer 传入控制循环。理解 RT 与非 RT 的边界（§5-6）是集成 MoveIt2 和 ros2_control 的前提 |
+| **足式/170 实时 C++ 工程** | 对照章节 | 本章 §9 的对比内容直接对接足式章节。RT 配置三件套、realtime_tools 使用、Eigen 固定大小习惯完全复用；差异在于架构（同步 vs 异步）和安全标准 |
+
+---
+
+## API 速查表
+
+### POSIX RT API
+
+| API | 头文件 | 用途 | RT 线程中可调用 |
+|-----|--------|------|:---:|
+| `sched_setscheduler(pid, SCHED_FIFO, &param)` | `<sched.h>` | 设置实时调度策略和优先级 | 仅初始化阶段 |
+| `mlockall(MCL_CURRENT \| MCL_FUTURE)` | `<sys/mman.h>` | 锁定所有当前和未来内存页 | 仅初始化阶段 |
+| `clock_gettime(CLOCK_MONOTONIC, &ts)` | `<time.h>` | 读取单调递增时钟 | ✅ |
+| `clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &ts, NULL)` | `<time.h>` | 绝对时间高精度睡眠 | ✅ |
+| `pthread_mutexattr_setprotocol(&attr, PTHREAD_PRIO_INHERIT)` | `<pthread.h>` | 启用优先级继承 mutex | 仅初始化阶段 |
+| `pthread_attr_setstacksize(&attr, size)` | `<pthread.h>` | 设置线程栈大小 | 仅初始化阶段 |
+
+### realtime_tools API
+
+| 类 | 关键方法 | 语义 | RT 端行为 |
+|----|---------|------|----------|
+| `RealtimeBuffer<T>` / `RealtimeThreadSafeBox<T>` | `writeFromNonRT(val)` / `readFromRT()` | 最新值覆盖 | 非阻塞读取 |
+| `RealtimePublisher<T>` | `trylock()` / `unlockAndPublish()` | RT 安全 ROS2 发布 | trylock 失败即跳过 |
+| `LockFreeSPSCQueue<T>` | `push(val)` / `pop(val)` | FIFO 单生产者单消费者 | 非阻塞 |
+| `LockFreeMPMCQueue<T>` | `push(val)` / `pop(val)` | FIFO 多生产者多消费者 | 非阻塞 |
+
+### Eigen RT 安全 API
+
+| 操作 | RT 安全 | 条件 |
+|------|:-------:|------|
+| `Matrix<double, N, M>` 构造 | ✅ | N, M 为编译期常量 |
+| `MatrixXd` 构造 | ❌ | 触发 `malloc` |
+| `Map<const VectorNd>(ptr)` | ✅ | 零拷贝指针包装 |
+| `A * B`（固定大小） | ✅ | 栈上临时变量 |
+| `A.inverse()`（固定大小） | ✅ | 栈上 |
+| `A.inverse()`（动态大小） | ❌ | 触发 `malloc` |
+| `set_is_malloc_allowed(false)` | - | 审计模式：任何 Eigen 堆分配立即 abort |
+
+### libfranka RT 回调 API
+
+| 方法 | 返回类型 | 说明 |
+|------|---------|------|
+| `robot.control(callback)` | void | 启动 1 kHz RT 控制循环 |
+| `state.q` / `state.dq` | `std::array<double, 7>` | 当前关节位置/速度（RT 安全） |
+| `model.gravity(state)` | `std::array<double, 7>` | 重力补偿力矩（RT 安全） |
+| `model.mass(state)` | `std::array<double, 49>` | 质量矩阵（7x7 展平，RT 安全） |
+| `franka::Torques(array)` | POD | RT 安全的力矩返回值 |
+
+---
+
+## 研究实践建议
+
+### 入门级（⭐-⭐⭐）
+
+1. 在 Ubuntu 上安装 RT 内核（`apt install linux-image-rt` 或手动编译），运行 cyclictest 并与非 RT 内核对比
+2. 编写一个最小的 1 kHz 循环：`SCHED_FIFO` + `mlockall` + `clock_nanosleep(ABSTIME)`，用 `CLOCK_MONOTONIC` 测量每次循环时间并输出直方图
+3. 在循环中故意加入 `std::vector::push_back` / `std::cout`，观察延迟尖峰
+
+### 进阶级（⭐⭐-⭐⭐⭐）
+
+1. 用 `EIGEN_RUNTIME_NO_MALLOC` + `LD_PRELOAD` malloc 拦截审计一个完整的 ros2_control 控制器
+2. 精读 `realtime_tools` 源码，理解 `RealtimeBuffer` 的内部同步机制
+3. 在 libfranka 仿真环境中实现 PD + 重力补偿控制器，测量单次回调执行时间
+
+### 研究级（⭐⭐⭐-⭐⭐⭐⭐）
+
+1. 对比 `monotonic_buffer_resource` 和自定义定长内存池在 RT 上下文中的分配延迟分布
+2. 在 ARM 平台（如 Jetson Orin）上复现 `memory_order_relaxed` 导致的数据竞争 bug
+3. 研究 Rust 的 borrow checker 能否在编译期检测 RT 线程中的 `malloc` 调用——目前 Rust 社区有 `#[no_alloc]` 属性的提案
+
+---
+
+## 版本信息速查
+
+| 组件 | 版本 | 说明 |
+|------|------|------|
+| Linux 内核（PREEMPT_RT 主线化） | **6.12+**（2024-11-17 发布） | 6.12 起无需外部补丁 |
+| Ubuntu RT 内核支持 | **25.04+**（Plucky Puffin） | `apt install linux-image-rt-generic` |
+| libfranka | **0.14.x / 0.15.x** | Franka Emika/Franka Robotics 官方 C++ 库 |
+| realtime_tools（ROS2 Rolling） | **2025 年重构版** | 新增 LockFreeSPSCQueue / LockFreeMPMCQueue |
+| SOEM（EtherCAT 主站） | **1.4.x** | rt-labs 维护的轻量 C 库 |
+| Orocos RTT | **2.9** | KU Leuven 维护 |
+| Eigen | **3.4.x** | `EIGEN_RUNTIME_NO_MALLOC` 自 3.3 起可用 |
+| cyclictest（rt-tests 套件） | 最新稳定版 | `apt install rt-tests` |

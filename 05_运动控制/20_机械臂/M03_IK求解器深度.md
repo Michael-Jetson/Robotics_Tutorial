@@ -8,6 +8,67 @@
 
 ---
 
+## 本章知识导航
+
+```
+M03 IK 求解器深度 知识体系
+│
+├── §M03.1 逆运动学问题形式化 ⭐ ──── 从 FK 到 IK 的逆映射
+│   ├── 存在性 / 唯一性 / 冗余性
+│   └── 三大求解范式（解析 / 数值 / 优化）
+│
+├── §M03.2 解析/闭式 IK ⭐⭐
+│   ├── OPW 参数化闭式解
+│   ├── IKFast 符号消元代码生成
+│   └── ik_geo 几何子问题分解
+│
+├── §M03.3 KDL 数值 IK ⭐ ──── Newton-Raphson 基线
+│
+├── §M03.4 TRAC-IK 双线程竞速 ⭐⭐
+│   ├── KDL + SQP 并行竞速
+│   └── std::thread + std::atomic 源码精读
+│
+├── §M03.5 pick-ik / BioIK ⭐⭐ ──── 优化/进化方法
+│
+├── §M03.6 阻尼 Jacobian IK ⭐⭐ ──── 理论到代码
+│   ├── DLS 原理与自适应阻尼
+│   └── Pinocchio C++ 完整实现
+│
+├── §M03.7 零空间投影与优先级 IK ⭐⭐⭐
+│   ├── $N = I - J^\dagger J$ 数学
+│   └── 主/子任务优先级框架
+│
+├── §M03.8 MoveIt2 IK 插件机制 ⭐⭐
+│
+├── §M03.9 前沿方向 ⭐⭐⭐
+│   ├── Differentiable IK (CppAD / JAX)
+│   └── Learning-based IK (IKFlow)
+│
+└── 累积项目 ──── IK 求解器模块
+```
+
+### 预计阅读时间
+
+| 模式 | 用时 | 适合人群 |
+|------|------|---------|
+| 速查 | 20 分钟 | 已有 IK 经验，只需选型和 MoveIt2 配置 |
+| 精读 | 4-6 小时 | 首次系统学习 IK |
+| 精读 + 实践 | 8-10 小时 | 需要动手实现 DLS IK 和零空间投影 |
+
+### 如果跳过本章会怎样
+
+1. **MoveIt2 调不动**：默认 KDL 插件在冗余臂上成功率常低于 50%。不理解 IK 求解器差异，你会在 `Unable to find IK solution` 前束手无策——解决方案可能只是切换到 TRAC-IK 或 pick-ik
+2. **奇异性无法诊断**：接近奇异构型时关节速度飙升。不理解 DLS 阻尼和条件数监测，你无法区分"目标不可达"和"需要调阻尼参数"
+3. **冗余自由度浪费**：7-DOF 臂有 1 个冗余自由度可用于避障或最大化操作性。不理解零空间投影，你只能得到"某一个"IK 解
+
+### 前置知识桥接
+
+**回顾 M01（Pinocchio FK + Jacobian）**：`forwardKinematics(model, data, q)` 计算末端位姿 $T = FK(q) \in SE(3)$，`computeJointJacobians` 计算 $J(q) \in \mathbb{R}^{6 \times n_v}$。IK 正是 FK 的逆问题——给定目标 $T_{\text{target}}$，求 $q^*$。
+
+**回顾线性代数（SVD + 伪逆）**：Moore-Penrose 伪逆 $J^\dagger = J^T(JJ^T)^{-1}$（满行秩时）给出最小范数解。当 $\sigma_{\min} \to 0$ 时 $J^\dagger$ 中对应项趋于无穷——这是 DLS 阻尼的数学动机。
+
+---
+
 ## M03.0 前置自测
 
 开始本章之前，请独立回答以下 5 题。若答不出 3 题以上，建议先回顾 M01 和线性代数基础。
@@ -2022,6 +2083,38 @@ $$q^* = \arg\min_q \|FK(q) - T_{\text{target}}\|^2 + \lambda R(q)$$
 
 1. ⭐⭐⭐ 用 Pinocchio CppAD 实现一个简单的 Differentiable IK：用 AD 自动计算 FK 误差对 $q$ 的梯度，然后用梯度下降求解。与手工 Jacobian 伪逆的结果对比。
 2. ⭐⭐⭐⭐ 调研 Theseus 或 JAX-based Differentiable IK 的实现，分析其在 GPU 上的批量 IK 求解性能。
+
+---
+
+## 本章常见误解汇总
+
+| 编号 | 误解 | 正确理解 |
+|:----:|------|---------|
+| 1 | "IK 解不唯一说明算法有问题" | 多解是 IK 的数学性质。6-DOF 臂最多 8 组闭式解，7-DOF 臂有无穷多解。算法职责是高效找到一个好解，选解策略是独立的工程决策 |
+| 2 | "KDL IK 成功率低是因为算法差" | KDL 用标准 Newton-Raphson，算法本身没问题。低成功率因不做随机重启——单一初始猜测易陷局部极值。TRAC-IK 用同一个 KDL 加随机重启和 SQP 竞速，成功率从 50% 提升到 98%+ |
+| 3 | "阻尼因子越大越安全" | $\lambda$ 过大会严重降低收敛速度。正确做法是**自适应阻尼**：根据 $\sigma_{\min}$ 动态调整——远离奇异时 $\lambda \to 0$，接近奇异时增大 |
+| 4 | "零空间投影保证子任务不影响主任务" | $N = I - J^\dagger J$ 在当前构型下保证子任务不产生主任务方向分量。但步长过大时非线性耦合仍可能干扰主任务。需每步重新计算 $N$ 并监控主任务误差 |
+| 5 | "IKFast 一定比数值 IK 快" | IKFast 闭式解确实约 $1\ \mu\text{s}$，但仅适用于满足 Pieper 条件的 6-DOF 臂。7-DOF 不适用。ik_geo 是更现代的替代方案 |
+| 6 | "Learning-based IK 会取代传统方法" | 学习方法适合快速生成多样化候选解，但精度在 mm 级而非 $\mu$m 级。实时伺服仍需传统方法精化。两者互补 |
+
+---
+
+## 符号表
+
+| 符号 | 含义 | 首次出现 |
+|------|------|---------|
+| $q \in \mathbb{R}^n$ | 关节角度向量 | $\S$M03.1 |
+| $T \in SE(3)$ | 末端执行器位姿 | $\S$M03.1 |
+| $FK(q)$ | 正运动学映射 $\mathbb{R}^n \to SE(3)$ | $\S$M03.1 |
+| $J(q) \in \mathbb{R}^{6 \times n}$ | 几何雅可比矩阵 | $\S$M03.1 |
+| $J^\dagger$ | Moore-Penrose 伪逆 | $\S$M03.6 |
+| $\mathcal{N}(J)$ | Jacobian 零空间 | $\S$M03.7 |
+| $N = I - J^\dagger J$ | 零空间投影矩阵 | $\S$M03.7 |
+| $\sigma_{\min}$ | Jacobian 最小奇异值 | $\S$M03.6 |
+| $\lambda$ | DLS 阻尼因子 | $\S$M03.6 |
+| $e \in \mathbb{R}^6$ | SE(3) 切空间误差向量 | $\S$M03.6 |
+| $\kappa(J)$ | Jacobian 条件数 $\sigma_{\max}/\sigma_{\min}$ | $\S$M03.6 |
+| $w(q)$ | Yoshikawa 操作性指标 $\sqrt{\det(JJ^T)}$ | $\S$M03.7 |
 
 ---
 

@@ -83,7 +83,7 @@
    ┌─────────────────────────────┤
    │                              ├─→ 贝叶斯更新 / 重要性采样 / Girsanov / KL
    ▼                              ▼
-  L^p 空间 + Riesz–Fischer (§13) ──→ Kalman = L² 投影
+  L^p 空间 + Riesz–Fischer (§13) ──→ Kalman = L^2 投影
    │                              │
    ▼                              ▼
   收敛模式相互关系 (§14)     微分与 FTC (§15)
@@ -1572,7 +1572,7 @@ $$
 $$
 \frac{d\mathbb{Q}}{d\mathbb{P}}=\exp\Big(\int_0^T u_s^\top\,dW_s-\tfrac12\int_0^T|u_s|^2\,ds\Big).
 $$
-这是**路径积分控制**（PI²、MPPI）的数学核心——它把"控制的影响"编码成路径空间上的测度变换，从而能用蒙特卡洛在被动动力学下采样、用 R–N 导数加权来评估受控代价。MPPI 在四足、无人机上的成功，底层就是这个 Girsanov R–N 导数（搜索确认：Girsanov 通过 R–N 导数把含漂移的布朗运动变成标准布朗运动，控制问题里把控制吸收进测度变换）。
+这是**路径积分控制**（$\text{PI}^2$、MPPI）的数学核心——它把"控制的影响"编码成路径空间上的测度变换，从而能用蒙特卡洛在被动动力学下采样、用 R–N 导数加权来评估受控代价。MPPI 在四足、无人机上的成功，底层就是这个 Girsanov R–N 导数（搜索确认：Girsanov 通过 R–N 导数把含漂移的布朗运动变成标准布朗运动，控制问题里把控制吸收进测度变换）。
 
 **(4) KL 散度 = R–N 导数的对数期望（信息几何/信赖域）。** 两个测度的 Kullback–Leibler 散度
 $$
@@ -2028,7 +2028,7 @@ C1 的鞅收敛定理、大数定律、中心极限定理将大量调用 DCT（�
 | 本章工具 | 下游应用 | 关键文献 |
 |---------|---------|---------|
 | **DCT**（§8） | 粒子滤波收敛 | Crisan–Doucet 2002；Del Moral 2004 |
-| **R–N 导数**（§12） | 贝叶斯更新、重要性采样、Girsanov(PI²/MPPI)、KL(TRPO/PPO) | Todorov 2009；Theodorou 2010 |
+| **R–N 导数**（§12） | 贝叶斯更新、重要性采样、Girsanov($\text{PI}^2$/MPPI)、KL(TRPO/PPO) | Todorov 2009；Theodorou 2010 |
 | **Fubini**（§10） | SLAM 边际化、Rao–Blackwell 化(FastSLAM)、因子图 sum-product | Montemerlo 2002 |
 | **$L^2$ 投影**（§13） | Kalman/EKF/UKF、LSTD/LSPI | Kalman 1960 |
 | **Haar 测度**（§16） | 姿态估计、群卷积 CNN、姿态图谱 | Barfoot–Furgale 2014；Cohen–Welling 2016 |
@@ -2236,7 +2236,7 @@ C1 的鞅收敛定理、大数定律、中心极限定理将大量调用 DCT（�
 11. Del Moral, P., *Feynman–Kac Formulae*, Springer, 2004。
 12. Montemerlo, Thrun, Koller, Wegbreit, "FastSLAM", *AAAI* 2002。
 13. Karaman, S. & Frazzoli, E., "Sampling-based Algorithms for Optimal Motion Planning", *IJRR* 30(7):846–894, 2011。
-14. Theodorou, Buchli, Schaal, "A Generalized Path Integral Control Approach to RL", *JMLR* 11:3137–3181, 2010（PI²，用 Girsanov）。
+14. Theodorou, Buchli, Schaal, "A Generalized Path Integral Control Approach to RL", *JMLR* 11:3137–3181, 2010（$\text{PI}^2$，用 Girsanov）。
 15. Munos, R. & Szepesvári, C., "Finite-Time Bounds for Fitted Value Iteration", *JMLR* 9:815–857, 2008。
 16. Barfoot, T. & Furgale, P., "Associating Uncertainty with 3D Poses", *IEEE T-RO* 30(3):679–693, 2014。
 17. Chirikjian, G. S., *Stochastic Models, Information Theory, and Lie Groups*, Vols. 1–2, Birkhäuser, 2009 & 2012。
@@ -2252,7 +2252,7 @@ C1 的鞅收敛定理、大数定律、中心极限定理将大量调用 DCT（�
 | **C1 概率论** | 测度论 = 概率论的语言字典（随机变量/期望/条件期望/鞅） | §6（可测函数）、§7（期望）、§12（条件期望 = R–N）、§8（DCT 证大数定律/鞅收敛） |
 | **Layer-1 流形积分/李群** | 黎曼体积形式 = 流形 Radon 测度；$\mathrm{SE}(3)$ Gauss | §16（Haar 测度、Riesz 表示） |
 | **SLAM / 状态估计** | 贝叶斯滤波、粒子滤波、Kalman 的数学正确性 | §12（贝叶斯/重要性采样）、§8（粒子滤波收敛）、§13（Kalman 投影）、§10（边际化） |
-| **最优控制 / 路径积分** | MPPI/PI² 的 Girsanov 测度变换 | §12（R–N 导数、Girsanov） |
+| **最优控制 / 路径积分** | MPPI/$\text{PI}^2$ 的 Girsanov 测度变换 | §12（R–N 导数、Girsanov） |
 | **强化学习** | TRPO/PPO 信赖域（KL）、SGD a.s. 收敛、LSTD | §12（KL 散度）、§14（a.s. 收敛）、§13（$L^2$ Galerkin 投影） |
 
 ---

@@ -26,6 +26,80 @@
 
 ---
 
+### 本章知识导航
+
+```
+M15 Mini-Manip 综合项目
+│
+├── M15.1 系统架构设计 ⭐⭐
+│   ├── 四层架构（编排 → 规划 → 控制 → 硬件）
+│   ├── 数据流与接口设计
+│   └── 各层通信方式（C++ 直调 / ROS2 Action / 进程内）
+│
+├── M15.2 分阶段开发计划 ⭐⭐
+│   ├── 阶段一：环境搭建（Gazebo + ros2_control）
+│   ├── 阶段二：MTC Pick-and-Place（8+ Stage）
+│   ├── 阶段三：BT.CPP 编排与错误恢复
+│   ├── 阶段四：IK / 规划器 / 时间参数化量化对比
+│   └── 阶段五：sim-to-real 验证
+│
+├── M15.3 感知集成 ⭐⭐
+│   ├── 三种感知模式（硬编码 → 仿真 GT → 视觉）
+│   └── 手眼标定完整推导（$AX = XB$）
+│
+├── M15.4 抓取规划基础 ⭐⭐⭐
+│   ├── 力闭合与形封闭理论
+│   ├── GraspNet / AnyGrasp 集成
+│   └── 完整 Bin-Picking Pipeline
+│
+├── M15.5 完整项目结构与配置 ⭐⭐
+│   ├── 项目目录结构（6 个 ROS2 包）
+│   └── 关键配置文件（controllers.yaml / kinematics.yaml）
+│
+├── M15.6 调试方法论与性能指标 ⭐⭐
+│   ├── 层级调试（硬件 → 控制 → 规划 → 编排）
+│   ├── 常见集成问题诊断表
+│   └── 性能瓶颈分析方法
+│
+├── M15.6B 性能评估指标体系 ⭐⭐⭐
+│   ├── 四维评估框架（效率 / 可靠性 / 精度 / 安全）
+│   └── 自动化性能评估脚本
+│
+├── M15.7 交付物与评估标准 ⭐
+│
+├── M15.8 从仿真到实机的部署流程 ⭐⭐⭐
+│   ├── 三阶段部署（Mock → Gazebo → 真机）
+│   ├── 真机首次运行安全规程
+│   └── 参数调整清单
+│
+└── M15.9 前沿展望 ⭐⭐⭐⭐
+    ├── AnyGrasp / AnyDexGrasp 最新进展
+    └── Foundation Grasp Model 概念
+```
+
+**阅读路径建议**：
+
+- **全栈工程师**：按序阅读 M15.1 至 M15.8，跳过 M15.9
+- **偏规划方向**：重点 M15.2（阶段二和阶段四）+ M15.4
+- **偏感知方向**：重点 M15.3 + M15.4（GraspNet 集成部分）
+- **偏部署方向**：重点 M15.5 + M15.6 + M15.8
+
+### 前置知识桥接
+
+本章是机械臂方向的毕业项目，综合运用 M01-M14 的全部技能。每个前置模块在本项目中扮演特定角色——下一节"M01-M14 知识桥接回顾"将从系统集成的视角逐一梳理。
+
+### 预计阅读时间
+
+| 阅读模式 | 时间估算 | 适用场景 |
+|---------|---------|---------|
+| **精读** | 6-8 小时 | 首次学习，逐段理解架构设计和代码实现 |
+| **速读** | 2-3 小时 | 已有 ROS2 机械臂经验，重点看集成架构和调试方法论 |
+| **速查** | 30-60 分钟 | 查阅特定配置文件格式、BT XML 模板、性能评估脚本 |
+
+> 精读模式不含动手实践时间。五阶段开发计划（M15.2）建议用 10 个工作日完成——这是独立于阅读的工程实践时间。
+
+---
+
 ## M01-M14 知识桥接回顾
 
 在进入综合项目之前，我们先回顾本项目所依赖的所有前置模块及其核心贡献。这不是简单的"见 M01-M14"，而是从系统集成的视角重新审视每个模块在完整 pick-and-place 栈中扮演的角色。
@@ -1787,18 +1861,62 @@ sim-to-real swap 是本项目的核心设计理念——同一份代码在仿真
 
 ---
 
+## 本章常见误解汇总
+
+| 误解 | 正确理解 |
+|------|---------|
+| "MoveIt2 开箱即用就能做 pick-and-place" | MoveIt2 提供了规划框架，但工程集成需要大量配置工作：URDF/SRDF 配置、碰撞矩阵调优、IK 插件选型、规划器参数调整、时间参数化选择。框架"能做"和"做得好"之间有巨大鸿沟 |
+| "BT 只是 FSM 的替代品" | BT 的核心价值不在于状态管理，而在于**可组合性和层级化**。Fallback 节点提供自动错误恢复，Subtree 支持模块复用——这些在 FSM 中需要大量手动编码 |
+| "IK 求解器选最快的就对了" | IK 求解器的选型需要平衡**速度、成功率和解质量**三个维度。KDL 最快但成功率低，TRAC-IK 综合最优，pick-ik 支持自定义约束。选型依据是具体任务的需求 |
+| "sim-to-real 只是换个硬件插件" | 硬件切换只是第一步。真机部署还需要调整速度限制、力矩限制、碰撞阈值、规划器超时、夹爪参数等。仿真中 100% 成功率的系统在真机上通常只有 70-85% |
+| "Gazebo 仿真精度够用" | Gazebo 对接触力学（摩擦、抓取滑移）的模拟精度有限。物体在仿真中"稳稳抓住"不等于真机也能稳稳抓住——需要用域随机化覆盖不确定性 |
+| "代码写完就是项目完成" | 可展示的项目还需要：完整的 README、清晰的目录结构、可一键运行的 launch 文件、性能对比数据、故障排查文档。**文档和代码一样重要** |
+
+---
+
 ## 本章小结
 
-| 知识点 | 核心内容 | 难度 |
-|--------|---------|------|
-| M15.1 系统架构 | 四层架构、数据流、接口设计 | ⭐⭐ |
-| M15.2 分阶段开发 | 五阶段计划、vertical slice first | ⭐⭐ |
-| M15.3 感知集成 | 三种模式、手眼标定概述 | ⭐⭐ |
-| M15.4 抓取规划 | 力闭合、MTC 抓取采样 | ⭐⭐⭐ |
-| M15.5 项目结构 | 目录结构、配置文件、launch | ⭐⭐ |
-| M15.6 调试方法论 | 层级调试、性能指标 | ⭐⭐ |
-| M15.7 交付物 | 评估标准、仓库要求 | ⭐ |
-| M15.8 sim-to-real 部署 | 三阶段部署、安全规程、参数调整 | ⭐⭐⭐ |
+### 术语速查表
+
+| 术语 | 英文 | 一句话定义 |
+|------|------|-----------|
+| MTC | MoveIt Task Constructor | MoveIt2 的多阶段任务编排框架，每个 Stage 封装一个规划步骤 |
+| BT | Behavior Tree | 行为树，层级化的任务编排方案，支持 Fallback 错误恢复 |
+| SRDF | Semantic Robot Description Format | MoveIt2 的语义描述文件，定义 planning group、碰撞对、默认姿态 |
+| PlanningScene | Planning Scene | MoveIt2 管理的碰撞环境，包含机器人状态和环境物体 |
+| attached object | Attached Object | 被"附着"到机器人 link 上的物体（如被抓取的物体） |
+| JTC | Joint Trajectory Controller | ros2_control 中执行关节轨迹的标准控制器 |
+| TOTG | Time-Optimal Time Generation | 时间最优轨迹参数化算法 |
+| bin-picking | Bin Picking | 从无序堆叠的零件中抓取目标物体的工业任务 |
+| vertical slice | Vertical Slice | 先贯通全栈最小闭环，再逐步增强各层功能的开发策略 |
+| force closure | Force Closure | 抓取稳定性判据：夹爪接触力能抵抗任意方向的外扰动 |
+
+### 知识点总表
+
+| 编号 | 知识点 | 核心内容 | 难度 |
+|------|--------|---------|------|
+| 1 | 系统架构 | 四层架构（感知/规划/控制/执行）、数据流设计 | ⭐⭐ |
+| 2 | 分阶段开发 | 五阶段计划、vertical slice first 策略 | ⭐⭐ |
+| 3 | 感知集成 | 三种感知模式（固定/已知/点云）、手眼标定 | ⭐⭐ |
+| 4 | 抓取规划 | 力闭合判据、MTC GenerateGraspPose、候选排序 | ⭐⭐⭐ |
+| 5 | 项目工程 | 目录结构、配置文件、launch 组织 | ⭐⭐ |
+| 6 | 调试方法论 | 层级隔离调试、性能指标体系 | ⭐⭐ |
+| 7 | 交付标准 | GitHub 仓库要求、性能报告格式 | ⭐ |
+| 8 | sim-to-real | 三阶段渐进部署、安全规程 | ⭐⭐⭐ |
+| 9 | 前沿展望 | AnyGrasp 2.0、Foundation Grasp Model | ⭐⭐⭐⭐ |
+
+## 本章与后续方向的关系
+
+| 后续方向 | 关系 | Mini-Manip 提供的基础 |
+|---------|------|---------------------|
+| 双臂操作（D01-D10） | 双臂 pick-and-place 需要两倍的 Mini-Manip 栈 + 协调控制 | URDF 配置、MoveIt2 集成、BT 编排的单臂版本 |
+| 力控操作（F01-F10） | 力控抓取需要在 Mini-Manip 的位控抓取基础上叠加力反馈 | 系统架构、安全监控、FSM 设计 |
+| 学习型操作（RL/IL） | RL/IL 策略替代 MTC 的规划模块，但底层执行仍用 ros2_control | ros2_control 接口、仿真环境、评估框架 |
+| 移动操作 | 移动底盘 + 机械臂的联合规划需要扩展 Mini-Manip 的规划层 | MoveIt2 配置、BT 编排、sim-to-real 方法论 |
+| 人形全身操作 | 人形机器人的上半身操作需要将 Mini-Manip 的规划能力与全身 WBC 控制结合 | MoveIt2 框架经验、碰撞检测配置、ros2_control 接口 |
+| 具身智能 | VLA/VLM 端到端模型需要 Mini-Manip 的评估框架和仿真环境 | 仿真环境搭建、数据采集管线、性能评测方法 |
+
+---
 
 ## 跨章综合练习 ⭐⭐⭐
 
@@ -1853,6 +1971,45 @@ M15:     端到端集成 + 交付      ← 你在这里
 | Tsai & Lenz (1989) Hand-Eye Calibration | ⭐⭐⭐ | 手眼标定经典 |
 | Tedrake (2023) "Robotic Manipulation" MIT | ⭐⭐⭐ | 操作全景 |
 | BenchBot (2021) "Benchmarking Robot Manipulation" | ⭐⭐⭐ | 性能评估 |
+| MoveIt Task Constructor 源码 + 教程 | ⭐⭐ | MTC Stage 设计模式和数据流机制 |
+| Automatic Addison "Pick and Place with MTC" (2025) | ⭐⭐ | 端到端 MTC pick-and-place 教程含深度相机集成 |
+| UR5 ROS2 Pick and Place (JuoTungChen) | ⭐⭐ | UR5 + Robotiq85 的 ROS2 pick-and-place 实现 |
+
+### 研究实践建议
+
+- **初学者**（第 1 周）：先完成 Gazebo 环境搭建和 MoveIt2 基础配置。用 `joint_state_publisher_gui` 验证 URDF，用 MoveIt2 Wizard 生成 SRDF。重点是确保环境可运行
+- **进阶**（第 2 周）：实现 MTC pick-and-place 完整流程。从固定位姿开始（Mode A），逐步切换到已知物体+检测（Mode B）。集成 BT 编排和错误恢复
+- **高级**（第 3 周）：完成 IK/规划器量化对比实验（6 种组合 x 100 目标），撰写选型报告。尝试 sim-to-real 三阶段部署
+
+## API 速查表
+
+| API / 函数 | 库 | 用途 | 关联章节 |
+|-----------|-----|------|---------|
+| `MoveGroupInterface::plan()` | MoveIt2 | 规划运动到目标位姿 | M14 |
+| `MoveGroupInterface::execute()` | MoveIt2 | 执行已规划的轨迹 | M14 |
+| `Task::plan()` | MTC | 规划多阶段任务 | M14 |
+| `Task::execute()` | MTC | 执行多阶段任务 | M14 |
+| `PlanningSceneInterface::applyCollisionObjects()` | MoveIt2 | 添加/更新碰撞物体 | M04, M14 |
+| `PlanningSceneInterface::applyAttachedCollisionObject()` | MoveIt2 | 将物体附着到机器人 link（抓取后） | M14 |
+| `BT::BehaviorTreeFactory::createTreeFromFile()` | BT.CPP | 从 XML 创建行为树 | M13 |
+| `BT::Tree::tickWhileRunning()` | BT.CPP | 运行行为树直到成功/失败 | M13 |
+| `controller_manager::list_controllers` | ros2_control | 列出所有已加载的控制器 | M12 |
+| `controller_manager::switch_controller` | ros2_control | 运行时切换控制器 | M12 |
+| `robot_state_publisher` | ROS2 | 从 URDF + JointState 发布 TF 变换 | P01 |
+| `pinocchio::forwardKinematics()` | Pinocchio | 计算正运动学 | M01 |
+| `pinocchio::computeJointJacobians()` | Pinocchio | 计算关节雅可比矩阵 | M01 |
+
+### 版本信息速查
+
+| 工具/库 | 推荐版本 | 说明 |
+|---------|---------|------|
+| ROS2 | Jazzy (Ubuntu 24.04) | 长期支持版本 |
+| MoveIt2 | 2.8+ (Jazzy) | MTC 稳定支持 |
+| Gazebo | Harmonic | ROS2 Jazzy 默认仿真器 |
+| BT.CPP | 4.x | 行为树框架 |
+| Pinocchio | 3.0+ | 运动学/动力学计算 |
+| OMPL | 1.6+ | 采样规划算法库 |
+| TRAC-IK | 2.x (ROS2) | 增强 IK 求解器 |
 
 ---
 
@@ -1902,10 +2059,17 @@ AnyGrasp（Fang et al., T-RO 2023）是 GraspNet 系列的最新工作，相比�
 
 | 症状 | 可能原因 | 排查步骤 | 相关章节 |
 |------|---------|---------|---------|
-| Gazebo 中 Panda 不动 | 控制器未激活 | 1. list_controllers 2. 检查 spawner | M12 |
-| MTC 规划 0 解 | 碰撞或 IK 无解 | 1. RViz 可视化 2. 增大 IK 采样 3. 检查方向 | M14 |
-| BT 一直 RUNNING | Action Server 未启动 | 1. action list 2. 检查 move_group | M13 |
-| 夹爪抓取滑落 | 摩擦参数不足 | 1. 增大 mu 2. 增大力 3. attach plugin | M15.2 |
-| sim-to-real 行为差异 | 参数不匹配 | 1. 对比参数 2. 降低速度 3. 逐步验证 | M15.2 |
-| launch 启动失败 | 组件依赖未满足 | 1. 检查日志 2. 加 TimerAction | M15.5 |
-| 端到端性能差 | 规划耗时过长 | 1. 分层计时 2. 换规划器 3. 减少搜索数 | M15.6 |
+| Gazebo 中 Panda 不动 | 控制器未激活 | 1. `ros2 control list_controllers` 检查状态 2. 检查 spawner 配置 3. 确认 `robot_state_publisher` 正在发布 | M12 |
+| MTC 规划 0 解 | 碰撞或 IK 无解 | 1. RViz 可视化碰撞场景 2. 增大 IK 采样数 3. 检查 approach/retreat 方向 4. 放宽碰撞矩阵 | M14 |
+| BT 一直 RUNNING | Action Server 未启动 | 1. `ros2 action list` 检查可用 action 2. 检查 move_group 节点是否存活 3. 检查 BT 节点的 timeout 配置 | M13 |
+| 夹爪抓取滑落 | 摩擦参数不足 | 1. 增大 Gazebo mu 参数 2. 增大夹持力 3. 检查 attach collision object 是否正确触发 | M15.2 |
+| sim-to-real 行为差异 | 参数不匹配 | 1. 对比仿真和真机的关节位置曲线 2. 降低执行速度到 30% 3. 逐层验证（先 FK → 再规划 → 再执行） | M15.8 |
+| launch 启动失败 | 组件依赖未满足 | 1. 检查 ROS2 日志（`ros2 launch --show-all-output`） 2. 加 `TimerAction` 延迟依赖启动 3. 检查 DDS 配置 | M15.5 |
+| 端到端性能差 | 规划耗时过长 | 1. 分层计时（IK/规划/参数化/执行各多少 ms） 2. 换 OMPL 规划器 3. 减少 MTC GenerateGraspPose 搜索数量 | M15.6 |
+| RViz 中看不到规划路径 | 话题不匹配 | 1. 检查 `move_group` 发布的 display trajectory 话题 2. RViz 中配置正确的 planning group 3. 确认 `robot_description` 参数一致 | M14 |
+| Attached Object 碰撞检测异常 | attach/detach 时序错误 | 1. 在 RViz PlanningScene 面板检查 attached objects 2. 确认 attach 在 close gripper 之后 3. 确认 detach 在 open gripper 之前 | M14 |
+| IK 求解器解质量差（关节跳变） | IK 未使用种子解 | 1. 传入当前关节状态作为 IK 种子 2. 增加 IK 尝试次数 3. 考虑换用 pick-ik（支持约束） | M03, M14 |
+
+> **预计阅读时间**：精读 5-6 小时 / 速读 2-3 小时 / 速查 30 分钟
+>
+> **本章是 Mini-Manip 累积项目的终点**。完成本章后，你将拥有一个从感知到执行、从仿真到真机的完整机械臂操作技术栈——这是求职和项目展示的有力作品。

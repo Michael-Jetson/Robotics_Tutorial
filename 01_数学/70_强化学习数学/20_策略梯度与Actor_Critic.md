@@ -809,7 +809,7 @@ Step 4：合并，利用 $|A^\pi| \le \varepsilon$ 和 Cauchy-Schwarz，得到�
 
 **推论（单调改进保证）**：若每次迭代都严格最大化 $L_\pi(\pi') - C\cdot D_{\text{KL}}^{\max}$，则 $J$ 严格单调不减——**RL 中少数几个全局单调保证之一**，与 PI 的 policy improvement theorem 同级。
 
-**从 $D_{\text{KL}}^{\max}$ 到 $\bar D_{\text{KL}}$**：实践中 $\max_s$ 不可微且难估计。TRPO 改用期望 KL $\bar D_{\text{KL}}=\mathbb{E}_{s\sim d^\pi}[D_{\text{KL}}]$。这失去严��单调保证，但实验效果接近。
+**从 $D_{\text{KL}}^{\max}$ 到 $\bar D_{\text{KL}}$**：实践中 $\max_s$ 不可微且难估计。TRPO 改用期望 KL $\bar D_{\text{KL}}=\mathbb{E}_{s\sim d^\pi}[D_{\text{KL}}]$。这失去严格单调保证，但实验效果接近。
 
 ### §8.5 TRPO 的求解
 
@@ -904,7 +904,7 @@ $$
 
 ### §9.3.5 PPO-Clip 的数学分析
 
-**定理（PPO-Clip 是 surrogate 的下界）**：对任意 $\hat A_t$ �� $\rho_t > 0$：
+**定理（PPO-Clip 是 surrogate 的下界）**：对任意 $\hat A_t$ 和 $\rho_t > 0$：
 
 $$
 L^{\text{CLIP}}(\theta) \le L^{\text{CPI}}(\theta) = \mathbb{E}[\rho_t \hat A_t]
@@ -1546,6 +1546,18 @@ REINFORCE (1992) --> + Baseline --> Actor-Critic (A2C, 2016)
 
 ---
 
+## 本章常见误解汇总
+
+| 误解 | 正确理解 |
+|------|---------|
+| "REINFORCE 方差大是因为算法有 bug" | REINFORCE 的高方差是数学固有性质，不是实现问题。$\text{Var}[\nabla\log\pi \cdot R] \propto \text{Var}[R]$，Monte Carlo 回报 $R$ 本身包含从当前到 episode 结束的所有随机性。Baseline 减方差是必须的工程手段，而非可选优化 |
+| "PPO 的 clip 就是简单截断，没什么理论基础" | PPO-Clip 构成原始 surrogate 目标的悲观下界（Pessimistic Lower Bound）：$L^{\text{CLIP}} \le L^{\text{CPI}}$。clip 机制对每个 $(s,a)$ 样本施加局部 trust region，在一阶近似下与 TRPO 的全局 KL 约束等价。"简单"的是实现，不是原理 |
+| "Actor-Critic 比纯 PG 严格更好" | Actor-Critic 用 Critic 估计 $Q^\pi$ 替代 MC 回报，降低方差但引入偏差。当 Critic 拟合质量差（训练初期或函数逼近能力不足）时，偏差可能比方差更有害。Compatible Function Approximation 定理给出了 Critic 无偏的充要条件，但实践中几乎不满足 |
+| "GAE 的 $\lambda$ 越大越好，因为偏差越小" | $\lambda$ 控制偏差-方差权衡：$\lambda \to 1$ 趋向 MC（无偏高方差），$\lambda \to 0$ 趋向 TD(0)（有偏低方差）。最优 $\lambda$ 取决于 Critic 质量和 episode 长度。Isaac Lab 默认 $\lambda=0.95$ 是经验折中，不是理论最优 |
+| "PPO 中多 epoch 训练总是有益的" | 多 epoch 复用数据提高了数据效率，但随着 epoch 数增加，$\pi_\theta$ 逐渐偏离 $\pi_{\theta_{\text{old}}}$，importance sampling 比率 $\rho_t$ 偏离 1。虽然 clip 限制了梯度，但值函数 target 的 staleness 问题不受 clip 保护。过多 epoch（如 $>10$）可能导致过拟合当前 batch 的噪声 |
+
+---
+
 ## 本章小结
 
 | 知识点 | 核心公式/结论 | 地位 | 工程用途 |
@@ -1759,7 +1771,7 @@ $$
 \nabla_\theta J(\theta) = -2\theta
 $$
 
-最优解：$\theta^* = 0$（策略均值在原点，使 $-a^2$ 期望最大化为 $-1$）��
+最优解：$\theta^* = 0$（策略均值在原点，使 $-a^2$ 期望最大化为 $-1$）
 
 **Step 3：REINFORCE 梯度估计**
 
@@ -1808,7 +1820,7 @@ $= \epsilon(1-2\theta\epsilon-\epsilon^2)$
 
 ---
 
-## 附�� A：关键定理清单
+## 附录 A：关键定理清单
 
 | 编号 | 定理 | 出处 | 地位 |
 |------|------|------|------|

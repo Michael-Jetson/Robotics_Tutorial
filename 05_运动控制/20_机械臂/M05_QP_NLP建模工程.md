@@ -14,6 +14,66 @@
 
 ---
 
+### 本章知识导航
+
+```
+M05 QP/NLP 建模工程 知识体系
+│
+├── §1 从 Ceres 到约束优化 ⭐ ──── 范式跨越
+│   ├── Ceres 世界：无约束 NLS
+│   └── 规控世界：硬约束是物理极限
+│
+├── §2-4 QP 算法四大家族 ⭐⭐ ──── 求解器原理
+│   ├── ADMM (OSQP) → 通用、鲁棒
+│   ├── 活跃集 (qpOASES) → warm-start 友好
+│   ├── 内点法 (HPIPM) → 大规模 MPC
+│   └── 近端 ALM (ProxQP) → Pinocchio 生态首选
+│
+├── §5-6 NLP 求解器 ⭐⭐ ──── 非线性约束
+│   ├── Ipopt (内点法) → 通用 NLP
+│   └── CasADi (符号框架 + 代码生成) → 现代 MPC
+│
+├── §7-8 三大建模模板 ⭐⭐ ──── 理论到工程
+│   ├── 瞬态 IK QP → 单步速度级优化
+│   ├── 力控 TSID QP → 全身任务空间控制
+│   └── MPC QP → 滚动时域优化
+│
+├── §9 进阶约束建模 ⭐⭐⭐
+│   ├── 摩擦锥线性化 → 力分配
+│   └── 碰撞回避约束 → SDF 梯度
+│
+├── §10 CasADi 与 Drake 对比 ⭐⭐
+│   └── 选型决策：实时 MPC vs 接触操控
+│
+└── §11 下游章节接口 ⭐
+```
+
+**阅读路径建议**：
+- **速查路径**（30 分钟）：§1.2 为什么需要约束优化 → §2 四大家族概览表 → §7 三大建模模板
+- **标准路径**（6 小时）：全章顺序阅读，重点实操 OSQP 和 ProxQP 的 C++ 集成
+- **深度路径**（12 小时）：精读 + CasADi 实战 + 跨章综合练习
+
+### 前置知识桥接
+
+**回顾 Ceres Solver 基础**：Ceres 求解无约束非线性最小二乘 $\min_x \sum_i \|f_i(x)\|^2$，核心是利用残差 $f_i$ 的结构通过 $J^T J$ 近似 Hessian（Gauss-Newton）。它只支持简单的边界约束 $lb \leq x \leq ub$，无法表达线性/非线性不等式约束。本章正是要填补这个能力缺口。
+
+**回顾 M01 Pinocchio**：Jacobian $J(q)$ 将关节速度映射到末端速度 $v = J(q)\dot{q}$，这个关系是 IK QP 的核心约束。惯量矩阵 $M(q)$ 和科氏力/重力项 $h(q, \dot{q})$ 构成动力学方程 $M\ddot{q} + h = \tau$，这是 TSID QP 和 MPC QP 的动力学约束。
+
+### 如果跳过本章会怎样
+
+1. **无法理解 MPC 内部**：所有实时 MPC（OCS2/Crocoddyl/acados）的核心都是求解 QP/NLP 子问题。不理解 QP，就无法调试 MPC 的不可行、振荡或超时问题
+2. **无法实现力控**：TSID（任务空间逆动力学）的标准实现是组装和求解 QP，不会 QP 就只能用前人封装好的黑盒
+
+### 预计阅读时间
+
+| 模式 | 时间 | 适合人群 |
+|------|------|---------|
+| 速查 | 30 分钟 | 已有优化基础，只需了解求解器选型 |
+| 精读 | 6-8 小时 | 首次接触约束优化，需要建立从 Ceres 到 QP/NLP 的认知桥梁 |
+| 精读 + 实践 | 12-15 小时 | 需要在 C++ 项目中集成 OSQP/ProxQP/CasADi |
+
+---
+
 ## 前置自测 ⭐
 
 > 📋 **答不出 >= 2 题 → 先回前置章节复习**
@@ -38,6 +98,63 @@
 4. **建模** 机械臂三大典型优化问题：瞬态 IK QP、力控 TSID QP、滚动时域 MPC QP
 5. **使用** CasADi 进行符号化 NLP 建模，理解"符号框架 + 求解器后端"的现代 MPC 工作流
 6. **调试** QP/NLP 求解中的常见故障——不可行、数值不稳定、求解时间过长
+
+---
+
+## 知识导航
+
+本章的知识结构围绕"从无约束到有约束"的认知跨越展开：先建立 Ceres 世界与规控世界的范式差异，然后分层深入 QP 求解器（OSQP/ProxQP/qpOASES/HPIPM）和 NLP 求解器（Ipopt/CasADi），最终通过三大典型建模模板将理论落地为可执行的工程代码。
+
+```
+            SLAM 工程师 → 规控工程师：约束优化的认知跨越
+                                │
+        ┌───────────────────────┼───────────────────────┐
+        ▼                       ▼                       ▼
+   【为什么要变】            【用什么求解】            【怎么建模】
+   §1 Ceres→约束优化         §3 OSQP 算法与集成       §8 三大典型问题
+   ─ 软约束的灾难             §4 ProxQP                ─ IK QP
+   ─ 硬约束的物理必要性        §5 qpOASES & HPIPM       ─ 力控 TSID QP
+   §2 QP 求解器全景           §6 Ipopt (NLP)           ─ MPC QP
+   ─ 六大求解器定位            §7 CasADi (符号建模)     §9 力分配与碰撞
+                                                       §10 完整工程案例
+```
+
+**两条主线贯穿全章**：
+
+| 主线 | 含义 | 体现在哪些小节 |
+|------|------|--------------|
+| **从无约束到有约束的范式跨越** | Ceres 的最小二乘世界 vs 规控的硬约束世界——理解为什么需要 QP/NLP 是本章核心门槛 | §1（范式差异）、§2（全景）、§8（建模模板） |
+| **求解器选型与工程集成** | 不同问题规模和约束类型需要不同求解器——选错求解器比写错代码更致命 | §3-§7（各求解器深度）、§10（工程案例）、§11（前沿） |
+
+**§号与正文的一一对应**：
+
+| § | 标题 | 难度 | 一句话定位 |
+|---|------|------|----------|
+| §1 | 从 Ceres 到约束优化 | ⭐ | 建立"约束不是建议，是物理极限"的认知 |
+| §2 | QP 求解器全景 | ⭐⭐ | 六大求解器的定位、算法族谱和选型坐标 |
+| §3 | OSQP 算法与集成 | ⭐⭐ | ADMM 原理 + OSQP-Eigen C++ 完整集成 |
+| §4 | ProxQP | ⭐⭐ | Pinocchio 生态的新一代 QP + 增广拉格朗日法 |
+| §5 | qpOASES 与 HPIPM | ⭐⭐ | 活跃集法经典 + MPC 结构化 QP 专家 |
+| §6 | Ipopt | ⭐⭐ | NLP 事实标准——内点法原理与 TNLP 接口 |
+| §7 | CasADi | ⭐⭐ | 符号建模框架——"声明式"NLP 的现代范式 |
+| §8 | 三大典型问题 | ⭐⭐ | IK QP / TSID QP / MPC QP 的完整建模模板 |
+| §9 | 力分配与碰撞约束 | ⭐⭐⭐ | 进阶约束建模专题 |
+| §10 | 完整工程案例 | ⭐⭐⭐ | 从数学到代码的端到端实战 |
+| §11 | 前沿进展 | ⭐⭐⭐⭐ | Pinocchio 3.x 原生 NLP 与 2026 生态对比 |
+
+**推荐阅读路径**：
+
+- **快速上手路径**（只需会用 OSQP 解 QP）：§1 → §2 全景 → §3 OSQP 集成 → §8 建模模板
+- **深入理解路径**（理解所有求解器）：§1 → §2 → §3-§7 顺序通读 → §8 → §10
+- **MPC 开发者路径**（需要 NLP + CasADi）：§1 → §6 Ipopt → §7 CasADi → §8.3 MPC QP → §10
+
+### 预计阅读时间
+
+| 档位 | 时长 | 路径 |
+|------|------|------|
+| **精读**（推荐） | 16-20 学时（约 2 周） | 全章顺序读 + 每个求解器跑通 Hello World + 完成三大建模模板 |
+| **速读** | 5-6 小时 | §1 范式差异 + §2 全景对比 + §3 OSQP 集成 + §7 CasADi 建模 + §8 模板，跳过算法推导 |
+| **速查** | 20 分钟 | 知识导航 + §2 六大求解器对比表 + §8 建模模板 + API 速查表 + 故障排查手册 |
 
 ---
 
@@ -69,21 +186,23 @@ $$\min_x \sum_{i=1}^{m} \|f_i(x)\|^2$$
 
 **逆运动学（IK）**：给定末端目标位姿，求关节角度
 
-```
-  min_q̇   ‖J(q)·q̇ - v_desired‖² + λ·‖q̇ - q̇_nominal‖²
-  s.t.    q̇_lb ≤ q̇ ≤ q̇_ub                 (关节速度限制)
-          A_collision·q̇ ≤ b_collision      (碰撞回避的一阶近似)
-          q_lb ≤ q + q̇·dt ≤ q_ub          (关节位置限位)
-```
+$$\min_{\dot{q}} \quad \|J(q)\dot{q} - v_{\text{desired}}\|^2 + \lambda \|\dot{q} - \dot{q}_{\text{nominal}}\|^2$$
 
-**模型预测控制（MPC）**：预测 N 步，最小化跟踪误差
+$$\text{s.t.} \quad \dot{q}_{\text{lb}} \leq \dot{q} \leq \dot{q}_{\text{ub}} \quad (\text{关节速度限制})$$
 
-```
-  min_{u_0,...,u_{N-1}}  Σ_t  ‖x_t - x_ref‖²_Q + ‖u_t‖²_R
-  s.t.    x_{t+1} = A·x_t + B·u_t          (动力学约束，等式)
-          u_lb ≤ u_t ≤ u_ub                 (控制限制，不等式)
-          x_lb ≤ x_t ≤ x_ub                 (状态限制，不等式)
-```
+$$A_{\text{collision}} \dot{q} \leq b_{\text{collision}} \quad (\text{碰撞回避的一阶近似})$$
+
+$$q_{\text{lb}} \leq q + \dot{q} \cdot \Delta t \leq q_{\text{ub}} \quad (\text{关节位置限位})$$
+
+**模型预测控制（MPC）**：预测 $N$ 步，最小化跟踪误差
+
+$$\min_{u_0, \ldots, u_{N-1}} \quad \sum_{t=0}^{N-1} \left( \|x_t - x_{\text{ref}}\|_Q^2 + \|u_t\|_R^2 \right)$$
+
+$$\text{s.t.} \quad x_{t+1} = A x_t + B u_t \quad (\text{动力学约束，等式})$$
+
+$$u_{\text{lb}} \leq u_t \leq u_{\text{ub}} \quad (\text{控制限制，不等式})$$
+
+$$x_{\text{lb}} \leq x_t \leq x_{\text{ub}} \quad (\text{状态限制，不等式})$$
 
 **这些约束为什么不能"软化"成代价函数？**
 
@@ -132,13 +251,12 @@ QP 是 NLP 的特殊情况（线性约束 + 二次目标）。正因如此，QP 
 
 **Ceres 的求解核心**（Gauss-Newton / Levenberg-Marquardt）：
 
-```
-在每次迭代中:
-  1. 计算 Jacobian: J_i = ∂f_i/∂x
-  2. 组装法方程: (J^T J + λI) δx = -J^T r    (r 是残差向量)
-  3. 求解增量: δx = solve(H, -g)
-  4. 线搜索/信赖域更新
-```
+在每次迭代中：
+
+1. 计算 Jacobian：$J_i = \partial f_i / \partial x$
+2. 组装法方程：$(J^T J + \lambda I) \delta x = -J^T r$（$r$ 是残差向量）
+3. 求解增量：$\delta x = \text{solve}(H, -g)$
+4. 线搜索/信赖域更新
 
 这里的法方程 $(J^TJ + \lambda I)\delta x = -J^Tr$ 是一个**无约束线性系统**。Ceres 用稀疏 Cholesky 分解（`SPARSE_SCHUR`）或 PCG 迭代求解——这些方法在 Ceres Solver 基础章节已经详细讲解过。
 
@@ -358,7 +476,39 @@ $$L_\rho(x, \lambda, \mu) = \frac{1}{2}x^THx + g^Tx + \frac{1}{2\mu_e}\|Ax - b +
 | **精度控制** | 增广拉格朗日法的外层迭代提供精确的约束满足度控制（OSQP 的 ADMM 在高精度时收敛变慢） |
 | **活跃集检测** | ProxQP 在迭代过程中识别活跃约束，减少后续迭代的计算量 |
 
-### 2.4 选型决策流程 ⭐⭐
+### 2.4 六大求解器的跨平台 Benchmark（2025 最新数据） ⭐⭐⭐
+
+2025 年一项系统化评测（针对四足机器人控制）在三种硬件平台上对比了六大求解器，覆盖 MPC 和 WBC 两类典型问题。这是目前最全面的跨平台 QP benchmark 之一：
+
+**MPC 场景（稀疏 QP，N=10 步预测，12 状态 4 控制）**：
+
+| 求解器 | 桌面 x86 | LattePanda (嵌入式 x86) | Jetson Orin (ARM) | 算法特点 |
+|--------|:---:|:---:|:---:|---------|
+| **HPIPM** | ~0.15 ms | ~0.45 ms | ~0.35 ms | Riccati 利用带状结构，MPC 最快 |
+| **OSQP** | ~0.4 ms | ~1.2 ms | ~0.9 ms | ADMM 鲁棒但迭代多 |
+| **qpOASES** | ~0.2 ms | ~0.6 ms | ~0.5 ms | 小时域快，大时域差 |
+| **ProxQP** | ~0.25 ms | ~0.7 ms | ~0.55 ms | 高精度时优于 OSQP |
+| **qpSWIFT** | ~0.3 ms | ~0.9 ms | ~0.7 ms | IPM + Nesterov-Todd |
+| **Eiquadprog** | ~0.5 ms | ~1.5 ms | ~1.2 ms | 不利用稀疏结构 |
+
+**WBC 场景（密集 QP，18 决策变量 + 约束）**：
+
+| 求解器 | 桌面 x86 | Jetson Orin (ARM) | 特点 |
+|--------|:---:|:---:|------|
+| **Eiquadprog** | ~0.02 ms | ~0.05 ms | 小密集 QP 最快（经典活跃集） |
+| **ProxQP** | ~0.025 ms | ~0.06 ms | 接近 Eiquadprog |
+| **qpOASES** | ~0.03 ms | ~0.08 ms | warm-start 后接近 Eiquadprog |
+| **OSQP** | ~0.15 ms | ~0.35 ms | ADMM 在小问题上迭代过多 |
+| **HPIPM** | ~0.05 ms | ~0.12 ms | MPC 结构化优势消失 |
+
+**核心发现**：
+
+1. **没有"万能"的 QP 求解器**——HPIPM 在 MPC 上最快，但在 WBC 上不如 Eiquadprog；OSQP 最鲁棒，但在所有场景下都不是最快的
+2. **问题结构决定选择**——稀疏带状结构用 HPIPM，密集小规模用 Eiquadprog/ProxQP，大规模通用用 OSQP
+3. **嵌入式平台的性能降级是线性的**——ARM 约为桌面的 2-3 倍慢，比率在不同求解器间一致
+4. **warm-start 的效果因算法而异**——活跃集法（qpOASES）受益最大，ADMM（OSQP）受益最小
+
+### 2.5 选型决策流程 ⭐⭐
 
 ```
 你的问题是什么类型？
@@ -706,7 +856,7 @@ if (qp.results.info.status == QPSolverOutput::PROXQP_SOLVED) {
 > ⚠️ **编程陷阱**：混淆 ProxQP 与 OSQP 的矩阵组织方式
 >
 > **OSQP**：把等式和不等式统一放进一个矩阵，写成 $l \leq Ax \leq u$；等式用 $l_i=u_i$ 表达。
-> **ProxQP**：等式单独传 `A, b`，不等式单独传 `C, l, u`，同样支持 $l \leq Cx \leq u$；单边约束用 `±inf` 边界表达。
+> **ProxQP**：等式单独传 `A, b`，不等式单独传 `C, l, u`，同样支持 $l \leq Cx \leq u$；单边约束用 $\pm\infty$ 边界表达。
 >
 > **现象**：把 OSQP 的整体约束矩阵原样塞进 ProxQP 的 `C`，或者忘记把等式拆到 `A,b`，会导致维度、对偶变量和 warm-start 都对不上。
 >
@@ -822,7 +972,39 @@ KKT 矩阵结构:
 
 当 QP 近似不够准确时，需要直接求解 NLP。Ipopt（Interior Point OPTimizer）是这个领域的事实标准——由 CMU 的 Andreas Waechter 开发，2004 年发布，至今仍是学术界和工业界使用最广泛的开源 NLP 求解器。
 
-### 6.2 Ipopt 的内点法原理 ⭐⭐⭐
+### 6.2 SNOPT——SQP 范式的 NLP 求解器 ⭐⭐⭐
+
+在深入 Ipopt 之前，有必要介绍另一个重要的 NLP 求解器——SNOPT。Ipopt 和 SNOPT 代表了两种截然不同的 NLP 求解算法家族：
+
+| 维度 | Ipopt | SNOPT |
+|------|-------|-------|
+| **算法** | 原始-对偶内点法 (IPM) | 序列二次规划 (SQP) |
+| **许可证** | EPL-2.0（开源） | 商业（学术免费申请） |
+| **warm-start** | 有限（内点法从中心路径出发） | **原生支持**（SQP 可以从上一次的基阵继续） |
+| **稀疏结构利用** | 好（稀疏 LDLT） | 好（稀疏 QR / reduced Hessian） |
+| **Hessian** | 需要精确 Hessian 或 L-BFGS 近似 | 使用 limited-memory quasi-Newton 近似 |
+| **典型应用** | 通用 NLP，轨迹优化 | 航空航天，轨迹优化，Drake 默认 NLP |
+| **收敛特性** | 迭代次数少，每次迭代贵 | 迭代次数多，每次迭代便宜 |
+| **对初始猜测的敏感性** | 较低（IPM 从内部出发） | 较高（SQP 依赖好的初始点） |
+
+**SNOPT 在 Drake 生态中的地位**：Drake 的 `MathematicalProgram` 默认使用 SNOPT 作为 NLP 后端（如果安装了 SNOPT），因为 SNOPT 的 SQP 算法在机械臂轨迹优化中通常比 Ipopt 更快收敛——尤其是在有良好初始猜测的场景下。Drake 的 `DirectCollocation` 和 `DirectTranscription` 内部都可以切换 Ipopt/SNOPT。
+
+**何时选 Ipopt，何时选 SNOPT？**
+
+| 条件 | 推荐 | 原因 |
+|------|------|------|
+| 无商业许可预算 | Ipopt | SNOPT 学术版需申请，商业版费用高 |
+| 有良好 warm-start | SNOPT | SQP 的 warm-start 效果远好于 IPM |
+| 大规模稀疏 NLP (>1000 变量) | Ipopt | IPM 的多项式复杂度保证 |
+| Drake 生态 | SNOPT（首选）或 Ipopt | Drake 对 SNOPT 集成最深 |
+| CasADi + acados 生态 | Ipopt | acados 默认配合 Ipopt |
+| 对局部最优敏感 | Ipopt | IPM 从内部出发，不容易卡在约束面上 |
+
+> **反事实推理**：如果你在 Drake 中用 Ipopt 替代 SNOPT 做 Franka Panda 50 步轨迹优化，性能差异有多大？实测数据表明，在有 warm-start 的在线 MPC 场景下，SNOPT 比 Ipopt 快 2-3 倍——因为 SQP 的活跃集信息可以在相邻问题间传递。但在冷启动场景（首次求解、无初始猜测），两者差距缩小到 1.2-1.5 倍。
+
+> **跨领域类比**：Ipopt 和 SNOPT 的关系类似于 SLAM 中的 Gauss-Newton 和 Levenberg-Marquardt——GN（类似 SQP/SNOPT）在接近最优解时收敛更快但对初始点敏感，LM（类似 IPM/Ipopt）更稳定但可能多几次迭代。工程中往往两者都试，选择收敛更快的那个。
+
+### 6.3 Ipopt 的内点法原理 ⭐⭐⭐
 
 Ipopt 使用**原始-对偶内点法**。核心迭代：在每个障碍参数 $\mu$ 值下，用 Newton 法求解修正的 KKT 系统：
 
@@ -830,7 +1012,7 @@ $$\begin{bmatrix} W + \Sigma & A^T & C^T \\ A & 0 & 0 \\ C & 0 & -\text{diag}(s/
 
 其中 $W = \nabla^2_{xx} L$ 是 Lagrangian 的 Hessian。**收敛策略**：$\mu$ 从大值逐步减小到 0——每个 $\mu$ 值下做几次 Newton 迭代。
 
-### 6.3 Ipopt 的 C++ 接口——TNLP 虚函数模式 ⭐⭐
+### 6.4 Ipopt 的 C++ 接口——TNLP 虚函数模式 ⭐⭐
 
 **Ipopt 的 API 风格与 Ceres 截然不同**——Ceres 是模板仿函数 `operator()`，Ipopt 是虚函数继承 `TNLP`：
 
@@ -879,7 +1061,7 @@ public:
 };
 ```
 
-### 6.4 ifopt——Ipopt 的 Eigen 友好封装 ⭐⭐
+### 6.5 ifopt——Ipopt 的 Eigen 友好封装 ⭐⭐
 
 直接使用 Ipopt 的 `TNLP` 接口工作量大。ETH ADRL 的 **ifopt**（`ethz-adrl/ifopt`，838 stars）提供了 Eigen 接口封装，使 NLP 构建变得模块化：
 
@@ -1200,7 +1382,39 @@ print(f"Ipopt 迭代次数: {sol.stats()['iter_count']}")
 
 **经验法则**：研究和原型阶段用 `Opti()`，部署到实时 MPC 时切换到 `nlpsol()` + 代码生成。
 
-### 7.6 Ipopt 参数调优实战手册 ⭐⭐⭐
+### 7.6 NLP 求解器的收敛诊断——如何判断求解器"卡住了" ⭐⭐⭐
+
+NLP 求解与 QP 不同——QP 的凸性保证了全局最优，但 NLP 可能陷入局部最优、震荡或发散。理解 Ipopt 的输出日志是调试 NLP 的关键技能。
+
+**Ipopt 输出日志的解读**：
+
+```
+iter    objective    inf_pr   inf_du   lg(mu)  ||d||  lg(rg) alpha_du  alpha_pr
+   0  1.2345678e+03 3.21e+00 1.05e+02   0.0   0.00e+00    -  0.00e+00 0.00e+00
+   1  8.7654321e+02 2.10e+00 7.83e+01  -0.3   5.12e-01    -  4.52e-01 3.45e-01
+   2  4.5678901e+02 8.45e-01 2.31e+01  -1.1   3.24e-01    -  8.91e-01 5.97e-01
+  ...
+  15  1.2345678e+01 3.21e-08 4.56e-07  -8.6   2.13e-06    -  1.00e+00 1.00e+00
+```
+
+| 列 | 含义 | 健康范围 | 异常信号 |
+|---|------|---------|---------|
+| `objective` | 目标函数值 | 单调递减 | 震荡：步长问题 |
+| `inf_pr` | 原始不可行度（约束违反） | 逐步降到 tol | 停滞：约束冲突或初始点太远 |
+| `inf_du` | 对偶不可行度（梯度条件） | 逐步降到 tol | 停滞：Hessian 近似不好 |
+| `lg(mu)` | $\log_{10}(\mu)$（障碍参数） | 逐步降低 | 突然跳升：可行性恢复 |
+| `alpha_pr` | 原始步长 | 接近 1.0 | 远小于 1.0：步长被截断 |
+
+**四种常见的收敛失败模式**：
+
+| 模式 | 日志特征 | 根本原因 | 解决方案 |
+|------|---------|---------|---------|
+| **震荡不收敛** | objective 在两个值间跳动 | 初始猜测差 或 Hessian 不准 | 改善初始猜测；切换 `mu_strategy=adaptive` |
+| **约束不可行** | inf_pr 停滞在大值 | 约束互相矛盾 | 检查约束一致性；添加松弛变量 |
+| **步长太小** | alpha_pr 持续 < 0.01 | 约束面附近 Jacobian 奇异 | 正则化；改善约束表达（避免 $g(x) = 0$ 的冗余约束） |
+| **达到迭代上限** | `Maximum Number of Iterations Exceeded` | 问题太难或参数不当 | 增加 max\_iter；改善初始猜测；降低 tol |
+
+### 7.7 Ipopt 参数调优实战手册 ⭐⭐⭐
 
 Ipopt 有 100+ 个可调参数，但实际工程中只有 10 个左右对性能有显著影响。以下是基于大量机械臂优化实践总结的参数调优表：
 
@@ -1231,7 +1445,7 @@ Ipopt 有 100+ 个可调参数，但实际工程中只有 10 个左右对性能�
 
 > **反事实推理**：如果你不调优 Ipopt 参数，直接使用默认配置会怎样？默认 MUMPS + tol=1e-8 + monotone mu + 无 warm-start，在实时 MPC 场景下求解时间可能是调优后的 5-10 倍。一个本来可以 50 Hz 运行的 MPC 降到 5-10 Hz，控制性能急剧下降。参数调优不是"锦上添花"——在实时系统中，它是"能否工作"的决定因素。
 
-### 7.7 QP 求解器 Warm-Start 策略详解 ⭐⭐⭐
+### 7.8 QP 求解器 Warm-Start 策略详解 ⭐⭐⭐
 
 Warm-start（热启动）是 MPC 实时性的关键技术。其核心思想是：MPC 在相邻时刻求解的 QP/NLP 只有微小差异（初始状态变了、参考轨迹移了一步），因此上一时刻的最优解是当前时刻的极好初始猜测。
 
@@ -1550,9 +1764,95 @@ $$d(q + \dot{q}\Delta t) \approx d(q) + \nabla_q d(q)^T \dot{q} \Delta t \geq d_
 
 ---
 
-## 10. 前沿进展：Pinocchio 3.x 原生 NLP 接口与 Drake/CasADi 2026 对比 ⭐⭐⭐⭐
+## 10. 约束建模的工程实践——从数学到代码的完整案例 ⭐⭐⭐
 
-### 10.1 Pinocchio 3.x 的原生 NLP 接口
+### 10.1 约束建模的系统化方法论 ⭐⭐
+
+实际机械臂优化中的约束远比教科书复杂。以下是一个完整的约束分类和建模指南：
+
+| 约束类别 | 数学表达 | QP 可处理？ | NLP 必须？ | 典型处理方式 |
+|---------|---------|:---:|:---:|------------|
+| 关节位置限位 | $q_{lb} \leq q \leq q_{ub}$ | ✅ 直接 | — | 边界约束 |
+| 关节速度限制 | $\dot{q}_{lb} \leq \dot{q} \leq \dot{q}_{ub}$ | ✅ 直接 | — | 边界约束 |
+| 关节力矩限制 | $\tau_{lb} \leq \tau \leq \tau_{ub}$ | ⚠️ 需线性化 | ✅ | TSID 中 $\tau = M\ddot{q} + h$ 是线性的 |
+| 笛卡尔速度限制 | $\|v_{ee}\| \leq v_{max}$ | ⚠️ 范数约束 | ✅ | $\|J\dot{q}\|$ 是 $\dot{q}$ 的线性函数的范数 |
+| 碰撞回避（远距离） | $d(q) \geq d_{safe}$ | ⚠️ 线性化后 | ✅ | 一阶 Taylor 近似：$d + \nabla d^T \delta q \geq d_{safe}$ |
+| 碰撞回避（近距离） | $d(q) \geq d_{safe}$ | ❌ 线性化误差大 | ✅ | 非线性约束或安全增强策略 |
+| 摩擦锥 | $\sqrt{f_x^2 + f_y^2} \leq \mu f_z$ | ⚠️ 多面体近似 | SOCP | $k$ 面正多边形内接：$k=8$ 误差 $< 4\%$ |
+| 动力学方程 | $M\ddot{q} + h = \tau + J_c^T f$ | ✅ 线性于 $(\ddot{q}, f)$ | — | 等式约束 |
+| 末端精确到达 | $FK(q) = T_{target}$ | ❌ 非线性 | ✅ | NLP 等式约束 |
+| 自碰撞 | $d_{self}(q) \geq d_{min}$ | ⚠️ 线性化 | ✅ | 与环境碰撞回避类似 |
+
+**约束处理的层次化策略**：
+
+工程中不是所有约束都平等对待。正确的做法是按重要性分层：
+
+```
+优先级 1（硬约束，不可违反）:
+  - 关节限位
+  - 力矩饱和
+  - 紧急停止区域
+  → QP 不等式约束
+
+优先级 2（安全约束，极少违反）:
+  - 碰撞回避 (d > d_safe)
+  - 速度限制
+  → QP 不等式约束 + 松弛变量
+
+优先级 3（性能目标，允许偏差）:
+  - 末端跟踪精度
+  - 关节位形偏好
+  - 力矩最小化
+  → 目标函数（代价）
+```
+
+> **本质洞察**：约束建模不是"把所有限制都写成 $Ax \leq b$"这么简单。它是一个**工程权衡**——硬约束越多，可行域越小，求解越可能失败（INFEASIBLE）。约束分层 + 松弛变量 + fallback 策略构成了鲁棒控制系统的三道防线。
+
+### 10.2 松弛变量——在约束和可行性之间架桥 ⭐⭐⭐
+
+当硬约束可能导致不可行时，引入松弛变量（slack variable）是标准的工程解决方案：
+
+$$\min_{\dot{q}, s} \frac{1}{2}\|J\dot{q} - v_{des}\|^2 + w_s \|s\|^2$$
+
+$$\text{s.t.} \quad A_{coll} \dot{q} \leq b_{coll} + s \quad (s \geq 0)$$
+
+$$\quad \dot{q}_{lb} \leq \dot{q} \leq \dot{q}_{ub} \quad (\text{硬约束，不松弛})$$
+
+松弛变量 $s$ 的权重 $w_s$ 控制了"允许多少约束违反"。$w_s$ 越大，违反越少但求解越可能缓慢；$w_s$ 越小，违反越大但求解更稳定。
+
+```cpp
+// ProxQP 中添加松弛变量的实现思路
+int n_slack = n_collision_constraints;
+int n_total = nv + n_slack;  // 增广决策变量: [dq, s]
+
+// 增广 Hessian: 对角块 [H_dq, 0; 0, w_s * I]
+Eigen::MatrixXd H_aug(n_total, n_total);
+H_aug.setZero();
+H_aug.topLeftCorner(nv, nv) = H_original;
+H_aug.bottomRightCorner(n_slack, n_slack) =
+    w_slack * Eigen::MatrixXd::Identity(n_slack, n_slack);
+
+// 增广约束: A_coll * dq - I * s <= b_coll
+// 等价于 [A_coll, -I] * [dq; s] <= b_coll
+Eigen::MatrixXd C_aug(n_collision, n_total);
+C_aug.leftCols(nv) = A_coll;
+C_aug.rightCols(n_slack) =
+    -Eigen::MatrixXd::Identity(n_slack, n_slack);
+```
+
+> ⚠️ **编程陷阱**：松弛变量的下界必须是 0（$s \geq 0$），不能是 $-\infty$
+>
+> **错误做法**：对松弛变量不设下界，允许 $s < 0$
+>
+> **现象**：优化器"反向松弛"——$s < 0$ 使约束变紧而非变松，导致无意义的解
+>
+> **正确做法**：松弛变量的下界设为 0，上界设为合理的最大允许违反量
+
+---
+
+## 11. 前沿进展：Pinocchio 3.x 原生 NLP 接口与 Drake/CasADi 2026 对比 ⭐⭐⭐⭐
+
+### 11.1 Pinocchio 3.x 的原生 NLP 接口
 
 Pinocchio 3.x（2024-2026）在 CasADi 和 CppAD 后端之外，新增了与 NLP 求解器更紧密的集成路径。核心改进包括：
 
@@ -1562,7 +1862,7 @@ Pinocchio 3.x（2024-2026）在 CasADi 和 CppAD 后端之外，新增了与 NLP
 
 > **本质洞察**：Pinocchio 3.x 的发展方向是从"动力学计算库"演化为"机器人优化建模平台"。这反映了规控领域的趋势：动力学和优化不再是分离的模块，而是融合为一个统一的"可微动力学 + 约束优化"栈。
 
-### 10.2 Drake vs CasADi 2026 生态对比 ⭐⭐⭐
+### 11.2 Drake vs CasADi 2026 生态对比 ⭐⭐⭐
 
 截至 2026 年，Drake 和 CasADi 是机械臂 NLP 建模的两大主流框架。它们的设计哲学和适用场景截然不同：
 
@@ -1590,22 +1890,37 @@ Pinocchio 3.x（2024-2026）在 CasADi 和 CppAD 后端之外，新增了与 NLP
 
 ---
 
-## 11. 与下游章节的接口 ⭐
+## 12. 与下游章节的接口 ⭐
 
-### 11.1 与 M03 IK 求解器的关系 ⭐
+### 12.1 与 M03 IK 求解器的关系 ⭐
 
 M03 中的 TRAC-IK、BioIK 等高级 IK 求解器内部都使用 QP/SQP 作为子问题。理解本章 QP 建模后，你可以理解 TRAC-IK 为什么同时运行 KDL 数值迭代和 SQP 两个求解器并取较快收敛的结果，也可以自己在 QP 层添加碰撞约束（TRAC-IK 原生不支持）。
 
-### 11.2 与 M08 轨迹优化的关系 ⭐
+### 12.2 与 M08 轨迹优化的关系 ⭐
 
 M08 中的 TrajOpt、Crocoddyl、OCS2 全部基于本章的 NLP/QP 求解器：
 - TrajOpt 用序列 QP（SQP）：每次线性化约束然后求解 QP
 - Crocoddyl 用 DDP/iLQR：一种特殊 NLP 求解器，利用最优控制的 Bellman 结构
 - OCS2 用 SQP + HPIPM：外层 SQP 迭代，内层用 HPIPM 求解结构化 QP
 
-### 11.3 与 M10 时间参数化的关系 ⭐
+### 12.3 与 M10 时间参数化的关系 ⭐
 
 M10 中的 TOPP-RA 内部在每个路径点求解一个小规模 LP（线性规划，QP 的特例——目标函数是线性的）。理解 QP 后，LP 是自然的简化。
+
+---
+
+## 本章常见误解汇总
+
+| 误解 | 正确理解 | 相关章节 |
+|------|---------|---------|
+| "Ceres 加大惩罚权重就能处理硬约束" | 权重越大数值越病态，且"几乎满足"的解可能导致硬件截断和失控 | §1.2 |
+| "QP 求解器都差不多，随便选一个就行" | ADMM/活跃集/内点法/近端 ALM 各有适用场景，性能差异可达 10 倍 | §2 |
+| "OSQP 是最好的 QP 求解器" | OSQP 通用鲁棒但非最快；MPC 结构化问题用 HPIPM，小规模 WBC 用 ProxQP | §3-4 |
+| "CasADi 是一个求解器" | CasADi 是符号建模框架，不直接求解——它构建 NLP 后分派给 Ipopt/HPIPM 等后端 | §7 |
+| "NLP 求解器能保证全局最优" | 非凸 NLP 只能找局部最优；MPC 通过滚动时域和 warm-start 缓解此问题 | §5 |
+| "warm-start 总是有益的" | 约束大幅变化时 warm-start 可能误导求解器，反而增加迭代次数 | §7.7 |
+| "QP 不可行一定是代码 bug" | 可能是约束本身矛盾（物理不可行）——如关节同时达到正负限位 | §8 |
+| "Drake 和 CasADi 功能等价" | Drake 擅长接触操控一体化，CasADi 擅长实时 MPC 代码生成——定位不同 | §10 |
 
 ---
 
@@ -1639,6 +1954,74 @@ M10 中的 TOPP-RA 内部在每个路径点求解一个小规模 LP（线性规�
 
 ---
 
+## 研究实践建议
+
+### QP/NLP 求解器的选择速查
+
+**打印贴工位版**：
+
+```
+你的优化问题是什么？
+  ├── 1 kHz 控制循环中的 IK/WBC
+  │     ├── 变量 < 50，密集 → ProxQP 或 Eiquadprog
+  │     └── 变量 > 50，稀疏 → OSQP
+  │
+  ├── MPC（有时域结构）
+  │     ├── 线性 MPC，已知结构 → HPIPM (via acados)
+  │     └── 非线性 MPC → acados SQP-RTI + HPIPM
+  │
+  ├── 离线轨迹优化
+  │     ├── 有 SNOPT 许可 → SNOPT (via Drake 或 ifopt)
+  │     └── 无 SNOPT 许可 → Ipopt + CasADi
+  │
+  └── 学术快速原型
+        └── CasADi Opti() + Ipopt（最短开发周期）
+```
+
+### 从 Ceres 迁移到 QP/NLP 的实践步骤
+
+如果你是从 SLAM 背景转入规控，以下是推荐的渐进式学习路径：
+
+| 步骤 | 内容 | 用时 | 关键心智转变 |
+|------|------|------|------------|
+| 1 | 用 Python `cvxpy` 建模并求解简单 QP | 1 天 | 理解"约束 vs 代价"的区别 |
+| 2 | 用 OSQP-Eigen C++ 求解同一问题 | 1 天 | 理解稀疏矩阵组装和 CSC 格式 |
+| 3 | 实现 Pinocchio + ProxQP 的瞬态 IK QP | 2 天 | 理解 Jacobian → QP Hessian 的映射 |
+| 4 | 用 CasADi Python 建模简单 NLP | 1 天 | 理解符号框架 vs 数值框架 |
+| 5 | 用 CasADi + Ipopt 做 10 步轨迹优化 | 2 天 | 理解 NLP 的初始猜测敏感性 |
+| 6 | 用 acados 生成 MPC 代码 | 2 天 | 理解代码生成 + SQP-RTI 工作流 |
+
+每一步都在上一步基础上增加复杂度——不要试图跳步。步骤 1-2 建立 QP 概念，步骤 3 连接动力学，步骤 4-5 进入 NLP，步骤 6 达到部署级别。
+
+### 工程中的数值稳定性检查清单
+
+QP/NLP 求解的数值问题是工程中最耗时间的调试目标。以下检查清单可以覆盖 80% 的数值问题：
+
+```
+□ Hessian P 是否半正定？
+  → 检查最小特征值: eigs = Eigen::SelfAdjointEigenSolver<>(P).eigenvalues()
+  → 如果最小特征值 < -1e-10，添加正则化 P += eps * I
+
+□ 约束矩阵 A 是否满秩？
+  → 检查: Eigen::JacobiSVD<>(A).singularValues().minCoeff() > 1e-10
+  → 秩亏可能因为冗余约束（如两个约束线性相关）
+
+□ 约束是否一致（不矛盾）？
+  → 检查: l <= u 对每一行成立
+  → 矛盾约束导致 INFEASIBLE
+
+□ 数据量级是否差距过大？
+  → 检查: max(|P|) / min(|P_nonzero|) < 1e8
+  → 条件数过大导致数值不稳定
+  → 解决: 预缩放（OSQP 自动做，ProxQP 也有内置缩放）
+
+□ warm-start 的解是否在新问题的可行域内？
+  → 如果约束变化大，warm-start 的解可能不可行
+  → OSQP/ProxQP 可以处理不可行的 warm-start，但迭代次数增加
+```
+
+---
+
 ## 延伸阅读
 
 | 资源 | 内容 | 难度 |
@@ -1652,6 +2035,44 @@ M10 中的 TOPP-RA 内部在每个路径点求解一个小规模 LP（线性规�
 | Ferreau et al., *qpOASES*, Math. Prog. Comp. 2014 | 在线活跃集法 | ⭐⭐⭐ |
 | Drake *MathematicalProgram* 文档 | 统一 QP/NLP/SDP/MIP 接口 | ⭐⭐ |
 | ifopt GitHub: `ethz-adrl/ifopt` | Eigen-based Ipopt 封装 | ⭐ |
+| Bambade et al. (2025) "Real-Time QP Solvers: A Concise Review and Practical Guide", arXiv:2510.21773 | 最新 QP 求解器基准，覆盖 WBC 和 MPC 场景 | ⭐⭐⭐ |
+| Wu et al. (2025) "Benchmarking Different QP Formulations and Solvers for Dynamic Locomotion", arXiv:2502.01329 | 腿足 MPC 场景下的 QP 对比，dense vs sparse | ⭐⭐⭐ |
+| qpsolvers/mpc\_qpbenchmark GitHub | MPC 专用 QP 基准测试集 | ⭐⭐ |
+| Clarabel GitHub `oxfordcontrol/Clarabel.jl` / `oxfordcontrol/Clarabel.rs` | Rust/Julia 锥规划求解器，支持 QP/SOCP/SDP | ⭐⭐⭐ |
+| ProxSuite 文档 `Simple-Robotics/proxsuite` | ProxQP + ProxNLP 完整文档 | ⭐⭐ |
+| acados 文档 `docs.acados.org` | 嵌入式实时 MPC 代码生成框架 | ⭐⭐⭐ |
+
+---
+
+## 本章常见误解汇总
+
+| 编号 | 误解 | 正确理解 |
+|:----:|------|---------|
+| 1 | "可以用 Ceres 加大权重来模拟硬约束" | 权重惩罚法的两个致命缺陷：权重过大致 Hessian 条件数飙升（$10^{6}$ 权重差使条件数达 $10^{8}$），Gauss-Newton 震荡不收敛；即使收敛也只"几乎满足"——硬件截断产生不可预测偏差。硬约束需要 KKT 条件精确处理 |
+| 2 | "OSQP 和 ProxQP 的接口可以直接互换" | OSQP 统一为 $l \leq Ax \leq u$，ProxQP 要求等式 $(A, b)$ 和不等式 $(C, l, u)$ 分开。矩阵分拆错误导致维度不匹配和对偶变量语义错误 |
+| 3 | "QP 求解器越新越好" | OSQP 适合稀疏大规模、qpOASES 适合小规模 warm-start、HPIPM 利用 MPC 块三对角结构、ProxQP 与 Pinocchio 生态整合最好。选择基于问题结构 |
+| 4 | "NLP 更通用所以默认用 NLP" | NLP 求解器不利用 QP 的二次+线性结构，在 QP 问题上比专用 QP 求解器慢 1-2 个数量级。1 kHz 控制环必须用 QP 求解器 |
+| 5 | "KKT 条件只是解方程" | KKT 同时编码驻点条件、互补松弛（$\mu_i g_i = 0$）和可行性，是理解"约束如何影响最优解结构"的关键。调试时检查 KKT 残差各分量能直接定位问题根源 |
+
+---
+
+## 符号表
+
+| 符号 | 含义 | 首次出现 |
+|------|------|---------|
+| $x \in \mathbb{R}^n$ | 决策变量向量 | $\S$1.3 |
+| $P \in \mathbb{R}^{n \times n}$ | QP Hessian（对称半正定） | $\S$1.3 |
+| $q \in \mathbb{R}^n$ | QP 线性代价项（此处非关节角） | $\S$1.3 |
+| $A, b$ | 等式约束 $Ax = b$ | $\S$1.3 |
+| $G, h$ | 不等式约束 $Gx \leq h$ | $\S$1.3 |
+| $\lambda$ | 等式约束拉格朗日乘子 | $\S$1.4 |
+| $\mu$ | 不等式约束拉格朗日乘子（$\mu \geq 0$） | $\S$1.4 |
+| $L(x, \lambda, \mu)$ | 拉格朗日函数 | $\S$1.4 |
+| $\dot{q}$ | 关节速度（IK QP 决策变量） | $\S$7 |
+| $J(q)$ | 几何雅可比（$6 \times n_v$） | $\S$7 |
+| $M(q)$ | 广义惯量矩阵 | $\S$7 |
+| $\tau$ | 关节力矩向量 | $\S$7 |
+| $\rho$ | ADMM 步长参数（OSQP） | $\S$2 |
 
 ---
 
@@ -1662,8 +2083,89 @@ M10 中的 TOPP-RA 内部在每个路径点求解一个小规模 LP（线性规�
 | QP 返回 INFEASIBLE | 约束互相矛盾 | 1. 检查 $l \leq u$ 2. 逐步移除约束定位冲突 3. 检查关节是否在限位边缘 | M05 §8 |
 | QP 返回 NaN | Hessian $P$ 不正定 | 1. 检查特征值 2. 添加正则化 $P + \epsilon I$ 3. 检查 Jacobian 奇异性 | M05 §8.2, M01 |
 | 求解时间超出预算 | 问题规模过大或 warm-start 失效 | 1. 打印迭代次数 2. 检查 max_iter 3. 验证 warm-start 传入正确 4. 降低精度 | M05 §3-4 |
-| OSQP warm-start 后结果变差 | warm-start 解在新约束下不可行 | 1. 检查约束变化幅度 2. 约束变化大时关闭 warm-start | M05 §7.7 |
+| OSQP warm-start 后结果变差 | warm-start 解在新约束下不可行 | 1. 检查约束变化幅度 2. 约束变化大时关闭 warm-start | M05 §7.8 |
 | CasADi C 代码编译失败 | 头文件或库缺失 | 1. 检查 casadi/casadi_c.h 路径 2. 链接 libcasadi.so 3. 检查函数签名 | M05 §7 |
+| ProxQP 返回次优解 | 迭代上限达到前未收敛 | 1. 增大 max_iter (1000→5000) 2. 降低精度要求 3. 改善 warm-start 质量 | M05 §4 |
+| HPIPM segfault | 输入矩阵维度不匹配 | 1. 检查 ocp_qp_dim 设置是否与实际矩阵维度一致 2. 检查 N 步预测的维度链 3. 用 debug 编译检查断言 | M05 §4 |
+| CasADi SX 表达式爆炸 (内存 > 16 GB) | 高 DOF 系统用 SX 标量展开 | 1. 改用 MX 保持矩阵结构 2. 对 30+ DOF 系统用 CppAD 代替 CasADi | M06 |
+| QP 解的关节速度振荡 | Hessian 正则化不足 | 1. 增大正则化系数 $\epsilon$ 2. 增加速度平滑项 $\|\dot{q}_{t} - \dot{q}_{t-1}\|^2$ 3. 检查 dt 设置 | M05 §8 |
+| MPC 首次求解耗时远超后续 | 首次冷启动无 warm-start | 1. 第一次用 relaxed 约束求解 2. 或用线性插值作为初始轨迹 3. 预热 QP 求解器 | M05 §7.7 |
+| Ipopt 报 "restoration failed" | NLP 约束不可行或初始点太差 | 1. 放宽约束边界 2. 用更好的初始猜测 3. 检查约束的 Jacobian 是否正确 | M05 §5 |
+| OSQP 精度不够（对偶残差 > 1e-3） | ADMM 的线性收敛特性 | 1. 增大 max_iter 2. 切换到 ProxQP（超线性收敛） 3. 对精度敏感问题用 qpOASES | M05 §3 |
+
+**故障排查的通用流程**：
+
+```
+约束优化问题调试?
+│
+├── 问题定义检查 (最常见的错误来源)
+│   ├── 检查 P 是否半正定 (eig(P) >= 0)
+│   ├── 检查约束矩阵 A 维度是否匹配
+│   ├── 检查 l <= u（上下界）
+│   └── 检查输入数据无 NaN/Inf
+│
+├── 数值健康检查
+│   ├── 条件数 cond(P) < 1e8?
+│   ├── 约束矩阵 rank 是否满秩?
+│   └── 缩放是否合理 (所有量同量级)?
+│
+└── 求解器配置检查
+    ├── max_iter 是否足够?
+    ├── warm-start 是否正确传入?
+    ├── 精度要求 (eps_abs/eps_rel) 是否合理?
+    └── 是否选择了适合问题结构的求解器?
+```
+
+---
+
+## API 速查表
+
+### OSQP-Eigen 核心 API
+
+| API | 说明 |
+|-----|------|
+| `solver.data()->setHessianMatrix(P)` | 设置 Hessian（稀疏，只需上三角） |
+| `solver.data()->setGradient(q)` | 设置线性代价项 |
+| `solver.data()->setLinearConstraintsMatrix(A)` | 设置约束矩阵（稀疏） |
+| `solver.data()->setLowerBound(l)` / `setUpperBound(u)` | 设置约束边界 |
+| `solver.initSolver()` | 初始化（首次或矩阵结构变化时） |
+| `solver.solveProblem()` | 求解 |
+| `solver.getSolution()` | 获取原始解 $x^*$ |
+| `solver.getDualSolution()` | 获取对偶解 $y^*$（用于 warm-start） |
+| `solver.updateGradient(q_new)` | 更新线性项（无需重新初始化） |
+| `solver.updateBounds(l_new, u_new)` | 更新约束边界 |
+
+### ProxSuite 核心 API
+
+| API | 说明 |
+|-----|------|
+| `dense::QP<double> qp(n, n_eq, n_in)` | 创建密集 QP（变量数, 等式数, 不等式数） |
+| `qp.init(H, g, A, b, C, l, u)` | 初始化问题数据 |
+| `qp.solve()` | 求解 |
+| `qp.results.x` | 原始解 |
+| `qp.results.y` | 等式约束对偶解 |
+| `qp.results.z` | 不等式约束对偶解 |
+| `qp.update(H, g, A, b, C, l, u)` | 更新数据（用 `std::nullopt` 跳过不变的） |
+| `qp.settings.eps_abs` | 绝对精度 |
+| `qp.settings.max_iter` | 最大迭代数 |
+| `qp.results.info.status` | 求解状态 |
+
+### CasADi 核心 API
+
+| API | 说明 |
+|-----|------|
+| `ca.SX.sym('x', n)` | 创建 $n$ 维 SX 符号向量 |
+| `ca.MX.sym('X', m, n)` | 创建 $m \times n$ MX 符号矩阵 |
+| `ca.jacobian(y, x)` | 符号 Jacobian $\partial y / \partial x$ |
+| `ca.hessian(f, x)` | 符号 Hessian $\partial^2 f / \partial x^2$ |
+| `ca.Function('name', [inputs], [outputs])` | 创建可调用函数 |
+| `ca.nlpsol('solver', 'ipopt', nlp)` | 创建 NLP 求解器 |
+| `ca.Opti()` | 创建高级优化接口 |
+| `opti.variable(n)` | 声明 $n$ 维决策变量 |
+| `opti.subject_to(constraint)` | 添加约束 |
+| `opti.minimize(cost)` | 设置目标函数 |
+| `opti.solver('ipopt', p_opts, s_opts)` | 配置求解器 |
+| `f.generate('file.c')` | 生成 C 代码 |
 
 ---
 
@@ -1676,5 +2178,214 @@ M10 中的 TOPP-RA 内部在每个路径点求解一个小规模 LP（线性规�
 3. 用 ProxQP 求解
 4. 在 MuJoCo 仿真中可视化末端跟踪一个圆形轨迹，路径中放置球形障碍物
 5. 验证：末端成功跟踪圆形轨迹，且机械臂与障碍物距离始终 $> d_{safe}$
+
+---
+
+## 术语速查表
+
+| 术语 | 英文 | 一句话定义 |
+|------|------|-----------|
+| QP | Quadratic Programming | 目标函数为二次、约束为线性的凸优化问题 |
+| NLP | Nonlinear Programming | 目标或约束含非线性函数的一般优化问题 |
+| ADMM | Alternating Direction Method of Multipliers | 交替方向乘子法，将大问题分解为小子问题交替求解 |
+| ALM | Augmented Lagrangian Method | 增广拉格朗日法，用惩罚项和乘子更新处理约束 |
+| IPM | Interior Point Method | 内点法，在可行域内部沿中心路径趋近最优解 |
+| KKT | Karush-Kuhn-Tucker conditions | 约束优化的一阶必要条件：原始可行、对偶可行、互补松弛 |
+| SQP | Sequential Quadratic Programming | 序列二次规划，每步将 NLP 近似为 QP 并求解 |
+| warm-start | 热启动 | 用上一次求解的结果初始化当前求解，加速收敛 |
+| TSID | Task-Space Inverse Dynamics | 任务空间逆动力学，通过 QP 同时满足任务跟踪和动力学约束 |
+| Hessian | 海森矩阵 | 二阶偏导数矩阵，$H_{ij} = \partial^2 f / \partial x_i \partial x_j$ |
+
+## 符号表
+
+| 符号 | 含义 | 首次出现 |
+|------|------|---------|
+| $P$ | QP 的 Hessian 矩阵（$n \times n$ 半正定） | §2 |
+| $c$ | QP 的线性目标项 | §2 |
+| $A$ | 约束矩阵 | §2 |
+| $l$, $u$ | 约束下界和上界 | §2 |
+| $\lambda$ | Lagrange 乘子（对偶变量） | §前置自测 Q4 |
+| $\rho$ | ADMM 的步长参数 / ALM 的惩罚参数 | §3 |
+| $\mathcal{L}$ | Lagrangian 函数 | §前置自测 Q4 |
+| $Q$, $R$ | MPC 的状态权重矩阵和控制权重矩阵 | §8 |
+| $N$ | MPC 预测步数（horizon） | §8 |
+| $d_{safe}$ | 碰撞安全距离 | §9 |
+
+## 本章与后续章节的关系
+
+| 后续章节 | 关系 | 本章铺垫的知识点 |
+|---------|------|----------------|
+| M03 IK 求解器 | TRAC-IK 内部使用 SQP 子问题 | QP 建模基础、SQP 原理 |
+| M08 轨迹优化 | TrajOpt 用 SQP、Crocoddyl 用 DDP、OCS2 用 SQP+HPIPM | NLP 求解器原理、CasADi 符号建模 |
+| M10 时间参数化 | TOPP-RA 内部在每个路径点求解 LP（QP 的特例） | QP/LP 求解器选型 |
+
+## 研究实践建议
+
+### 入门级
+1. 先用 **OSQP Python** (`pip install osqp`) 做简单 QP 实验，理解约束优化的基本概念
+2. 然后迁移到 **osqp-eigen** C++ 接口，完成 IK QP 的完整实现
+
+### 进阶级
+1. 对比 **OSQP vs ProxQP** 在同一问题上的求解时间和迭代次数
+2. 用 **CasADi** 建模一个简单的 MPC 问题，体验"符号建模→代码生成→嵌入式部署"的完整流程
+
+### 研究级
+1. 关注 2025 年的 QP 求解器基准论文（arXiv:2510.21773, arXiv:2502.01329），了解 dense vs sparse 求解器的最新对比数据
+2. 评估 **Clarabel** (Rust 实现的锥规划求解器) 作为 OSQP/Ipopt 的潜在替代
+3. 研究 **acados** 的 C 代码生成流程——从 CasADi 模型到嵌入式 C 代码的完整管线
+4. 关注 **HPIPM** 在多体动力学 MPC 中的结构利用——Riccati 递推如何将 $O(N^3)$ 降为 $O(N)$
+
+### 工业部署最佳实践
+
+1. **求解器降级策略**：生产系统中必须有 QP 不可行时的降级方案——如切换到松弛约束版本，或降级到简单 PD 控制
+2. **求解时间监控**：在控制循环中记录每次 QP 求解耗时的直方图，设置 P99 告警（如 200 $\mu$s）
+3. **约束可行性检查**：在组装 QP 前先做快速的可行性预检——如检查 $l \leq u$、关节状态在限位内，避免将必然不可行的 QP 送入求解器浪费时间
+4. **版本锁定**：QP 求解器的不同版本可能有细微的行为差异（如默认精度、迭代上限），生产环境务必锁定版本
+
+### 常见选型错误与纠正
+
+| 错误决策 | 后果 | 正确做法 |
+|---------|------|---------|
+| "用 Ipopt 做 1 kHz IK" | Ipopt 的 NLP 求解在简单 IK 上约 1-5 ms，超出预算 | 线性化为 QP，用 ProxQP 24 $\mu$s 求解 |
+| "用 OSQP 做所有事" | OSQP 的 ADMM 对精度敏感的接触力分配可能迭代过多 | 力分配用 qpOASES（活跃集精确），轨迹 MPC 用 HPIPM |
+| "不做 warm-start" | 每次冷启动 QP 比 warm-start 慢 5-20 倍 | 保存上一周期的解和活跃集作为下一周期的初始值 |
+| "约束矩阵每次重建" | 矩阵分配和构建占求解总时间 30-50% | 预分配矩阵，只更新变化的元素 |
+
+### QP 调试的系统化方法 ⭐⭐
+
+当 QP 求解出现问题时，按以下顺序排查：
+
+```
+QP 出问题?
+│
+├── 1. 返回 INFEASIBLE
+│   ├── 检查 l <= u (上下界是否颠倒)
+│   ├── 逐步移除约束，找到冲突的最小约束集
+│   ├── 检查 Jacobian 是否过期 (用了旧的 q 计算的 J)
+│   └── 检查物理可行性 (目标位姿是否在工作空间内)
+│
+├── 2. 返回 NaN / NUMERICAL_ISSUE
+│   ├── 检查 Hessian P 的最小特征值 (应 > 0)
+│   ├── 添加正则化 P + epsilon * I (epsilon = 1e-8)
+│   ├── 检查 Jacobian 是否接近奇异 (条件数 > 1e8)
+│   └── 检查输入数据是否包含 NaN/Inf
+│
+├── 3. 求解时间过长
+│   ├── 打印迭代次数 (是否达到 max_iter)
+│   ├── 检查 warm-start 是否正确传入
+│   ├── 检查问题规模是否超出求解器的效率范围
+│   └── 降低求解精度 (eps_abs/eps_rel)
+│
+└── 4. 解不合理 (满足约束但行为异常)
+    ├── 检查目标函数的权重矩阵 Q, R 是否合理
+    ├── 检查约束是否遗漏 (如忘了加碰撞约束)
+    ├── 用另一个求解器交叉验证
+    └── 打印对偶变量 lambda/mu，检查哪些约束活跃
+```
+
+> **跨领域类比**：QP 调试的方法论与 SLAM 后端调试类似——SLAM 中如果 Ceres 不收敛，你会检查残差分布（是否有离群值）、Jacobian 条件数（是否存在退化）、初始值（是否太远离真值）。QP 调试的逻辑完全一样：检查约束可行性（是否矛盾）、Hessian 条件数（是否病态）、初始值（warm-start 是否合理）。SLAM 背景的工程师可以直接复用这套调试心智模型。
+
+## 2025 QP 求解器基准测试最新发现 ⭐⭐⭐
+
+2025 年发表的多篇基准测试论文（参见延伸阅读）为 QP 求解器选型提供了重要的量化数据。以下是与机械臂规控直接相关的关键发现。
+
+### Dense vs Sparse 求解器的分水岭
+
+| 问题类型 | 推荐求解器类别 | 代表求解器 | 原因 |
+|---------|-------------|-----------|------|
+| WBC（全身控制）QP：$n \leq 50$, 高频 1 kHz | **Dense** | ProxQP, Eiquadprog | 小规模问题的 dense 分解开销低，避免了 sparse 索引的固定开销 |
+| MPC QP：$N = 20$, $n_{x} = 14$, 总变量 ~300 | **Sparse (结构化)** | HPIPM | 利用 MPC 的 band-diagonal 稀疏结构，Riccati 递推 $O(N \cdot n_x^3)$ |
+| 通用中等规模 QP：$n = 100$-$1000$ | **Sparse (通用)** | OSQP | ADMM 对稀疏度不敏感，鲁棒性好 |
+
+> **本质洞察**：QP 求解器的选型不是"哪个最快"的问题，而是"你的问题结构适合哪类算法"的问题。一个在通用 benchmark 中排名第三的求解器，可能在你的特定问题结构上排名第一——因为它恰好利用了你的问题的稀疏/密集/带状结构。这类似于编译器优化：`-O3` 不一定比 `-O2` 快，取决于你的代码模式。
+
+### 嵌入式平台上的表现差异
+
+桌面端表现优秀的求解器在嵌入式平台（如 Jetson Orin、树莓派 5）上的排名可能完全不同：
+
+| 求解器 | 桌面端 (i7-12700K) | Jetson Orin | 原因 |
+|--------|:---:|:---:|------|
+| HPIPM | 极快 | 较快 | 内存密集型的 Riccati 递推对缓存敏感 |
+| OSQP | 快 | 快 | ADMM 每次迭代计算量少，内存友好 |
+| ProxQP | 极快 | 中等 | Eigen dense 分解在 ARM 上的 NEON 向量化不如 x86 AVX |
+| qpOASES | 中等 | 慢 | 活跃集法的分支密集逻辑对 ARM 分支预测不友好 |
+
+**工程启示**：如果你的机械臂控制器部署在嵌入式 ARM 平台上，不要直接照搬桌面端的 benchmark 结论。应在目标硬件上做实测。
+
+### ProxQP 与 Pinocchio 生态的协同
+
+ProxQP 和 Pinocchio 出自同一研究机构（INRIA Willow / Simple Robotics），共享底层设计理念：
+
+1. **Eigen 原生**：ProxQP 的所有输入输出都是 `Eigen::MatrixXd` / `Eigen::VectorXd`，与 Pinocchio 零转换成本
+2. **Model/Data 分离**：ProxQP 的 `Settings` + `Results` 类似 Pinocchio 的 `Model` + `Data`——设置不变，结果可重用
+3. **近端算法统一**：ProxQP（近端增广拉格朗日）和 Aligator（ProxDDP）共享"近端算子"的数学框架——理解一个有助于理解另一个
+4. **热启动兼容**：ProxQP 的内部表示与 Pinocchio 的 Jacobian/Hessian 格式直接兼容，warm-start 无需格式转换
+
+> **反事实推理**：如果你选择 OSQP + RBDL（而非 ProxQP + Pinocchio），会多出哪些工程开销？
+> - OSQP 需要 CSC 稀疏矩阵格式，Pinocchio 输出 dense Eigen——需要格式转换层
+> - RBDL 无解析导数，Jacobian 精度只有 $10^{-8}$——OSQP 的 ADMM 需要更多迭代才能收敛
+> - RBDL Model 非线程安全——多线程 QP 求解需要额外的同步机制
+> - 总结：不是"不能工作"，而是每一步都多了一层摩擦，累积效应显著
+
+---
+
+## API 速查表
+
+### OSQP-Eigen
+
+```cpp
+OsqpEigen::Solver solver;
+solver.settings()->setWarmStart(true);
+solver.settings()->setVerbosity(false);
+solver.data()->setNumberOfVariables(n);
+solver.data()->setNumberOfConstraints(m);
+solver.data()->setHessianMatrix(P_sparse);     // Eigen::SparseMatrix
+solver.data()->setGradient(c);                 // Eigen::VectorXd
+solver.data()->setLinearConstraintsMatrix(A);  // Eigen::SparseMatrix
+solver.data()->setLowerBound(l);
+solver.data()->setUpperBound(u);
+solver.initSolver();
+solver.solve();
+auto x_opt = solver.getSolution();             // Eigen::VectorXd
+```
+
+### ProxQP
+
+```cpp
+proxsuite::proxqp::dense::QP<double> qp(n, n_eq, n_ineq);
+qp.init(H, g, A_eq, b_eq, C_ineq, l_ineq, u_ineq);
+qp.solve();
+auto x_opt = qp.results.x;                    // Eigen::VectorXd
+auto y_opt = qp.results.y;                    // 等式乘子
+auto z_opt = qp.results.z;                    // 不等式乘子
+```
+
+### CasADi (Python)
+
+```python
+import casadi as ca
+opti = ca.Opti()
+x = opti.variable(n)
+opti.minimize(0.5 * x.T @ P @ x + c.T @ x)
+opti.subject_to(A @ x <= b)
+opti.solver('ipopt')
+sol = opti.solve()
+x_opt = sol.value(x)
+```
+
+---
+
+## 版本信息速查
+
+| 求解器 | 当前版本 (截至 2026.06) | 安装方式 | 许可证 |
+|--------|---|---|---|
+| OSQP | 0.6.x | `pip install osqp` / C 源码 | Apache-2.0 |
+| ProxQP (ProxSuite) | 0.6.x | `conda install proxsuite` | BSD-2-Clause |
+| qpOASES | 3.2.x | 源码编译 | LGPL-2.1 |
+| HPIPM | 0.1.x | 源码编译 (CMake) | BSD-2-Clause |
+| Ipopt | 3.14.x | `conda install ipopt` | EPL-2.0 |
+| CasADi | 3.6.x | `pip install casadi` | LGPL-3.0 |
+| acados | 0.3.x | 源码编译 | BSD-2-Clause |
+| Clarabel | 0.9.x | `pip install clarabel` | Apache-2.0 |
 
 **评分标准**：求解时间 < 100 us，碰撞约束无违反，跟踪误差 < 5 mm。

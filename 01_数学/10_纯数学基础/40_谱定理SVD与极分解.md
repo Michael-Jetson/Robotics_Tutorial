@@ -544,7 +544,7 @@ SVD 不只是一个分解公式，它还**一次性地给出矩阵的全部子�
 | 行空间 | $\operatorname{range}(A^\top)\subseteq\mathbb R^n$ | $r$ | 输入里"有效"的方向 |
 | 零空间（核） | $\ker(A)\subseteq\mathbb R^n$ | $n-r$ | 输入里被 $A$ "压成零"的方向 |
 
-它们成对地构成正交分解：输入空间 $\mathbb R^n=\operatorname{range}(A^\top)\oplus\ker(A)$（行空间 ⊥ 零空间），输出空间 $\mathbb R^m=\operatorname{range}(A)\oplus\ker(A^\top)$（列空间 ⊥ 左零空间）。这两个正交分解为什么成立、它们的基怎么取——以前可能要费力构造，而 **SVD 把它们的规范正交基直接端上来了**。
+它们成对地构成正交分解：输入空间 $\mathbb R^n=\operatorname{range}(A^\top)\oplus\ker(A)$（行空间 $\perp$ 零空间），输出空间 $\mathbb R^m=\operatorname{range}(A)\oplus\ker(A^\top)$（列空间 $\perp$ 左零空间）。这两个正交分解为什么成立、它们的基怎么取——以前可能要费力构造，而 **SVD 把它们的规范正交基直接端上来了**。
 
 **SVD 给出四个子空间的规范正交基。** 设 $A=U\Sigma V^\top$，秩 $r$。把 $U,V$ 的列按奇异值是否为零分块：
 
@@ -601,9 +601,9 @@ $$
 import numpy as np
 A = np.array([[3.0, 0.0], [4.0, 5.0], [0.0, 0.0]])     # 3x2, 秩 2
 U, s, Vt = np.linalg.svd(A, full_matrices=False)       # 薄 SVD
-# 验证 1：重构 A = U Σ Vᵀ
+# 验证 1：重构 A = U Sigma V^T
 assert np.allclose(U @ np.diag(s) @ Vt, A)
-# 验证 2：奇异值² = AᵀA 的特征值（与 §2 第一步一致）
+# 验证 2：奇异值^2 = A^T A 的特征值（与 §2 第一步一致）
 eig = np.sort(np.linalg.eigvalsh(A.T @ A))[::-1]
 assert np.allclose(s**2, eig)
 # 验证 3：U、V 列规范正交
@@ -1693,7 +1693,7 @@ $$
 
 ### 动机：旋转矩阵能对角化吗 ⭐⭐
 
-§1 反面二指出：实旋转矩阵 $B=\begin{pmatrix}0&-1\\1&0\end{pmatrix}$ 在实数范围内连特征向量都没有（特征值是 $\pm i$）。但它显然是个"很规整"的矩阵——保长度、保角度。难道它就不能对角化吗？
+§1 反面二指出：实旋转矩阵 $B=\begin{pmatrix}0&-1\\1&0\end{pmatrix}$ 在实数范围内连特征向量都没有（特征值是 $\pm i$）。但从保长度、保角度的性质来看，它无疑是个"很规整"的矩阵。难道它就不能对角化吗？
 
 答案是：**在复数范围内可以，而且能酉对角化**。代价是放弃"实数"，拥抱复数和酉矩阵。$B$ 不是对称的，所以实对称谱定理不适用。但 $B$ 满足一个更弱的条件——**正规**（normal）：$BB^*=B^*B$。正规算子有自己的谱定理。
 

@@ -83,17 +83,19 @@ mj_forward / mj_step / mj_inverse
 | 时间层 | S1.3、S1.6 | 正确选择 `mj_step`、`mj_forward`、`mj_inverse` |
 | 建模层 | S1.4、S1.9 | 写出包含接触、执行器、传感器、闭链约束的 MJCF |
 | 调参层 | S1.10、S1.13 | 通过症状定位 timestep、solref、friction、condim、执行器配置问题 |
+| GPU 生态层 | S1.15 | 区分 MJX/MuJoCo Warp/Newton/Playground 的定位，为大规模训练选型 |
 
-> **本质洞察**：仿真器不是“把牛顿方程算快一点”的黑盒，而是一个**建模假设的集合**。同一个机器人、同一个控制器，在软接触和硬接触中可能表现不同，不是因为某个引擎“对”或“错”，而是因为它们选择了不同的接触物理和数值求解路径。
+> **本质洞察**：仿真器不是”把牛顿方程算快一点”的黑盒，而是一个**建模假设的集合**。同一个机器人、同一个控制器，在软接触和硬接触中可能表现不同，不是因为某个引擎”对”或”错”，而是因为它们选择了不同的接触物理和数值求解路径。
 
 本章的阅读顺序建议如下：
 
-1. 先读 S1.1，建立“为什么 MuJoCo 与 PhysX/Bullet 不同”的动机。
+1. 先读 S1.1，建立”为什么 MuJoCo 与 PhysX/Bullet 不同”的动机。
 2. 再读 S1.2，把 `mjModel`/`mjData` 的字段在脑中定位清楚。
 3. 接着读 S1.3，掌握 `mj_step`、`mj_forward`、`mj_inverse` 的调用时机。
 4. 读 S1.4 和 S1.9，知道 MJCF 如何表达 URDF 表达不了的物理对象。
 5. 读 S1.5、S1.8、S1.10，把接触模型从直觉、公式、调参三个层面闭环。
-6. 最后完成 S1.11 的综合练习，并用 S1.13 的故障排查表检查自己的模型。
+6. 读 S1.15，了解 MuJoCo 3.x 的 GPU 加速生态——这是从”学会 MuJoCo”到”用 MuJoCo 做大规模 RL”的桥梁。
+7. 最后完成 S1.11 的综合练习，并用 S1.13 的故障排查表检查自己的模型。
 
 ---
 
@@ -139,6 +141,18 @@ MuJoCo 的设计哲学源自 Emanuel Todorov、Tom Erez、Yuval Tassa 在 2012 �
 | **物理准确度(刚性)** | 中等（需调低 solref） | 优秀 | 优秀 | 优秀 |
 | **RL 生态** | dm_control / Gymnasium / Playground | IsaacLab / legged_gym | Stable Baselines | 主要用于 MPC |
 | **典型用户** | DeepMind / OpenAI / Berkeley | NVIDIA / ETH / 四足公司 | 教学 / 小型项目 | MIT / TRI (丰田) |
+
+### 历史脉络：从闭源到开源再到 GPU ⭐⭐
+
+理解 MuJoCo 的历史有助于理解它为什么在 2025-2026 年仍然是机器人 RL 的核心引擎。
+
+- **2012 年**：Emanuel Todorov 在 IROS 发表 MuJoCo 论文。当时的设计目标不是"做一个更快的游戏引擎"，而是"做一个适合模型预测控制的接触仿真器"。这个动机决定了凸优化路线。
+- **2012-2021 年**：MuJoCo 是闭源商业软件（年许可费约 \$500）。尽管如此，DeepMind 和 OpenAI 的多项里程碑工作（DM Control Suite、OpenAI Gym 的 MuJoCo 环境、Dactyl 灵巧手）都基于 MuJoCo，因为其接触精度是独一无二的。
+- **2021 年 10 月**：Google DeepMind 收购 Roboti LLC（Todorov 的公司），将 MuJoCo 完全开源（Apache 2.0）。这一事件直接催生了后续的 GPU 加速路线——开源使得社区可以基于 MuJoCo 的核心算法进行 JAX/Warp 重实现。
+- **2023 年底**：MuJoCo 3.0 发布，引入 MJX（JAX 后端），首次实现 GPU 加速。
+- **2025 年**：MuJoCo Warp 发布，Newton 物理引擎将 MuJoCo 的接触算法带入 NVIDIA 原生生态。MuJoCo Playground 荣获 RSS 2025 Outstanding Demo Paper Award。
+
+这段历史的关键洞察是：MuJoCo 从一开始就不是为游戏设计的——它是为**控制和优化**设计的。这个设计选择在十余年后被证明具有前瞻性：软接触模型不仅适合 MPC，还适合 RL（因为 reward landscape 更连续）和可微分仿真（因为约束力是参数的可微函数）。
 
 ### 对 RL / MPC / Sim-to-Real 的具体影响 ⭐⭐
 
@@ -1238,7 +1252,19 @@ MuJoCo 的凸优化方案**不是 LCP 的近似——它是一种不同的物理
 - **多接触超定时**：LCP 可能无法分配一致的接触力；MuJoCo 通过最小化 Gauss 目标函数找到"最优折衷"
 - **摩擦不确定区域**：LCP 在静-动摩擦切换边界有不连续性；MuJoCo 的软约束和可选摩擦锥近似让切换更容易被数值求解器处理
 
-> **⚠️ 易错陷阱**：一些材料会把 MuJoCo 的软接触简单说成“对硬接触的近似”。这个说法容易误导初学者。更准确的理解是：MuJoCo 选择了不同的接触建模路线。Gauss 原理、软约束和阻抗参数共同定义了一个适合控制与优化的物理模型；在有限刚度的真实材料中，这条路线并不一定比理想刚体模型“更不真实”。
+> **⚠️ 易错陷阱**：一些材料会把 MuJoCo 的软接触简单说成”对硬接触的近似”。这个说法容易误导初学者。更准确的理解是：MuJoCo 选择了不同的接触建模路线。Gauss 原理、软约束和阻抗参数共同定义了一个适合控制与优化的物理模型；在有限刚度的真实材料中，这条路线并不一定比理想刚体模型”更不真实”。
+
+### Gauss 原理对可微分仿真的意义 ⭐⭐⭐
+
+Gauss 原理不仅影响了 MuJoCo 的求解器设计，还对**可微分仿真**有深远的影响。当你需要计算仿真轨迹对参数的梯度（如质量对最终位置的灵敏度）时，约束求解器的数学性质决定了梯度是否可以稳定计算。
+
+在 LCP（硬接触）方案中，接触模式切换（从”分离”到”滑动”到”粘着”）产生不连续性——梯度在这些切换点不存在或不稳定。这使得直接对 LCP 求解器做反向传播极其困难。
+
+MuJoCo 的凸优化方案在这方面有天然的优势：凸优化的 KKT 条件定义了一个隐函数，原则上可以通过**隐函数定理**计算约束力对参数的梯度。MJX 的端到端可微分性正是建立在这个数学基础上的——JAX 的自动微分沿着凸优化的求解路径反向传播梯度。
+
+当然，接触切换附近的梯度仍然可能有数值困难——当约束从活跃变为不活跃时，梯度会经历快速变化。但相比 LCP 的不连续跳变，这种变化至少是有界的。这就是为什么可微分仿真研究者倾向于选择 MuJoCo 风格的软接触模型。
+
+> **本质洞察**：Gauss 原理 → 凸优化 → 约束力是参数的光滑函数 → 梯度可计算。这条逻辑链把 MuJoCo 的物理哲学和现代可微分仿真直接联系了起来。Todorov 在 2012 年选择凸优化路线时，可能还没有预见到可微分仿真的需求——但这个选择在十年后被证明具有前瞻性。
 
 ---
 
@@ -1545,6 +1571,8 @@ diagnose_contacts(m, d)
 | 逆动力学残差很大 | 漏掉 `qfrc_applied/passive` 或状态未同步 | 1. 调 `mj_forward` 后再调 `mj_inverse`；2. 把 `qfrc_passive`、`qfrc_applied` 纳入残差；3. 清空外力重新测试 | S1.3 |
 | 多线程 rollout 不可复现 | 共享了 `mjData` 或随机种子不独立 | 1. 每条 rollout 单独创建 `mjData`；2. 只共享只读 `mjModel`；3. 显式设置随机种子；4. 禁止跨线程写 `mjModel` | S1.2 |
 | XML 加载失败但报错难懂 | include 路径、关节范围、惯量、名称冲突 | 1. 查看 `mj_loadXML` 的 error 缓冲；2. 暂时删除 include 缩小问题；3. 检查重复 name；4. 用 `mj_saveLastXML` 查看编译后模型 | S1.4, S1.6 |
+| MJX/Warp 和 CPU 轨迹不一致 | 同一初始条件跑出不同轨迹 | GPU 浮点精度和运算顺序差异 | 这是正常现象——不要期望跨后端的逐步匹配；1. 验证统计指标（mean reward、成功率）是否一致；2. 用短轨迹（<100 步）验证单步误差在数值精度范围内 | S1.15 |
+| GPU 仿真中穿透问题与 CPU 不同 | 同一 solref 在 GPU 和 CPU 上穿透表现不一致 | solref/solimp 在 GPU 实现中的数值行为微小差异 | 1. 先在 CPU 上调好参数；2. 搬到 GPU 后微调 solref[0]（通常调小 10-20%）；3. 用接触诊断工具验证穿透深度 | S1.10, S1.15 |
 
 故障排查时建议按“可观测量”而不是按“猜测原因”记录：
 
@@ -1607,10 +1635,282 @@ mj_diagnose --model unitree_go2/scene.xml --steps 2000 --csv out.csv
 
 这个项目会迫使你把本章的所有概念串起来：MJCF 编译成 `mjModel`，运行状态保存在 `mjData`，`mj_step` 推进时间，接触参数改变 `d.contact` 和 `qfrc_constraint`，传感器读数来自 `sensordata`。如果这个脚手架写清楚，后续学习 MJPC、MJX 和可微分仿真时，很多问题会提前暴露。
 
-## S1.15 本章小结 ⭐
+---
+
+## S1.15 MuJoCo 3.x 版本演进与 GPU 加速生态 ⭐⭐⭐
+
+> **这一节解决什么问题**：本章前面所有内容都基于 MuJoCo 的 CPU 核心引擎。但从 MuJoCo 3.0（2023 年底）开始，MuJoCo 不再只是一个 CPU 引擎——它发展出了 MJX（JAX 后端）、MuJoCo Warp（NVIDIA Warp 后端）和 MuJoCo Playground（端到端 RL 框架）三条 GPU 加速路线。理解这个生态演进，是从"学会 MuJoCo"过渡到"用 MuJoCo 做大规模机器人学习"的关键桥梁。
+
+### 动机：为什么 CPU MuJoCo 不够了？ ⭐⭐
+
+本章前面的所有代码——`mj_step`、`mj_forward`、`mj_inverse`——都运行在单个 CPU 线程上。对于控制器验证、模型调试和小规模实验，CPU MuJoCo 的速度完全足够。但当你需要训练一个强化学习策略时，情况根本性地改变了。
+
+以四足 locomotion 为例，一个 PPO 策略从随机初始化到学会稳定行走，典型地需要 $10^8$ 到 $10^9$ 个环境 step。在 CPU 单线程 MuJoCo 上，Ant 模型的吞吐量大约是 1000 step/s——这意味着 $10^8$ 个 step 需要约 28 小时。如果你需要跑 50 组超参数实验（调 reward 权重、DR 参数等），总共需要 1400 小时（约 58 天）的连续计算。
+
+GPU 并行仿真把这个数字压缩了两到三个数量级。4096 个并行环境同时运行时，吞吐量可以从 1000 step/s 跃升到 300,000-500,000 step/s。同样的 $10^8$ 个 step 只需要约 5 分钟。50 组实验大约 4 小时完成。**这不是量变——这是研究迭代速度的质变。**
+
+> **本质洞察**：GPU 并行仿真的核心价值不是"让每个仿真步更快"（实际上单个仿真步在 GPU 上并不比 CPU 快），而是"让成千上万个仿真步同时发生"。这与 GPU 在深度学习中的角色完全一致——矩阵乘法在 GPU 上快，不是因为单个乘法更快，而是因为成千上万个乘法并行执行。
+
+### MuJoCo 3.0 的关键特性 ⭐⭐⭐
+
+MuJoCo 3.0（2023 年 12 月发布）是 MuJoCo 历史上最重要的版本跃迁。它不仅引入了 GPU 加速路线，还对 CPU 引擎本身做了多项重大改进：
+
+**1. MuJoCo XLA（MJX）——JAX 后端**
+
+MJX 是 MuJoCo 物理算法的 JAX 重实现。它不是把 C 代码编译到 GPU 上，而是用 JAX 的数组操作从零重写了 MuJoCo 的核心计算管线——正运动学、复合刚体惯量、接触检测、约束求解和积分。通过 JAX 的 `jax.vmap`（自动向量化映射），一行代码就可以把单环境仿真变成数千环境的批量仿真：
+
+```python
+import jax
+import mujoco.mjx as mjx
+
+# 从 MuJoCo 模型创建 MJX 模型
+mj_model = mujoco.MjModel.from_xml_path("robot.xml")
+mjx_model = mjx.put_model(mj_model)
+mjx_data = mjx.put_data(mj_model, mujoco.MjData(mj_model))
+
+# 单环境 step
+mjx_data = mjx.step(mjx_model, mjx_data)
+
+# 批量环境 step（4096 个并行环境）——只需要 vmap
+batched_step = jax.vmap(mjx.step, in_axes=(None, 0))
+batched_data = batched_step(mjx_model, batched_data_array)
+```
+
+MJX 可以运行在 NVIDIA GPU、AMD GPU、Apple Silicon 和 Google Cloud TPU 上。在 8-chip TPU v5 上，MJX 可以达到 270 万 step/s。MJX 的核心优势是**端到端可微分**——因为整个计算管线都在 JAX 中，JAX 的自动微分可以直接计算仿真轨迹对参数的梯度。这对于系统辨识、可微分 MPC 和基于梯度的策略优化极有价值。
+
+但 MJX 有一个重要的生态限制：它运行在 JAX 生态中，而大多数 RL 算法库（RSL-RL、RL Games、Stable Baselines）都是 PyTorch 的。从 MJX 收集的 rollout 数据不能直接被 PyTorch 策略网络消费——需要额外的 JAX-to-PyTorch 数据桥接，这会引入延迟和复杂性。
+
+**2. 有符号距离场（SDF）碰撞基元**
+
+MuJoCo 3.0 引入了 SDF（Signed Distance Field）碰撞基元。传统碰撞基元（球、胶囊、盒子、网格）要求几何体是凸的或可分解为凸集。SDF 没有这个限制——它可以表示任意形状，包括凹面、内腔和复杂曲面。碰撞点通过对两个 SDF 的最大值做梯度下降来寻找。
+
+这对于操作任务中的复杂物体（如杯子、工具、不规则零件）特别有价值——以前需要手动分解为多个凸体的几何形状，现在可以用单个 SDF 精确表示。
+
+**3. 多线程支持**
+
+MuJoCo 3.0 引入了 `mjThreadPool` 和 `mjTask`，支持引擎管线内部的多线程并行。特别是约束岛（constraint island）的求解和碰撞检测可以在多个线程上并行执行。在 22-humanoid 场景中（22 个人形模型同时仿真），多线程相比单线程实现了约 3 倍的加速。
+
+**4. 默认求解器从 PGS 切换为 Newton**
+
+这一点在 S1.8 中已经提到，但值得再次强调：MuJoCo 3.0 把默认约束求解器从 PGS（Projected Gauss-Seidel）切换为 Newton 方法。Newton 求解器利用局部二阶信息，在大多数场景下收敛更快、精度更高。如果你在阅读 2022 年及之前的教程时看到"MuJoCo 默认用 PGS"的说法，请注意这已经过时。
+
+### MuJoCo 3.1-3.3+ 后续演进 ⭐⭐
+
+MuJoCo 在 3.0 之后持续快速迭代。以下是对后续运控相关的关键更新：
+
+| 版本 | 关键特性 | 对运控的影响 |
+|------|---------|------------|
+| 3.2.0 | `MjSpec` API 稳定化——程序化模型编辑 | 域随机化中动态增删刚体、批量修改参数更高效 |
+| 3.2.3 | 原生凸碰撞检测管线成为默认 | 碰撞检测精度和性能改善 |
+| 3.2.x | 势能和动能传感器 | 可在仿真中直接监测能量守恒 |
+| 3.2.x | 分离碰撞与变形网格（Flex） | 软体仿真性能不再受碰撞网格分辨率限制 |
+| 3.3.0 | 肌肉执行器（`<muscle>`） | 生物力学仿真和仿生运控的原生支持 |
+| 3.3.0 | 自定义 viewer 绘图 | 通过 viewport/set\_figures API 在 viewer 中叠加自定义数据 |
+| 3.3.5 | MJX-Warp（MuJoCo Warp）引入 | NVIDIA GPU 上的性能瓶颈被解决 |
+
+**`MjSpec` 的稳定化**对域随机化工作流特别重要。在 MuJoCo 3.2 之前，域随机化通常通过 `copy.deepcopy(mjModel)` + 修改字段来实现（如 S1.2 中的示例）。`MjSpec` 提供了更优雅的方式——你可以在运行时通过 Python API 添加/删除刚体、修改关节参数，然后重新编译为 `mjModel`，而不需要重新解析 XML。
+
+以下代码展示了 `MjSpec` 在域随机化中的典型用法：
+
+```python
+import mujoco
+import numpy as np
+
+# 从已有模型创建 MjSpec
+spec = mujoco.MjSpec.from_file("robot.xml")
+
+# 程序化修改模型参数（用于域随机化）
+rng = np.random.default_rng(42)
+for body in spec.bodies:
+    if body.name.startswith("link"):
+        # 随机化质量：原始值的 80%-120%
+        original_mass = body.mass
+        body.mass = original_mass * rng.uniform(0.8, 1.2)
+
+# 动态添加新的几何体（如在桌面上随机放置障碍物）
+table_body = spec.find_body("table")
+for i in range(5):
+    obstacle = table_body.add_body(f"obstacle_{i}")
+    obstacle.pos = [rng.uniform(-0.3, 0.3), rng.uniform(-0.3, 0.3), 0.05]
+    obstacle.add_geom(
+        name=f"obs_geom_{i}",
+        type=mujoco.mjtGeom.mjGEOM_BOX,
+        size=[0.02, 0.02, 0.05]
+    )
+
+# 重新编译为 mjModel
+model = spec.compile()
+data = mujoco.MjData(model)
+```
+
+与 `copy.deepcopy(mjModel)` 方案相比，`MjSpec` 的优势在于：(1) 可以添加/删除结构元素（刚体、关节、执行器），而非仅修改参数；(2) 编译过程会自动重新计算惯量、碰撞体包围盒等派生量；(3) 代码更接近模型的逻辑结构，可读性更高。
+
+**肌肉执行器**（MuJoCo 3.3+）对人形运动控制和生物力学仿真有重要价值。传统的 `motor`/`position`/`velocity` 执行器假设力矩与控制信号之间是简单的线性关系，但真实的生物肌肉有完全不同的力-长度-速度特性：
+
+- **力-长度关系**：肌肉在最佳长度附近产生最大力，过度拉伸或缩短都会降低出力
+- **力-速度关系**：肌肉收缩越快，能产生的力越小（Hill 模型）
+- **激活动力学**：从神经信号到力产生有约 30-80ms 的延迟
+
+MuJoCo 的 `<muscle>` 执行器内置了 Hill-type 肌肉模型的完整实现，使得仿真人体运动（如 AMASS 数据集的动作重现、仿生机器人设计）时，不需要在 Python 代码中手动实现肌肉力学。这个功能在 S1.9 中提到的 `<general>` 执行器的 `dyntype="muscle"` 选项基础上做了进一步的原生封装。
+
+**势能和动能传感器**看似简单，但在控制器调试中极有价值。当你怀疑仿真中存在"能量注入"（系统的总能量随时间增长，说明积分器或接触模型向系统注入了虚假能量）时，可以直接读取势能和动能传感器来验证：
+
+```xml
+<sensor>
+  <energy/>   <!-- 返回系统总能量 = 势能 + 动能 -->
+</sensor>
+```
+
+```python
+mujoco.mj_step(m, d)
+total_energy = d.sensor('energy').data[0]
+# 如果 total_energy 持续增长（无外力输入时），说明存在能量注入
+# 最常见的原因：显式积分器 + 过大的 timestep + 硬接触
+```
+
+### MuJoCo Warp（MJX-Warp）——NVIDIA GPU 优化路线 ⭐⭐⭐
+
+MJX-JAX 的局限之一是在 NVIDIA GPU 上的性能没有充分利用硬件特性——JAX 的通用性意味着它的 GPU kernel 不是针对 NVIDIA 架构深度优化的。MuJoCo Warp（在 MuJoCo 3.3.5 中引入）解决了这个问题。
+
+MuJoCo Warp 基于 NVIDIA Warp 框架——一个允许用 Python 语法编写高性能 CUDA kernel 的库。它重新实现了 MuJoCo 的核心物理管线，但每个 kernel 都针对 NVIDIA GPU 的内存访问模式、warp 调度和共享内存做了深度优化。
+
+性能对比（来自 Newton 1.0 Technical Blog）：
+
+| 对比基准 | 任务类型 | 硬件 | MuJoCo Warp 加速比 |
+|---------|---------|------|-------------------|
+| MuJoCo Warp vs MJX | Locomotion | RTX 4090 | $152\times$ |
+| MuJoCo Warp vs MJX | Manipulation | RTX 4090 | $313\times$ |
+| MuJoCo Warp vs MJX | Locomotion | RTX PRO 6000 | $252\times$ |
+| MuJoCo Warp vs MJX | Manipulation | RTX PRO 6000 | $475\times$ |
+
+这些数字的量级值得深思：同样是 MuJoCo 物理算法的 GPU 实现，针对硬件优化的版本比通用版本快了两个数量级。这说明 GPU 编程中"写出来能跑"和"跑得快"之间的差距是巨大的。
+
+> **反事实推理**：如果 MuJoCo 只有 MJX-JAX 路线而没有 MuJoCo Warp 会怎样？在 NVIDIA GPU 上，MJX 的吞吐量虽然远超 CPU，但仍然低于 PhysX（NVIDIA 自家的物理引擎）。这意味着"MuJoCo 物理精度更好但 PhysX 更快"的权衡会持续存在。MuJoCo Warp 消除了这个权衡——现在你可以同时获得 MuJoCo 的接触精度和超越 PhysX 的 GPU 吞吐量。
+
+MuJoCo Warp 与 PyTorch 的互操作通过 `warp.to_torch()` 实现零拷贝张量转换。这意味着 MuJoCo Warp 的仿真输出可以直接被 PyTorch RL 算法消费，不需要任何数据搬运——与 S1.2 中讲的 NumPy view 思想完全一致，只是从"C 数组 ↔ NumPy"变成了"Warp 数组 ↔ PyTorch 张量"。
+
+### Newton 物理引擎——统一多求解器 ⭐⭐⭐
+
+Newton 由 NVIDIA、Google DeepMind 和 Disney Research 联合发起，2025 年 9 月贡献给 Linux Foundation 作为开源项目（Apache 2.0），Newton 1.0 GA 于 GTC 2026（2026 年 3 月）正式发布。
+
+Newton 的核心设计思想是**统一多个物理求解器在一个 API 下**。它包含 7 个求解器，每个针对不同的物理场景：
+
+| 求解器 | 来源 | 适用场景 |
+|--------|------|---------|
+| MuJoCo Warp | Google DeepMind | 双足/四足 locomotion、通用刚体 |
+| Kamino | Disney Research | 闭环机构（平行连杆腿、灵巧手） |
+| XPBD | 社区 | Position-Based Dynamics，小规模软体 |
+| VBD | Style3D | 线缆/布料/线性可变形体 |
+| Featherstone | 标准算法 | 机械臂、干净运动链 |
+| Implicit MPM | 研究 | 颗粒材料、沙地/雪地越野 |
+| SemiImplicit | 基础 | 通用 baseline |
+
+Newton 的 Kamino 求解器值得特别关注——它是第一个在 GPU 上高效仿真闭环机构的求解器。回顾 S1.9，我们用 `<equality><connect>` 实现闭链约束时，约束的 solref 参数需要设得很硬才能保持闭链完整性。Kamino 使用 maximal-coordinate 表示和 Proximal-ADMM 算法，可以在 GPU 上精确求解闭链约束而不需要通过 solref 软化。这对拥有平行连杆腿（如 ANYmal、Digit）的机器人来说非常重要。
+
+> **本质洞察**：Newton 不是"又一个物理引擎"——它是一个**物理求解器的运行时调度器**。同一个场景中，机器人的刚体部分可以用 MuJoCo Warp 求解，线缆传动可以用 VBD 求解，地面颗粒可以用 MPM 求解——Newton 在一个统一的时间步内协调这些求解器。这种多求解器组合的能力在传统物理引擎中是不存在的。
+
+### MuJoCo Playground——端到端 RL 框架 ⭐⭐
+
+MuJoCo Playground 是 Google DeepMind 基于 MJX 构建的端到端 RL 训练框架，荣获 RSS 2025 Outstanding Demo Paper Award。它的定位是"pip install 后几分钟内在单 GPU 上训练出可部署策略"。
+
+Playground 的技术架构有三个关键设计：
+
+1. **基于 MJX（JAX 后端）**：所有仿真和训练都在 JAX 生态中完成，支持端到端可微分
+2. **集成 Madrona 批量渲染器**：支持从像素输入直接训练视觉策略，不需要 teacher-student 蒸馏
+3. **零样本 sim-to-real**：在多种机器人平台上实现了零样本迁移——Berkeley Humanoid、Unitree Go1/G1、LEAP Hand、Franka Arm
+
+Playground 与本章内容的关系在于：它使用的物理引擎本质上就是 S1.1-S1.8 讲的 MuJoCo——相同的凸优化接触模型、相同的 solref/solimp 参数、相同的 Gauss 原理。只是执行平台从 CPU 移到了 GPU（通过 JAX vmap），并包装了一套 RL 训练管线。
+
+但 Playground 使用 JAX 而非 PyTorch，这意味着它与主流 PyTorch RL 生态（RSL-RL、RL Games）不兼容。对于大多数 PyTorch 用户来说，mjlab（基于 MuJoCo Warp + PyTorch）是更自然的选择。Playground 更适合 JAX 生态用户或需要端到端可微分仿真的研究。
+
+### MuJoCo 在具身智能生态中的位置 ⭐⭐
+
+理解 MuJoCo 不仅是一个物理引擎，更要理解它在整个具身智能（Embodied AI）研究生态中的角色。截至 2025-2026 年，具身智能研究呈现出从任务特定控制管线向基础模型驱动的通用智能体演进的趋势。在这个趋势中，MuJoCo 的定位正在发生微妙的变化。
+
+**传统角色（2012-2023）**：MuJoCo 主要作为"精确的物理仿真器"服务于控制研究者——验证 MPC 控制器、训练 RL 策略、做系统辨识。用户关心的是单环境的物理精度。
+
+**新兴角色（2024-至今）**：MuJoCo 正在成为"大规模机器人学习的数据引擎"。MuJoCo Playground 的 sim-to-real 演示覆盖了四足（Go1）、人形（G1、Berkeley Humanoid）、灵巧手（LEAP Hand）和机械臂（Franka）——这不是一个物理引擎的 demo，而是一个**端到端机器人学习平台的能力展示**。
+
+这个角色转变对你的学习意味着什么？本章的所有内容（接触模型、MJCF 建模、API 使用）是"精确物理仿真"角色的基础。后续的 S03（GPU 生态）和具身智能方向的 RL 运控章节，会带你进入"大规模学习"角色。两个角色共享同一套物理模型和参数体系——`solref`/`solimp` 在 CPU 调试和 GPU 训练中含义完全一致。
+
+> **反事实推理**：如果 MuJoCo 只停留在 CPU 引擎的角色（没有 MJX 和 Warp），会发生什么？研究者如果需要 MuJoCo 的接触精度，就只能在 CPU 上慢速训练；如果需要 GPU 速度，就不得不使用 PhysX（接触精度较低）。这种"精度 vs 速度"的二选一困境正是 MuJoCo GPU 路线要消除的。现在，你可以同时获得 MuJoCo 的接触精度和 GPU 的训练速度。
+
+**与 Open X-Embodiment 等大规模数据集的关系**：具身智能领域正在出现大规模多机器人数据集（如 Open X-Embodiment 收集了 100 万+ 轨迹来自 22 种机器人，AgiBot World 收集了 100 万+ 轨迹来自 100+ 种机器人）。这些数据集中很多使用 MuJoCo 或 MuJoCo 衍生框架做仿真数据生成。理解 MuJoCo 的物理模型假设，对于正确解读这些数据集中的仿真数据至关重要——不同的 solref 参数会导致相同机器人产生不同的接触行为，进而影响训练出的策略的泛化能力。
+
+### 三条 GPU 路线的对比与选型 ⭐⭐⭐
+
+MuJoCo 的 GPU 加速形成了三条技术路线，每条适合不同的用户：
+
+| 维度 | MJX（JAX） | MuJoCo Warp | CPU MuJoCo |
+|------|-----------|-------------|------------|
+| **编程框架** | JAX | PyTorch（via Warp） | Python / C / C++ |
+| **可微分** | 原生支持 | 开发中 | 不支持 |
+| **NVIDIA GPU 性能** | 中等 | 极高 | 不适用 |
+| **TPU 支持** | 原生支持 | 不支持 | 不适用 |
+| **Apple Silicon** | 支持 | 不支持 | 支持（CPU） |
+| **使用框架** | MuJoCo Playground | mjlab / Isaac Lab（via Newton） | dm_control / Gymnasium |
+| **典型用户** | 可微分仿真研究者、JAX 用户 | 大多数 PyTorch RL 研究者 | 控制器验证、模型调试、教学 |
+| **物理精度** | 与 CPU 一致 | 与 CPU 一致 | 参考标准 |
+
+选型建议非常简单：
+- **如果你做控制器开发、模型调试、或教学**：用 CPU MuJoCo（本章的所有内容）
+- **如果你做 RL 训练且使用 PyTorch**：用 MuJoCo Warp（通过 mjlab）
+- **如果你做 RL 训练且使用 JAX，或需要可微分仿真**：用 MJX（通过 Playground）
+- **如果你需要在同一场景中混合多种物理**：用 Newton
+
+无论选择哪条 GPU 路线，本章讲的所有核心概念都完全适用——`mjModel`/`mjData` 的分离、`solref`/`solimp` 的含义、正/逆动力学的关系、MJCF 的建模能力。GPU 加速改变的是"在哪里算"和"算多快"，不改变"算什么"和"怎么建模"。
+
+> **本质洞察**：MuJoCo 的三条 GPU 路线反映了一个更深层的设计哲学——**物理算法与计算硬件解耦**。同一套 Gauss 原理 + 凸优化 + 软约束的物理算法，可以在 CPU（标准 C 实现）、JAX（MJX）、NVIDIA Warp（MuJoCo Warp）上运行，未来也可能出现 AMD ROCm 或其他硬件后端。这种解耦的好处是：你学习的物理知识（本章的 S1.1-S1.10）是永久有效的，不会因为计算后端的更迭而失效。硬件在变，但 Gauss 最小约束原理从 1829 年到 2026 年一直是同一个原理。
+
+### 从 CPU 调试到 GPU 训练的完整工作流 ⭐⭐
+
+在实际研究中，CPU MuJoCo 和 GPU MuJoCo 不是二选一的关系——它们服务于工作流的不同阶段。以下是推荐的完整工作流：
+
+| 阶段 | 工具 | 目标 | 典型耗时 |
+|------|------|------|---------|
+| 1. 模型构建 | 文本编辑器 + CPU MuJoCo viewer | 编写 MJCF，在 viewer 中可视化检查几何形状、关节运动范围 | 1-3 天 |
+| 2. 物理参数标定 | CPU MuJoCo + 本章的诊断脚手架 | 调 solref/solimp/friction，验证接触行为，做正逆动力学一致性检查 | 1-2 天 |
+| 3. 控制器原型 | CPU MuJoCo + Python | 用 `launch_passive` 实现简单 PD 控制器，验证执行器配置正确 | 0.5-1 天 |
+| 4. RL 环境搭建 | mjlab（MuJoCo Warp） | 把 MJCF 模型包装为 GPU 并行 RL 环境，配置 obs/reward/DR | 1-2 天 |
+| 5. 大规模训练 | mjlab + RSL-RL（GPU） | 4096 环境并行 PPO 训练，用 WandB 记录实验 | 数小时 |
+| 6. Sim-to-Real 验证 | CPU MuJoCo | 在 CPU MuJoCo 中回放训练好的策略，逐帧检查行为 | 0.5 天 |
+| 7. 真机部署 | ONNX 模型 + 机器人 SDK | 导出策略为 ONNX，在真机上推理 | 1-2 天 |
+
+注意阶段 1-3 全部在 CPU 上完成——这些阶段需要的是交互性和可调试性，而不是速度。阶段 4-5 在 GPU 上完成——这些阶段需要的是吞吐量。阶段 6 又回到 CPU——因为你需要逐帧检查策略行为，GPU 的并行优势在单环境诊断中没有意义。
+
+这个"CPU → GPU → CPU"的工作流模式，解释了为什么本章花大量篇幅讲 CPU MuJoCo 的 API 和调试技巧——它们在工作流的首尾两端都是必需的。
+
+### ⚠️ 常见陷阱 ⭐⭐
+
+⚠️ **编程陷阱：以为 MJX 和 MuJoCo Warp 的结果完全一致**
+
+虽然 MJX 和 MuJoCo Warp 都实现了 MuJoCo 的物理算法，但由于浮点精度差异（GPU 的浮点运算顺序与 CPU 不同）和 solref/solimp 参数在 GPU 上的数值行为微小差异，同一个模型、同一个初始状态在三个后端上跑出的轨迹会**逐步偏离**。对于单步查询（如 `mj_forward`），差异在数值精度范围内；对于长轨迹（数千步），蝴蝶效应会使轨迹显著不同。这不是 bug——这是浮点计算的固有特性。**正确做法**是不要期望跨后端的轨迹精确匹配，而是验证统计指标（如平均 reward、成功率、tracking RMSE）是否一致。
+
+💡 **概念误区：认为"GPU 加速 = 物理更准"**
+
+GPU 加速不会提高物理精度——它只改变计算速度。MJX 在 GPU 上跑 4096 个环境，每个环境的物理精度与 CPU MuJoCo 完全相同。如果你的模型在 CPU 上有穿透过大的问题（solref 太软），搬到 GPU 上也同样会穿透。物理精度由模型参数（solref/solimp/timestep/integrator）决定，与计算硬件无关。
+
+🧠 **思维陷阱：认为"直接用 GPU 版本就好，不需要学 CPU 版本"**
+
+GPU 版本的 MuJoCo 是为大规模并行训练设计的——它的 API 面向批量操作（数千环境同时 step）。但在模型调试阶段，你需要的不是"跑得快"而是"看得清"：逐步检查 `d.contact`、打印 `qfrc_constraint`、在 viewer 中拖拽关节、验证正逆动力学一致性。这些交互式调试操作在 CPU MuJoCo 上最方便。正确的工作流是：**用 CPU MuJoCo 调试模型和控制器 → 确认无误后搬到 GPU 做大规模训练 → 训练完成后回到 CPU 做 sim-to-real 验证**。
+
+### S1.15 练习 ⭐⭐
+
+1. **[⭐⭐ 概念题]** 解释 MJX（JAX 后端）和 MuJoCo Warp（NVIDIA Warp 后端）的核心区别。如果你的项目使用 PyTorch 和 NVIDIA GPU，应该选择哪个？如果你的项目需要端到端可微分仿真呢？
+2. **[⭐⭐ 思考题]** 本章 S1.8 讲的 Gauss 原理和凸优化约束求解在 MJX 和 MuJoCo Warp 中是否仍然适用？GPU 加速改变了物理模型还是只改变了计算平台？
+3. **[⭐⭐⭐ 对比题]** Newton 包含 7 个求解器。对于一个具有平行连杆膝关节的四足机器人（如 ANYmal），使用 MuJoCo Warp 求解器和 Kamino 求解器分别有什么优缺点？提示：回顾 S1.9 中 `<equality><connect>` 的 solref 参数对闭链精度的影响。
+4. **[⭐⭐⭐ 工作流设计题]** 设计一个从"模型调试"到"大规模训练"到"sim-to-real 部署"的完整工作流，标明每个阶段应该使用 CPU MuJoCo、MuJoCo Warp 还是 MJX，并解释选择理由。
+
+---
+
+## S1.16 本章小结 ⭐
 
 | 知识点 | 你现在应该掌握的核心判断 | 常见误解 |
 |--------|--------------------------|----------|
+| MuJoCo 3.x GPU 生态 | MJX（JAX）、MuJoCo Warp（NVIDIA）、Playground 三条路线各有定位 | 以为 GPU 加速会改变物理精度 |
+| MuJoCo 3.x 版本演进 | MjSpec 程序化模型编辑、肌肉执行器、SDF 碰撞、默认 Newton 求解器 | 以为 3.0 只是加了 GPU |
+| Newton 物理引擎 | 7 个求解器统一 API，Kamino 处理闭环机构 | 以为 Newton 是"又一个物理引擎" |
+| CPU-GPU 工作流 | 模型调试用 CPU → 大规模训练用 GPU → sim-to-real 验证回 CPU | 认为只用 GPU 版本就够 |
 | MuJoCo 物理哲学 | 软约束和优化模型让接触可诊断、可反解、适合控制 | 把 penetration 一律当成 bug |
 | `mjModel` | 只读编译产物，保存拓扑、惯量、执行器、传感器、求解器选项 | 以为它只是 XML 的内存版 |
 | `mjData` | 可变运行时状态和中间缓存，每次仿真都被更新 | 在线程间共享同一份 `mjData` |
@@ -1626,7 +1926,40 @@ mj_diagnose --model unitree_go2/scene.xml --steps 2000 --csv out.csv
 
 > MuJoCo 的核心不是某个函数名，而是 **MJCF 编译出的 `mjModel` + 每步更新的 `mjData` + 由软约束优化定义的接触动力学**。理解这三者的关系，才算真正会用 MuJoCo 做机器人控制仿真。
 
-## S1.16 延伸阅读 ⭐
+### 从本章到后续章节的知识流动
+
+本章建立了 MuJoCo 核心引擎的心智模型。后续章节将在此基础上逐步展开：
+
+| 后续章节 | 依赖本章哪些知识 | 新增什么能力 |
+|---------|----------------|-------------|
+| S02 交互式控制 | S1.2（mjModel/mjData）、S1.3（三大函数）、S1.6（Python API） | MJPC、mjctrl、mink 的交互式控制 |
+| S03 GPU 生态 | S1.15（GPU 加速生态）、S1.1（接触物理） | MJX/Warp/Isaac Lab 的 GPU 仿真实战 |
+| S04 可微分仿真 | S1.8（Gauss 原理）、S1.5（接触数学） | 梯度穿过仿真器的理论基础 |
+| S05 可微分 MPC | S1.3（mj_inverse）、S1.8（凸优化） | 将可微分仿真与 MPC 结合 |
+
+注意这个递进关系：S01 建立物理直觉和 API 技能 → S02 用这些技能做交互式控制 → S03 把单线程技能搬到 GPU → S04/S05 把 GPU 仿真与优化/控制结合。每一步都严格依赖上一步。
+
+### 本章常见误解汇总
+
+| 误解 | 正确理解 |
+|------|---------|
+| "MuJoCo 的穿透是 bug" | 穿透是软接触模型的设计特性，穿透深度由 solref 控制 |
+| "硬接触比软接触更真实" | 真实世界的接触都有有限刚度，软接触在很多场景中更接近真实 |
+| "GPU 加速会提高物理精度" | GPU 只改变计算速度，精度由模型参数决定 |
+| "`mj_forward` 和 `mj_step` 的区别只是命名" | `mj_step` 推进时间（积分），`mj_forward` 不推进时间（只刷新派生量） |
+| "MuJoCo 的逆动力学等于 Pinocchio 的 RNEA" | MuJoCo 的 `mj_inverse` 在有接触时仍然 well-defined，RNEA 不包含接触力 |
+| "MJCF 只是 URDF 的另一种语法" | MJCF 能表达执行器、传感器、接触参数、闭链、腱——URDF 全部不能 |
+| "solref 的两个参数就是弹簧的 k 和 b" | solref 定义的是参考加速度的时间尺度，不是直接的弹簧常数 |
+| "condim 越大越好" | condim=6 的计算成本显著高于 condim=3，只在需要扭转/滚动摩擦时才用 |
+| "MJX 和 MuJoCo Warp 是同一个东西" | MJX 基于 JAX（可微分），MuJoCo Warp 基于 NVIDIA Warp（PyTorch 生态） |
+| "学了 GPU 版本就不需要学 CPU 版本" | 模型调试、控制器验证、力学诊断在 CPU 上最方便 |
+| "Newton 只是 MuJoCo Warp 的包装" | Newton 包含 7 个独立求解器，MuJoCo Warp 只是其中之一 |
+| "MuJoCo 3.0 只是加了 GPU" | 3.0 还引入了 SDF 碰撞、多线程、Newton 默认求解器等 CPU 端重大改进 |
+| "MuJoCo Playground 可以用 PyTorch" | Playground 基于 JAX 生态，PyTorch 用户应选择 mjlab |
+| "MjSpec 只是另一种加载模型的方式" | MjSpec 支持运行时动态修改模型结构，是域随机化的工程基础 |
+| "肌肉执行器只用于生物仿真" | Hill-type 肌肉模型对仿生机器人和人形运动控制同样有价值 |
+
+## S1.17 延伸阅读 ⭐
 
 | 资料 | 难度 | 阅读重点 |
 |------|------|----------|
@@ -1637,6 +1970,10 @@ mj_diagnose --model unitree_go2/scene.xml --steps 2000 --csv out.csv
 | [MuJoCo Menagerie](https://github.com/google-deepmind/mujoco_menagerie) | ⭐⭐ | 高质量 MJCF 模型写法，尤其是四足、机械臂和夹爪 |
 | [DeepMind Control Suite](https://github.com/google-deepmind/dm_control) | ⭐⭐⭐ | 如何把 MuJoCo 模型包装成连续控制 benchmark |
 | [Pinocchio 文档](https://gepettoweb.laas.fr/doc/stack-of-tasks/pinocchio/master/doxygen-html/) | ⭐⭐ | 对照理解只读模型与可变数据缓冲 |
+| [MuJoCo XLA (MJX) 文档](https://mujoco.readthedocs.io/en/latest/mjx.html) | ⭐⭐⭐ | JAX 后端架构、vmap 批量化、可微分仿真 |
+| [MuJoCo Playground](https://playground.mujoco.org/) | ⭐⭐ | MJX 上的端到端 RL 框架，RSS 2025 Demo Paper |
+| [Newton Physics Engine](https://developer.nvidia.com/newton-physics) | ⭐⭐⭐ | 多求解器统一 API、Kamino 闭环求解器、性能 benchmark |
+| [MuJoCo Warp (GitHub)](https://github.com/google-deepmind/mujoco_warp) | ⭐⭐⭐ | NVIDIA GPU 优化的 MuJoCo 实现，mjlab 的物理后端 |
 
 阅读顺序建议：
 
@@ -1645,6 +1982,10 @@ mj_diagnose --model unitree_go2/scene.xml --steps 2000 --csv out.csv
 3. 遇到 API 名称不确定时查 API Reference，尤其是字段、枚举和函数签名。
 4. 读 Menagerie 模型时，不要只复制参数；要问每个 `default`、`actuator`、`sensor` 为什么这样写。
 5. 读 Todorov 2012 时重点抓住建模哲学，不必第一次就推完所有优化细节。
+6. 如果你计划做 GPU 加速训练，优先阅读 MJX 文档和 MuJoCo Warp 的 GitHub 仓库——了解 CPU 和 GPU 后端之间的接口差异。
+7. Newton 物理引擎的文档对理解多求解器协同工作机制很有价值，尤其是 Kamino 求解器的闭环机构处理方式。
+8. MuJoCo Playground 的技术报告（arxiv:2502.08844）是了解 MuJoCo 在端到端 RL 训练中如何被使用的最佳入口。
+9. 对于版本变更的追踪，MuJoCo 的 Changelog（`mujoco.readthedocs.io/en/stable/changelog.html`）是最权威的来源——每个版本都详细列出了新增功能、行为变更和 API 变化。
 
 ### 练习：把模型诊断变成日常流程 ⭐
 
