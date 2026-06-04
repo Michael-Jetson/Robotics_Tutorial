@@ -267,7 +267,7 @@ $$L_g V(x) = 0 \implies L_f V(x) < 0$$
 
 #### Artstein 定理：CLF 存在等价于可镇定
 
-**定理（Artstein 1983, Systems & Control Letters 2(3):124-131）**：对控制仿射系统 $\dot x=f(x)+g(x)u$，以下等价：
+**定理（Artstein 1983, Nonlinear Analysis: Theory, Methods & Applications 7(11):1163-1173）**：对控制仿射系统 $\dot x=f(x)+g(x)u$，以下等价：
 
 (i) 系统是（全局）渐近可镇定的（存在连续反馈 $u=k(x)$ 使原点全局渐近稳定）
 
