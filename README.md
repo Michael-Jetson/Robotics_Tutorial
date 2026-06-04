@@ -4,10 +4,12 @@
 
 面向机器人与人工智能交叉方向的系统化教学文档，覆盖从数学基础到具身智能的完整知识体系。
 
+> **声明：** 本项目大量使用 AI（Claude、Codex 等）结合互联网调研来撰写内容。尽管所有文档均经过多轮独立审核与事实核查，但仍然无法完全避免错误。如果您在阅读过程中发现任何事实性错误、论文引用偏差或技术描述不当，欢迎通过 [Issue](https://github.com/Michael-Jetson/Robotics_Tutorial/issues) 反馈，我们会及时修正。
+
 **Author:** Pengfei Guo  
 **Affiliation:** 达妙科技 (DAMIAO Technology)  
 **License:** [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) — 自由使用与商用，需注明出处  
-**AI Collaboration:** 部分内容由 Claude 与 Codex 辅助编写与审核
+**AI Collaboration:** 内容由 Claude 与 Codex 辅助编写，经多轮双盲审核与基于互联网调研的事实核查
 
 ---
 
