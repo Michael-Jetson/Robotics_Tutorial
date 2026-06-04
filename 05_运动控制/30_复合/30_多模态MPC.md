@@ -867,7 +867,7 @@ T_{solve} \propto (N \cdot (n_x + n_u))^{2 \sim 3}
 $$
 
 > **陷阱警告** ⚠️
-> 论文中声称"实时 MPC"时要仔细看 DOF 数和时域长度。Sleiman 2021 的 "unified MPC" 在 Go2+Z1 上实现 ~8ms，但这是 centroidal dynamics（6维动量而非 full state）+ SQP-RTI（仅1次迭代）的结果。Full dynamics MPC 在同样 DOF 下需要 50ms+。
+> 论文中声称"实时 MPC"时要仔细看 DOF 数和时域长度。Sleiman 2021 的 "unified MPC" 在 ANYmal C+DynaArm 上实现 ~20ms，但这是 centroidal dynamics（6维动量而非 full state）+ SQP-RTI（仅1次迭代）的结果。Full dynamics MPC 在同样 DOF 下需要 50ms+。
 
 ### 解决方案一：减少时域节点
 
@@ -1678,8 +1678,8 @@ VLA 能否替代 MPC 用于四足+臂？
 - **可调试**：MPC 层有物理可解释性
 
 代表工作：
-- UMI on Legs (He et al. 2024)：Universal Manipulation Interface 部署在四足上，locomotion 用 RL policy，manipulation 用 diffusion policy
-- Deep Whole-Body Control (ETH 2024)：RL locomotion + MPC manipulation
+- UMI on Legs (Ha et al. 2024)：Universal Manipulation Interface 部署在四足上，locomotion 用 RL policy，manipulation 用 diffusion policy
+- Deep Whole-Body Control (CMU, CoRL 2022)：RL locomotion + MPC manipulation
 - RAMBO (2024)：MPC + RL 混合全身控制，根据任务阶段动态切换
 
 ### 何时 MPC 仍然是最优选择？

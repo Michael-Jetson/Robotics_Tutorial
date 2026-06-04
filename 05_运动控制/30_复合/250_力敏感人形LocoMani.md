@@ -14,9 +14,9 @@
 >
 > **核心参考文献**
 > - Zhang et al., "FALCON: Learning Force-Adaptive Humanoid Loco-Manipulation," L4DC 2026, arXiv:2505.06776
-> - He et al., "Hold My Beer (SoFTA): Learning Gentle Humanoid Locomotion and End-Effector Stabilization Control," 2025, arXiv:2505.24198
+> - Li et al., "Hold My Beer (SoFTA): Learning Gentle Humanoid Locomotion and End-Effector Stabilization Control," CoRL 2025, arXiv:2505.24198
 > - Bao et al., "HOMIE: Humanoid Loco-Manipulation with Isomorphic Exoskeleton Cockpit," RSS 2025, arXiv:2502.13013
-> - He et al., "BFM-Zero: A Promptable Behavioral Foundation Model for Humanoid Control Using Unsupervised RL," 2025, arXiv:2511.04131
+> - Li et al., "BFM-Zero: A Promptable Behavioral Foundation Model for Humanoid Control Using Unsupervised RL," 2025, arXiv:2511.04131
 > - Hogan, "Impedance Control: An Approach to Manipulation," ASME J. Dynamic Systems, 1985
 
 ---
@@ -1969,9 +1969,9 @@ def diagnose_dual_policy(upper_actions, lower_actions, rewards_upper,
 | 资料 | 难度 | 内容 |
 | --- | --- | --- |
 | Zhang et al., FALCON (arXiv:2505.06776, L4DC 2026) | ⭐⭐⭐⭐ | 力自适应双策略 loco-manipulation |
-| He et al., SoFTA (arXiv:2505.24198, 2025) | ⭐⭐⭐ | 端杯子不洒——慢快双代理控制 |
+| Li et al., SoFTA (arXiv:2505.24198, 2025) | ⭐⭐⭐ | 端杯子不洒——慢快双代理控制 |
 | Bao et al., HOMIE (arXiv:2502.13013, RSS 2025) | ⭐⭐⭐ | 同构外骨骼遥操作系统 |
-| He et al., BFM-Zero (arXiv:2511.04131, 2025) | ⭐⭐⭐⭐ | 行为基础模型，零样本控制 |
+| Li et al., BFM-Zero (arXiv:2511.04131, 2025) | ⭐⭐⭐⭐ | 行为基础模型，零样本控制 |
 | Hogan, "Impedance Control" (ASME 1985) | ⭐⭐⭐ | 阻抗控制的开创性论文 |
 | Focchi et al., "Robot Impedance Control and Passivity Analysis" (2016) | ⭐⭐⭐⭐ | 无源性证明的现代处理 |
 | Variable Impedance Control Survey (Frontiers 2020) | ⭐⭐⭐ | 变阻抗控制综述 |

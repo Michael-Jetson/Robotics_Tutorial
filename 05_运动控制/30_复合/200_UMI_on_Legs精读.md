@@ -89,7 +89,7 @@ UMI 数据流:
         └───────────────────────┘
 ```
 
-UMI-on-Legs (He et al., CoRL 2024) 的贡献是：证明这个接口可以延伸到**移动操作**——把 UMI 数据训练的策略直接部署到四足机器人背上的臂上，由 RL 训练的全身控制器执行末端跟踪。
+UMI-on-Legs (Ha et al., CoRL 2024) 的贡献是：证明这个接口可以延伸到**移动操作**——把 UMI 数据训练的策略直接部署到四足机器人背上的臂上，由 RL 训练的全身控制器执行末端跟踪。
 
 ```
 时间线:
@@ -97,7 +97,7 @@ UMI-on-Legs (He et al., CoRL 2024) 的贡献是：证明这个接口可以延伸
     │
 2024.01 ─ Chi et al. ─ UMI: 手持夹爪通用示教接口 (RSS 2024)
     │
-2024.07 ─ He et al. ─ UMI-on-Legs: 移动底盘上的 UMI (CoRL 2024)
+2024.07 ─ Ha et al. ─ UMI-on-Legs: 移动底盘上的 UMI (CoRL 2024)
     │
 2025    ─ UMI-3D ─ 3D 空间感知扩展
 ```
@@ -1646,7 +1646,7 @@ UMI-on-Legs 发表于 CoRL 2024，它在移动操作领域的定位可以通过�
 | 2022.10 | Deep-WBC (Fu et al.) | 统一策略控制腿+臂 | UMI-on-Legs WBC 的直接前驱 |
 | 2023.03 | Diffusion Policy (Chi et al.) | 条件去噪生成动作 | UMI-on-Legs 操作策略的基础 |
 | 2024.01 | UMI (Chi et al.) | 手持夹爪通用示教 | 数据采集接口来源 |
-| 2024.07 | UMI-on-Legs (He et al.) | 移动底盘上的 UMI | 本章主题 |
+| 2024.07 | UMI-on-Legs (Ha et al.) | 移动底盘上的 UMI | 本章主题 |
 | 2024.10 | MLM (多任务 Loco-Mani) | 多任务全身 RL | 扩展到多任务场景 |
 | 2025 | Visual WBC | 视觉闭环 WBC | 在 WBC 中加入视觉反馈 |
 
@@ -1785,7 +1785,7 @@ umi-on-legs/
 | Ho et al., "DDPM" (NeurIPS 2020) | ⭐⭐⭐⭐ | DDPM 数学基础 |
 | Song et al., "DDIM" (ICLR 2021) | ⭐⭐⭐⭐ | DDIM 加速采样 |
 | Chi et al., "UMI" (RSS 2024) | ⭐⭐⭐ | UMI 手持夹爪数据采集 |
-| He et al., "UMI-on-Legs" (CoRL 2024) | ⭐⭐⭐⭐ | 本章主题论文 |
+| Ha et al., "UMI-on-Legs" (CoRL 2024) | ⭐⭐⭐⭐ | 本章主题论文 |
 | Zhou et al., "On the Continuity of Rotation Representations" (CVPR 2019) | ⭐⭐⭐ | 6D 旋转表示 |
 
 ## 符号表
