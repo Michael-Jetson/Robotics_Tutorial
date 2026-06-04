@@ -3189,7 +3189,7 @@ $$
 - Frey, Baumgärtner 等, “Differentiable Nonlinear Model Predictive Control”, arXiv 2505.01353.
 - FreyJo/differentiable_nmpc: `https://github.com/FreyJo/differentiable_nmpc`
 - leap-c: `https://github.com/leap-c/leap-c`
-- Pineda, Amos, Zhang, Mukadam, Boots, “Theseus: A Library for Differentiable Nonlinear Optimization”, NeurIPS 2022.
+- Pineda, Fan, Monge, ..., Amos, Mukadam, “Theseus: A Library for Differentiable Nonlinear Optimization”, NeurIPS 2022.
 - facebookresearch/theseus: `https://github.com/facebookresearch/theseus`
 - Hansen, Su 等, “TD-MPC2: Scalable, Robust World Models for Continuous Control”, ICLR 2024.
 - Romero, Bauersfeld, Scaramuzza, “Actor-Critic Model Predictive Control”, T-RO 2025.

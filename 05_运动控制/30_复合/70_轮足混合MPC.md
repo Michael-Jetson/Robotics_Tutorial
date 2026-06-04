@@ -1819,7 +1819,7 @@ Swiss-Mile 2024 采用的是**软跟踪**——MPC 参考进入 RL 的 observati
 - **工具** ⭐⭐ OCS2 文档, Switched System Examples: OCS2 框架中切换系统的代码接口参考
 - **基础** ⭐⭐ Di Carlo et al., "Dynamic Locomotion in the MIT Cheetah 3 Through Convex Model-Predictive Control" (IROS 2018): SRBD + convex MPC 的经典论文，轮足 MPC 的足式基础
 - **拓展** ⭐⭐⭐⭐ Jelavic et al., "Sampling-Based Motion Planning for Legged Robots" (RSS 2021): 采样 + 优化的模式序列规划，热启动策略
-- **基础** ⭐⭐ Bjelonic et al., "Keep Rollin'—Whole-Body Motion Control and Planning for Wheeled Quadrupedal Robots" (RAL 2018): 轮足全身运动控制的早期奠基工作，WBC 轮速任务思想的源头
+- **基础** ⭐⭐ Bjelonic et al., "Keep Rollin'—Whole-Body Motion Control and Planning for Wheeled Quadrupedal Robots" (RAL 2019): 轮足全身运动控制的早期奠基工作，WBC 轮速任务思想的源头
 - **前沿** ⭐⭐⭐ "Real-time Whole-body MPC for Bipedal Locomotion with a Novel Kino-dynamic Model and Warm-start Method" (2025): 把建模抽象层级提升到 kino-dynamic，呼应本章热启动讨论
 - **前沿** ⭐⭐⭐ "Estimation-based Disturbance Adaptive MPC for Wheeled Biped Robots" (2025): 在线扰动估计 + 自适应 MPC，对本章安全降级思想的主动式补充
 

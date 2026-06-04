@@ -51,8 +51,8 @@
 | **盲控制** | Lee et al. 2020, *Science Robotics* | ANYmal | 纯本体感知 zero-shot 到自然地形，teacher-student pipeline 的奠基 | Ch09, **Ch13** |
 | **在线适应** | RMA (Kumar et al. RSS 2021) | Unitree A1 | base policy + adaptation module，实时在线适应地形/负载/磨损 | Ch09 |
 | **命令条件化** | Walk These Ways (Margolis & Agrawal, CoRL 2022) | Unitree Go1 | Multiplicity of Behavior (MoB)，单策略支持多种步态参数化 | Ch13 延伸 |
-| **大规模并行** | Rudin et al. CoRL 2022 (legged_gym) | ANYmal | GPU 并行训练 + terrain curriculum，从数小时降至数分钟 | **Ch13** |
-| **感知控制** | Miki et al. 2022, *Science Robotics* | ANYmal | 深度图 + 特权学习感知运动控制，DARPA SubT 1700m 零跌倒 | Ch18 |
+| **大规模并行** | Rudin et al. CoRL 2021 (legged_gym) | ANYmal | GPU 并行训练 + terrain curriculum，从数小时降至数分钟 | **Ch13** |
+| **感知控制** | Miki et al. 2022, *Science Robotics* | ANYmal | 高程图（elevation map） + 特权学习感知运动控制，DARPA SubT 1700m 零跌倒 | Ch18 |
 | **高动态跑酷** | Extreme Parkour, ICRA 2024 | Unitree A1 | 视觉端到端穿越极端地形，2× 身高跳跃 | Ch18 |
 
 每一阶段都继承前一阶段的训练基础设施（特权教师、DR、课程），在感知和动态性上递进。**本章处于"盲控制 + 大规模并行"阶段**——你不需要视觉（那是 Ch18），不需要 motion imitation（那是 Ch15），但你需要 terrain curriculum + teacher-student + DR 的完整工程链条。
@@ -1149,7 +1149,7 @@ terrain curriculum 不需要手动设置切换条件——它根据每个环境�
 
 **反事实推理：如果不用 terrain curriculum，直接在最难地形上训练会怎样？** 初始策略完全是随机的，在高难度地形上 episode 极短（几步就摔倒或走出边界）。PPO 的 rollout 几乎全是失败经验，reward 信号极其稀疏。策略可能很长时间都无法突破"学会站立"的阶段。Curriculum 通过从简单地形开始，给策略足够的正信号来学会基本步态，然后逐步增加难度。
 
-**学术出处**：这种 game-inspired terrain curriculum 由 Rudin, Hoeller, Reist, Hutter 提出（"Learning to Walk in Minutes Using Massively Parallel Deep RL," CoRL 2022, arXiv 2109.11978）。原始设计使用 10 行 × 20 列的 terrain grid，地形比例 `[0.1, 0.1, 0.35, 0.25, 0.2]` 分配给 smooth slope / rough slope / stairs up / stairs down / discrete obstacles。这篇论文也是 legged_gym 的来源——mjlab 和 Isaac Lab 的 terrain curriculum 机制都可以追溯到这里。
+**学术出处**：这种 game-inspired terrain curriculum 由 Rudin, Hoeller, Reist, Hutter 提出（"Learning to Walk in Minutes Using Massively Parallel Deep RL," CoRL 2021, arXiv 2109.11978）。原始设计使用 10 行 × 20 列的 terrain grid，地形比例 `[0.1, 0.1, 0.35, 0.25, 0.2]` 分配给 smooth slope / rough slope / stairs up / stairs down / discrete obstacles。这篇论文也是 legged_gym 的来源——mjlab 和 Isaac Lab 的 terrain curriculum 机制都可以追溯到这里。
 
 **从 Height Scan 到视觉感知的下一步**：本章使用 raycast height scan 作为地形感知手段。Miki et al. (2022, *Science Robotics*) 展示了更进一步的方案——用 attention-based encoder 从 proprioceptive history 中隐式重建地形估计，在 DARPA SubT Challenge 中实现了 1700 米零跌倒。但 Miki 的方法在训练阶段仍然需要 height scan 作为 teacher 的输入——与本章建立的 privileged height scan teacher 是同一个起点。Ch18（视觉感知运动控制）将详细讨论从 height scan 到深度相机的迁移路径。
 
@@ -2050,7 +2050,7 @@ uv run train Mjlab-Velocity-Flat-Unitree-Go2 \
 | Manager-Based 演进 | 从 legged_gym 单体类到 Manager-Based 配置化；RSL-RL 4.0 统一模型抽象 | ⭐⭐ |
 | Flat/Rough | flat = rough − (terrain scan + collision sensors + terrain curriculum) | ⭐⭐ |
 | Height scan | grid pattern、yaw alignment、分辨率-成本权衡 | ⭐⭐⭐ |
-| Terrain curriculum | game-inspired (Rudin CoRL 2022)；per-env difficulty；auto advance/regress | ⭐⭐ |
+| Terrain curriculum | game-inspired (Rudin CoRL 2021)；per-env difficulty；auto advance/regress | ⭐⭐ |
 | 分阶段验证 | zero → random → small train → large train | ⭐⭐ |
 | 多机器人配置 | 共享 base cfg + robot-specific override；7 款 Unitree 机器人统一管线 | ⭐⭐ |
 | 部署闭环 | ONNX export → C++ onnxruntime (50Hz) → SDK2 (500Hz) → 真机 PD | ⭐⭐⭐ |
@@ -2219,7 +2219,7 @@ uv run train Mjlab-Velocity-Flat-Unitree-Go2 \
 | Hwangbo et al., "Learning agile and dynamic motor skills for legged robots," 2019 | ⭐⭐⭐ | *Science Robotics* 4(26) | 四足 RL sim-to-real 的奠基工作；actuator network 的原始出处；ANYmal 平台 |
 | Lee et al., "Learning quadrupedal locomotion over challenging terrain," 2020 | ⭐⭐⭐ | *Science Robotics* 5(47) | 纯本体感知 zero-shot 到自然地形；teacher-student pipeline 的奠基 |
 | Kumar et al., "RMA: Rapid Motor Adaptation for Legged Robots," 2021 | ⭐⭐⭐ | RSS 2021 | base policy + adaptation module 实现实时在线适应；Unitree A1 部署 |
-| Rudin et al., "Learning to Walk in Minutes Using Massively Parallel Deep RL," 2022 | ⭐⭐ | CoRL 2022 | legged_gym 论文；GPU 并行训练 + terrain curriculum 的工程标准 |
+| Rudin et al., "Learning to Walk in Minutes Using Massively Parallel Deep RL," 2021 | ⭐⭐ | CoRL 2021 | legged_gym 论文；GPU 并行训练 + terrain curriculum 的工程标准 |
 | Margolis & Agrawal, "Walk These Ways: Tuning Robot Control for Generalization with MoB," 2022 | ⭐⭐ | CoRL 2022 | Multiplicity of Behavior 步态参数化；单策略支持多种步态风格 |
 | Miki et al., "Learning robust perceptive locomotion for quadrupedal robots in the wild," 2022 | ⭐⭐⭐ | *Science Robotics* | 深度图 + 特权学习；DARPA SubT 1700m 零跌倒；从盲控制到感知控制的里程碑 |
 | Pinto et al., "Asymmetric Actor Critic for Image-Based Robot Learning," 2018 | ⭐⭐ | RSS 2018 | Asymmetric actor-critic 的原始论文；actor 看图像，critic 看完整状态 |

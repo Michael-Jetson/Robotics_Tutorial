@@ -108,7 +108,7 @@ $$
 | 1900s | Chaplygin | 研究滚动圆盘等非完整系统的精确解 |
 | 1939 | Chow | 证明了 Chow 定理——非完整系统的可控性判据 |
 | 1970s | Brockett | 将非完整约束与控制论联系，开创非线性控制理论 |
-| 1993 | Murray, Li, Sastry | 《A Mathematical Introduction to Robotic Manipulation》系统化了非完整运动规划 |
+| 1994 | Murray, Li, Sastry | 《A Mathematical Introduction to Robotic Manipulation》系统化了非完整运动规划 |
 | 2000s | LaValle | 将采样方法（RRT 等）推广到非完整系统 |
 
 > **类比**：非完整约束之于运动规划，就像不可压缩条件之于流体力学——都是对"速度场"的微分约束，而非对"位置"的代数约束。在流体力学中，$\nabla \cdot \mathbf{v} = 0$ 限制了速度场的散度为零，但流体仍可到达任意位置。在轮式机器人中，$A(q)\dot{q} = 0$ 限制了速度方向，但机器人仍可到达任意配置。
