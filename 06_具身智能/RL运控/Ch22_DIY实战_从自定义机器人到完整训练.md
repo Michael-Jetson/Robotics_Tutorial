@@ -31,7 +31,7 @@
 
 ### 动机：框架内置任务的局限
 
-从 Ch13 到 Ch21，所有实战任务都基于框架已有的机器人模型和环境配置。Go2 速度跟踪用 mjlab 内置的 `anymal_c_velocity`，G1 人形用内置的 `g1_velocity`，YAM 操作用内置的 `lift_cube_env_cfg`。这些内置任务提供了完善的 MJCF/USD 模型、经过验证的 obs/action/reward 配置、可复现的训练超参。你只需要修改参数就能跑通训练。
+从 Ch13 到 Ch21，所有实战任务都基于框架已有的机器人模型和环境配置。四足速度跟踪用 mjlab 内置的 `Mjlab-Velocity-Flat-Unitree-Go1`（即 Ch13 所用任务），G1 人形用内置的 `Mjlab-Velocity-Flat-Unitree-G1`，YAM 操作用内置的 lift cube 环境配置。这些内置任务提供了完善的 MJCF/USD 模型、经过验证的 obs/action/reward 配置、可复现的训练超参。你只需要修改参数就能跑通训练。
 
 但作为博士研究者，你最终要面对的场景是：**你有一个自己设计（或实验室购买）的机器人，有一个独特的研究任务，框架里没有现成的环境**。这时你需要从零搭建：
 
@@ -434,8 +434,10 @@ for step in range(200):  # 2 秒（假设 50 Hz）
     rewards_history.append(reward.mean().item())
 
     if step == 0:
-        base_height = obs['policy'][:, 6].mean().item()  # 投影重力 z 分量
-        print(f"Step 0 base_height proxy: {base_height:.3f}")
+        # 直接读取仿真状态里的 base 高度（不要用 obs 里的 projected_gravity 当高度代理——
+        # obs[:, 6] 是 projected_gravity 的 x 分量，与 base 高度无关）
+        base_height = env.unwrapped.scene["robot"].data.root_link_pos_w[:, 2].mean().item()
+        print(f"Step 0 base height: {base_height:.3f}")
 
 # 检查
 print(f"Mean reward: {np.mean(rewards_history):.4f}")
@@ -464,7 +466,7 @@ ep_lengths = []
 current_ep_reward = torch.zeros(64)
 current_ep_length = torch.zeros(64)
 
-for step in range(2000):  # 20 秒
+for step in range(2000):  # 40 秒（假设 50 Hz）
     action = torch.randn(64, env.action_space.shape[-1])
     obs, reward, terminated, truncated, info = env.step(action)
 
@@ -533,7 +535,7 @@ class RewardsCfg:
         func=my_custom_tracking_reward,
         weight=2.0,
         params={
-            "asset_cfg": EntityCfg(name="robot"),
+            "asset_cfg": SceneEntityCfg("robot"),
             "command_name": "base_velocity",
             "std": 0.25,
         },
@@ -805,12 +807,12 @@ gym.register(
 # 安装 extension（开发模式）
 pip install -e .
 
-# 训练
-python -m isaaclab.app --task MyQuad-Velocity-Flat-v0 \
+# 训练（官方 RL 入口是 scripts/reinforcement_learning/<rl_lib>/train.py，不是 isaaclab.app）
+./isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/train.py \
+    --task MyQuad-Velocity-Flat-v0 \
     --headless --num_envs 4096
 
-# 或使用 Isaac Lab 的标准脚本
-python scripts/rsl_rl/train.py --task MyQuad-Velocity-Flat-v0
+# extension 项目内若自带 wrapper，也可用项目自己的 scripts/rsl_rl/train.py
 ```
 
 ### Manager-Based vs Direct Workflow 选择 ⭐⭐
@@ -849,20 +851,17 @@ Isaac Lab 提供两种环境开发 workflow。选择哪种取决于任务特征�
 
 ### URDF/MJCF → USD 转换 ⭐⭐
 
-如果你已经有 MJCF 模型（来自 Ch11 的 sw2urdf → MJCF 流程），需要转换为 USD 格式才能在 Isaac Lab 中使用。Isaac Lab 提供了两个转换工具：
+如果你已经有 MJCF 模型（来自 Ch11 的 sw2urdf → MJCF 流程），可以离线转换为 USD 以便检查和复用；但 Isaac Lab 也支持 URDF/MJCF——通过 `UrdfFileCfg`/`MjcfFileCfg` 在运行时转换并 spawn，不是必须先手动转 USD。离线转换用官方工具（命令为**位置参数** `<input> <output>`，而非 `--input_path/--output_path`；启动器是 `./isaaclab.sh -p`）：
 
 ```bash
 # URDF → USD
-python -m isaaclab.app --headless \
-    -p scripts/tools/convert_urdf.py \
-    --input_path my_robot.urdf \
-    --output_path my_robot.usd
+./isaaclab.sh -p scripts/tools/convert_urdf.py \
+    my_robot.urdf my_robot.usd
 
-# MJCF → USD（需要 MuJoCo USD exporter）
-python -m isaaclab.app --headless \
-    -p scripts/tools/convert_mjcf.py \
-    --input_path my_robot.xml \
-    --output_path my_robot.usd
+# MJCF → USD（用 Isaac Lab/Isaac Sim 自带的 MJCF importer，后端随 Isaac Sim 版本变化；
+#            无需另行使用 MuJoCo 官方 exporter）
+./isaaclab.sh -p scripts/tools/convert_mjcf.py \
+    my_robot.xml my_robot.usd
 ```
 
 **转换后的验证清单**：
@@ -973,8 +972,8 @@ MuJoCo 的接触参数决定了碰撞行为的"软硬"和"弹跳"：
 |------|------|---------|
 | `condim` | 接触约束维度（1=法向，3=+2D切向，4=+扭转） | 足式机器人用 4（需要扭转摩擦防旋转滑动） |
 | `friction` | 切向摩擦、扭转摩擦、滚动摩擦 | 第一项 0.5-1.2 for 室内地面 |
-| `solref` | 约束求解器参考频率和阻尼比 | timeconst $\approx$ 2$\times$dt，dampratio $\approx$ 1.0 |
-| `solimp` | 约束穿透允许范围 | dmin=0.9, dmax=0.95（几乎不允许穿透） |
+| `solref` | 正数格式下为 `(timeconst, dampratio)`——第一项是**时间常数**（非频率），第二项是阻尼比 | timeconst $\approx$ 2$\times$dt，dampratio $\approx$ 1.0 |
+| `solimp` | 5 参数阻抗函数 `(d0, d_width, width, midpoint, power)`，控制约束力随 violation 的软硬/穿透响应（不是单纯"穿透允许范围"） | d0=0.9, d_width=0.95（约束偏硬，几乎不允许穿透） |
 
 **（2）仿真步长**
 
@@ -994,7 +993,7 @@ decimation = 10  # 每 10 个物理步输出一个 obs → 50 Hz 策略
 | Actuator 类型 | 控制模式 | 适用场景 | mjlab API | Isaac Lab API |
 |--------------|---------|---------|-----------|--------------|
 | Implicit PD | 位置目标 | 电机+减速器（大多数场景） | `ImplicitActuatorCfg` | `ImplicitActuatorCfg` |
-| Explicit PD | 力矩输出 | 需要精确力矩控制 | — | `DCMotorCfg` |
+| Explicit/Ideal PD | 力矩输出 | 需要精确力矩控制 | — | `IdealPDActuatorCfg`（`DCMotorCfg` 继承自它，专用于 DC 电机并多一个 `saturation_effort`） |
 | Velocity | 速度目标 | 轮式底盘 | `velocity` actuator | `ImplicitActuatorCfg(stiffness=0)` |
 | Actuator Net | 学习模型 | 精确 sim2real | — | `ActuatorNetLSTMCfg` |
 
@@ -1350,8 +1349,10 @@ HUSKY 在 MuJoCo 中用 equality constraint 实现这个耦合——这是一个
 
   <!-- Kingpin 耦合约束 -->
   <equality>
-    <!-- tan(steer) = tan(kingpin_angle) * sin(tilt) -->
-    <!-- MuJoCo 的 joint 约束用 polynomial 近似 -->
+    <!-- 物理关系是非线性的：tan(steer) = tan(kingpin_angle) * sin(tilt) -->
+    <!-- 但 MuJoCo equality/joint 的 polycoef 是 joint1 相对 joint2 的四次多项式；
+         polycoef="0 0.45 0 0 0" 只实现了线性项 steer ≈ 0.45 * tilt，
+         即上式在小角度下的线性近似。要更精确需更高阶拟合或自定义约束/控制逻辑。 -->
     <joint joint1="front_steer" joint2="front_tilt"
            polycoef="0 0.45 0 0 0"/>
   </equality>
@@ -1422,7 +1423,7 @@ Phase 3: 推进↔转向切换
 
 ---
 
-研究级案例展示了"好的 DIY 项目长什么样"。但在你到达那个水平之前，你更可能遇到的是各种 bug——环境不报错但策略不学习、物理行为不合理、reward 曲线诡异。下节系统化地覆盖 DIY 中最常见的 10 类 bug 及其排查方法。
+研究级案例展示了"好的 DIY 项目长什么样"。但在你到达那个水平之前，你更可能遇到的是各种 bug——环境不报错但策略不学习、物理行为不合理、reward 曲线诡异。在进入十大 bug 排查之前，先用 §22.6 补齐 EventsCfg 与 CommandsCfg 的设计；随后 §22.7 系统化地覆盖 DIY 中最常见的 10 类 bug 及其排查方法。
 
 ---
 
@@ -1430,16 +1431,17 @@ Phase 3: 推进↔转向切换
 
 > **这一节解决什么问题**：设计完整的 DR（Domain Randomization）和指令采样配置——这两个 Manager 是自定义环境中最容易被忽视但对 sim2real 影响最大的组件。
 
-### EventsCfg 的四种模式
+### EventsCfg 的触发模式
 
-回顾 Ch08：EventManager 支持四种触发模式，每种模式对应不同的随机化需求：
+回顾 Ch08：Isaac Lab EventManager 开箱即用的常见触发模式是 `startup`、`reset`、`interval`（源码中还有 `prestartup`）。每种模式对应不同的随机化需求：
 
 | 模式 | 触发时机 | 典型用途 | 性能影响 |
 |------|---------|---------|---------|
 | `startup` | 环境创建时，只执行一次 | 物理参数随机化（质量、摩擦、惯量） | 无（只执行一次） |
 | `reset` | 每次 episode reset 时 | 初始状态随机化（位姿、关节角、速度） | 低 |
 | `interval` | 每隔 N 步执行一次 | 外部扰动（push force、风力） | 中 |
-| `step` | 每个仿真步都执行 | Action delay、obs noise | 高（需要 batch 优化） |
+
+> ⚠️ **没有自动的 `step` 模式**：EventManager 不会"每个仿真步"自动触发某个 mode。Event mode 可以自定义，但**必须由环境显式调用 `event_manager.apply(mode="step")` 才会执行**——配置 `mode="step"` 本身不会让它每步自动运行。需要逐步扰动（如 action delay、逐步 obs noise）时，通常应放在 action/observation term、actuator delay（如 `DelayedPDActuatorCfg`）或环境 step 逻辑里，而不是依赖一个自动的 step event。
 
 **自定义任务中 EventsCfg 的推荐配置模板**：
 
@@ -1452,7 +1454,7 @@ class EventsCfg:
         func=mdp.randomize_rigid_body_material,
         mode="startup",
         params={
-            "asset_cfg": EntityCfg(name="robot", body_names=".*"),
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*"),
             "static_friction_range": (0.7, 1.3),
             "dynamic_friction_range": (0.7, 1.3),
         },
@@ -1461,7 +1463,7 @@ class EventsCfg:
         func=mdp.randomize_rigid_body_mass,
         mode="startup",
         params={
-            "asset_cfg": EntityCfg(name="robot", body_names="base"),
+            "asset_cfg": SceneEntityCfg("robot", body_names="base"),
             "mass_distribution_params": (-1.0, 3.0),  # 加 -1~3 kg 载荷
             "operation": "add",
         },
@@ -1503,12 +1505,12 @@ class EventsCfg:
         },
     )
 
-    # === step 模式：执行延迟 ===
-    action_delay = EventTermCfg(
-        func=mdp.randomize_action_delay,
-        mode="step",
-        params={"delay_range": (0, 2)},  # 0-2 个 sim step 的延迟
-    )
+    # === 执行延迟：不要写成自动 step event ===
+    # mdp.randomize_action_delay + mode="step" 并非框架内置 API，且 step 不会自动触发。
+    # 正确做法是用 actuator 层的延迟建模：
+    #   Isaac Lab: DelayedPDActuatorCfg(min_delay=..., max_delay=...)
+    #   mjlab:     在对应 ActuatorCfg 上配置 delay（参考 actuator 文档）
+    # 或自定义 ActionTerm 内部维护延迟缓冲区。
 ```
 
 **EventsCfg 的分阶段引入策略**：不要一开始就打开所有 DR。按照 Ch08 的经验，推荐的引入顺序是：
@@ -1567,18 +1569,18 @@ class GoalPositionCommand(CommandTerm):
 
     def __init__(self, cfg, env):
         super().__init__(cfg, env)
+        self.robot = env.scene["robot"]
         self.goal_pos = torch.zeros(env.num_envs, 2, device=env.device)
 
     def _resample_command(self, env_ids):
         """在指定 env 中重新采样目标位置。"""
-        self.goal_pos[env_ids, 0] = torch.uniform(
-            self.cfg.goal_range_x[0], self.cfg.goal_range_x[1],
-            size=(len(env_ids),), device=self.device,
-        )
-        self.goal_pos[env_ids, 1] = torch.uniform(
-            self.cfg.goal_range_y[0], self.cfg.goal_range_y[1],
-            size=(len(env_ids),), device=self.device,
-        )
+        # 注意：PyTorch 没有 torch.uniform；用 empty(...).uniform_(low, high) 生成区间均匀采样
+        self.goal_pos[env_ids, 0] = torch.empty(
+            len(env_ids), device=self.device,
+        ).uniform_(self.cfg.goal_range_x[0], self.cfg.goal_range_x[1])
+        self.goal_pos[env_ids, 1] = torch.empty(
+            len(env_ids), device=self.device,
+        ).uniform_(self.cfg.goal_range_y[0], self.cfg.goal_range_y[1])
 
     def _compute_command(self):
         """每步返回目标位置（base frame）。"""
@@ -1742,13 +1744,16 @@ for step in range(10000):
     obs, reward, done, truncated, info = env.step(action)
     if torch.isnan(obs['policy']).any():
         # 找到哪些 env 和哪些 obs 维度是 NaN
-        nan_envs = torch.isnan(obs['policy']).any(dim=-1)
-        nan_dims = torch.isnan(obs['policy'][nan_envs[0]]).nonzero()
-        print(f"NaN at step {step}, envs: {nan_envs.nonzero()}")
+        nan_mask = torch.isnan(obs['policy']).any(dim=-1)   # [num_envs] 布尔掩码
+        # 注意：nan_mask[0] 只是"第 0 个 env 是否 NaN"的布尔值，不是第一个 NaN 环境 id！
+        nan_env_ids = nan_mask.nonzero(as_tuple=False).flatten()
+        first = nan_env_ids[0]                               # 第一个 NaN 环境 id
+        nan_dims = torch.isnan(obs['policy'][first]).nonzero()
+        print(f"NaN at step {step}, envs: {nan_env_ids.tolist()}")
         print(f"NaN dims: {nan_dims}")
         # 打印该 env 的物理状态
-        print(f"qpos: {env.robot.data.joint_pos[nan_envs[0]]}")
-        print(f"qvel: {env.robot.data.joint_vel[nan_envs[0]]}")
+        print(f"qpos: {env.robot.data.joint_pos[first]}")
+        print(f"qvel: {env.robot.data.joint_vel[first]}")
         break
 ```
 
@@ -2147,7 +2152,7 @@ class EventsCfg:
         func=randomize_rigid_body_material,
         mode="startup",
         params={
-            "asset_cfg": EntityCfg(name="robot", body_names=".*"),
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*"),
             "static_friction_range": (0.7, 1.3),
             "dynamic_friction_range": (0.7, 1.3),
         },
@@ -2156,7 +2161,7 @@ class EventsCfg:
         func=randomize_rigid_body_mass,
         mode="startup",
         params={
-            "asset_cfg": EntityCfg(name="robot", body_names="base"),
+            "asset_cfg": SceneEntityCfg("robot", body_names="base"),
             "mass_distribution_params": (-1.0, 1.0),
             "operation": "add",
         },
@@ -2233,8 +2238,8 @@ gym.register(
 )
 
 # 差异 4: 训练命令
-# Isaac Lab: python -m isaaclab.app --task MyQuad-Velocity-Flat-IL-v0 --headless
-# mjlab:     python scripts/train.py MyQuad-Velocity-Flat --headless
+# Isaac Lab: ./isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/train.py --task MyQuad-Velocity-Flat-IL-v0 --headless
+# mjlab:     uv run train MyQuad-Velocity-Flat --env.scene.num-envs 4096
 ```
 
 **双框架配置差异速查表**：
@@ -2429,6 +2434,7 @@ python scripts/export_onnx.py MyQuad-Velocity-Flat \
 | 九步流水线 | CAD → URDF → MJCF/USD → 框架接入 → 训练 → sim2sim → ONNX | §22.4 完整流程 |
 | HOVER 案例 | Oracle→DAgger 蒸馏、双重 mask 机制 | §22.5 代码精读 |
 | HUSKY 案例 | mjlab + AMP、equality constraint 建模 | §22.5 实践题 |
+| EventsCfg/CommandsCfg | DR 触发模式与指令采样设计 | §22.6 练习 |
 | 十大 Bug | 从弹飞到 NaN 的系统化排查 | §22.7 排查表 |
 | 完整代码模板 | 4 文件 / ~300 行完整可运行配置 | §22.8 代码 |
 | 参数调优优先级 | P0→P3，先物理后学习 | §22.8 调优表 |

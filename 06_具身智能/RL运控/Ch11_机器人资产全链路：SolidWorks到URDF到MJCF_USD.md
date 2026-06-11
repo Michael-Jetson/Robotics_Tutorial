@@ -155,9 +155,9 @@ robot_assembly.sldasm
   └── ...
 ```
 
-### 坐标系定义：Z 轴对齐旋转轴
+### 坐标系定义：为关节指定 reference axis
 
-sw2urdf 使用 SolidWorks 中的坐标系来定义关节轴。**每个关节的旋转轴必须与某个坐标系的 Z 轴对齐。** 这是 URDF 的约定——revolute joint 的旋转轴由 `<axis xyz="0 0 1"/>` 指定（默认 Z 轴）。
+sw2urdf 使用 SolidWorks 中选择或自动生成的 reference axis 来定义关节轴。注意：URDF 的 `<axis xyz>` 是一个自由向量，表示该旋转轴在 **joint frame** 中的方向，并**不**要求与坐标系的 Z 轴对齐；URDF 中 `<axis>` 若省略，**默认是 X 轴 `(1,0,0)`**，而不是 Z 轴。下面的示例选用 Z 轴只是一种常见做法（`<axis xyz="0 0 1"/>`），并非 URDF 的默认或强制约定。
 
 ```python
 # URDF 中的关节定义
@@ -172,7 +172,7 @@ sw2urdf 使用 SolidWorks 中的坐标系来定义关节轴。**每个关节的�
 """
 ```
 
-⚠️ **关键：如果 SolidWorks 中的装配坐标系 Z 轴没有对齐旋转轴，导出的 URDF 中关节方向会是错误的。** 自检方法：在 SolidWorks 中显示坐标系，确认每个关节处的 Z 轴（蓝色箭头）指向旋转方向。
+⚠️ **关键：如果 SolidWorks 中为关节选定的 reference axis 没有对准真实旋转方向，导出的 URDF 中 `<axis>` 就会指向错误方向。** 自检方法：在 SolidWorks 中显示参考几何，确认每个关节处选定的轴指向期望的旋转方向（若你按惯例用坐标系 Z 轴作为参考轴，则确认蓝色 Z 箭头指向旋转方向）。
 
 ### sw2urdf 导出的常见错误
 
@@ -197,13 +197,18 @@ def check_urdf(urdf_path):
             )
 
     # 检查 2：惯性参数是否为零
-    for inertial in root.iter('inertial'):
+    # ElementTree 的 Element 没有 getparent()，因此从 link 向下找 inertial，
+    # 这样才能拿到 link 名用于定位问题
+    for link in root.findall('link'):
+        link_name = link.get('name', 'unknown')
+        inertial = link.find('inertial')
+        if inertial is None:
+            continue
         mass_elem = inertial.find('mass')
         if mass_elem is not None:
             mass = float(mass_elem.get('value', '0'))
             if mass < 1e-6:
-                parent = inertial.getparent() if hasattr(inertial, 'getparent') else 'unknown'
-                issues.append(f"Link 的质量为零: mass={mass}")
+                issues.append(f"Link '{link_name}' 的质量为零: mass={mass}")
 
         inertia = inertial.find('inertia')
         if inertia is not None:
@@ -213,7 +218,7 @@ def check_urdf(urdf_path):
             # 三角不等式检查
             if ixx + iyy < izz or ixx + izz < iyy or iyy + izz < ixx:
                 issues.append(
-                    f"惯性张量违反三角不等式: "
+                    f"Link '{link_name}' 惯性张量违反三角不等式: "
                     f"Ixx={ixx}, Iyy={iyy}, Izz={izz}"
                 )
 
@@ -253,7 +258,7 @@ def check_urdf(urdf_path):
 
 ### Mesh 路径修复：从 package:// 到相对路径
 
-sw2urdf 默认生成的 mesh 路径使用 ROS 的 `package://` URI 格式。MuJoCo 和 Isaac Lab 都不认识这种格式——必须替换为相对路径。
+sw2urdf 默认生成的 mesh 路径使用 ROS 的 `package://` URI 格式。MuJoCo 通常不会开箱解析 `package://`，需要改写或预解析；Isaac Sim 的 URDF importer 则可以通过配置 ROS package 路径映射来解析它。但为了跨工具稳定性，课程示例统一改成相对路径。
 
 ```python
 # fix_mesh_paths.py — 修复 sw2urdf 输出的 mesh 路径
@@ -313,7 +318,7 @@ URDF 定义了机器人的运动学结构（link/joint 树），但它**缺少**
 |-----------|-----------------|-------------------|
 | 接触参数 | `<default><geom condim="3" friction="1 0.005 0.0001"/>` | MuJoCo 使用内部默认值 |
 | 执行器 | `<actuator><position joint="hip" kp="100"/>` | **无驱动力——机器人瘫倒** |
-| 求解器设置 | `<option solver="Newton" iterations="4"/>` | 默认 PGS 求解器 |
+| 求解器设置 | `<option solver="Newton" iterations="4"/>` | 默认 `solver="Newton"` |
 | 关节阻尼 | `<joint damping="0.5"/>` | 0（无阻尼） |
 | 关键帧 | `<keyframe><key name="home" qpos="..."/>` | 无预设姿态 |
 | 碰撞过滤 | `<contact><exclude body1="..." body2="..."/>` | 所有 body 之间检测碰撞 |
@@ -351,7 +356,7 @@ mesh.export('meshes/shoulder.obj')
 # ============================================
 # Step 3: 使用 obj2mjcf 处理 OBJ 文件
 # ============================================
-# obj2mjcf 是 MuJoCo 官方工具，它：
+# obj2mjcf 是第三方工具（由 Kevin Zakka 维护，Menagerie 相关贡献者使用过，非 MuJoCo 官方工具），它：
 # - 按材质分组拆分 OBJ
 # - 生成 MuJoCo 兼容的 mesh 文件
 # - 创建对应的纹理/材质配置
@@ -471,7 +476,7 @@ MuJoCo 自动转换的 MJCF 只是起点——需要大量手动调优才能得�
 
 **6e. 为 MJX/Warp 创建简化版场景**
 
-回顾 Ch03：MuJoCo Warp 在 GPU 上运行 batched simulation。GPU 碰撞检测对 mesh 复杂度非常敏感——CPU 能处理的精细 collision 在 GPU 上可能慢 10 倍。MuJoCo Menagerie 为每个模型提供两个场景文件：
+回顾 Ch03：MuJoCo Warp 在 GPU 上运行 batched simulation。GPU 碰撞检测对 mesh 复杂度非常敏感——CPU 能处理的精细 collision 在 GPU 上可能慢 10 倍。MuJoCo Menagerie 为**部分**模型提供 MJX 兼容变体（如 `<model>_mjx.xml` 和 `scene_mjx.xml`），但并非所有模型都有 MJX variant（是否存在需查具体模型目录）。典型的两个场景文件为：
 
 ```xml
 <!-- scene.xml — CPU 仿真（精细 collision） -->
@@ -630,7 +635,7 @@ MuJoCo 自动转换的 MJCF 只是起点——需要大量手动调优才能得�
 - **`armature="0.01"`**：给每个关节增加虚拟转子惯量。这不是物理精度的需要，而是**数值稳定性**的需要——没有 armature 时，轻量关节的加速度可能极大，导致积分不稳定
 - **`forcerange="-33.5 33.5"`**：限制 actuator 的最大输出力矩（Go1 的电机额定力矩 33.5 Nm）。这在 RL 训练中很重要——如果不限制，策略可能学到"用极大力矩瞬间恢复"的行为，真机上做不到
 - **capsule 作为 collision**：用 capsule 和 sphere 替代 mesh 作为碰撞几何。每个 link 只有 1 个碰撞基元——这让 GPU 碰撞检测极快
-- **`condim="3"`**：三维摩擦锥（切向两维 + 旋转一维）。`condim="1"` 是无摩擦，`condim="3"` 是标准摩擦，`condim="6"` 加滚动和旋转摩擦
+- **`condim="3"`**：法向约束 + 两个切向滑动摩擦维度（标准摩擦接触）。`condim="1"` 是无摩擦（仅法向），`condim="3"` 是标准摩擦，`condim="4"` 在此基础上增加绕接触法线的扭转摩擦（torsional friction），`condim="6"` 再增加滚动摩擦（rolling friction）
 
 ### Actuator 参数调优：从 viewer 演示到 RL 训练
 
@@ -773,6 +778,7 @@ print(f"USD 文件已生成: {cfg.usd_dir}/{cfg.usd_file_name}")
 ```python
 # Isaac Lab 中加载自定义机器人
 from isaaclab.assets import ArticulationCfg
+from isaaclab.actuators import ImplicitActuatorCfg
 import isaaclab.sim as sim_utils
 
 MY_ROBOT_CFG = ArticulationCfg(
@@ -1267,7 +1273,7 @@ MuJoCo Warp（mjlab 的 GPU 后端）对 collision mesh 有额外要求：
 </mujoco>
 ```
 
-MuJoCo Menagerie 为每个模型提供两个场景文件：`scene.xml`（CPU 仿真，精细 collision）和 `scene_mjx.xml`（GPU 仿真，简化 collision）。
+MuJoCo Menagerie 中**部分**模型提供两个场景文件：`scene.xml`（CPU 仿真，精细 collision）和 `scene_mjx.xml`（GPU 仿真，简化 collision）；并非每个模型都有 `scene_mjx.xml`，是否可用应以具体模型目录为准（例如 `unitree_go2/` 有 `scene_mjx.xml`，而 `unitree_go1/` 当前只有 `go1.xml` 和 `scene.xml`）。
 
 ### ⚠️ 常见陷阱
 
@@ -1277,7 +1283,7 @@ MuJoCo Menagerie 为每个模型提供两个场景文件：`scene.xml`（CPU 仿
 
 💡 **概念误区：认为"collision mesh 越精细仿真越准确"。** 对于 RL 训练，碰撞检测的精度远不如吞吐量重要。一个用 8 个凸包近似的 collision mesh 在物理行为上与原始 mesh 几乎无差异，但仿真速度快 10 倍。
 
-> **前沿替代工具（2025）：** 除了 V-HACD 和 CoACD，近期出现了新的碰撞分解工具。**foam**（arXiv 2503.13704, 2025）使用球体分解（sphere decomposition）替代凸包，在相同误差下凸包数量减少 ~70%。**Empart**（arXiv 2509.22847, 2025）提供交互式分解界面，适合需要精细控制的场景。目前 CoACD 仍然是最成熟和广泛支持的选择。
+> **前沿替代工具（2025）：** 除了 V-HACD 和 CoACD，近期出现了新的碰撞分解工具。**foam**（arXiv 2503.13704, 2025）用球体近似（sphere approximation）生成 collision geometry 替代凸包，便于高效的距离查询与碰撞检测（具体速度/误差收益以论文实验表为准，它生成的是球体而非凸包，不应表述为"凸包数量减少"）。**Empart**（arXiv 2509.22847, 2025）提供交互式分解界面，适合需要精细控制的场景。目前 CoACD 仍然是最成熟和广泛支持的选择。
 
 ### 练习
 
@@ -1310,7 +1316,10 @@ def check_inertia(ixx, ixy, ixz, iyy, iyz, izz, mass):
     1. 所有主惯量 > 0
     2. 三角不等式：Ix + Iy >= Iz（循环）
     3. 质量 > 0
-    4. pseudo-inertia 矩阵 J 正定
+    4. 惯量/质量比值合理（等效半径启发式）
+
+    注：完整的 pseudo-inertia 矩阵 J 正定性检查（需要 CoM）
+    在后文的 check_physical_consistency() 中实现。
     """
     I = np.array([
         [ixx, ixy, ixz],
@@ -1584,8 +1593,10 @@ def full_diagnostics(mjcf_path):
                     f"Joint '{name}': 范围异常大 ({np.degrees(hi-lo):.0f}°)"
                 )
 
-        # 检查阻尼
-        damping = model.jnt_stiffness[i]
+        # 检查阻尼（damping 是 DOF 级字段 dof_damping，不是 jnt_stiffness；
+        # jnt_stiffness 对应关节弹簧刚度而非阻尼）
+        dof_adr = model.jnt_dofadr[i]
+        damping = model.dof_damping[dof_adr]
         if damping == 0 and model.njnt > 1:
             # 对于多关节模型，无阻尼可能导致震荡
             pass  # 不一定是错误，但值得注意
@@ -1679,7 +1690,7 @@ mujoco_menagerie/
 │   └── README.md         # 转换流程文档
 ├── unitree_g1/           # 人形
 ├── franka_emika_panda/   # 机械臂
-├── anymal_c/             # 四足
+├── anybotics_anymal_c/   # 四足（注意官方目录名带厂商前缀）
 ├── robotiq_2f85/         # 夹具
 └── ...
 ```
@@ -1690,10 +1701,10 @@ mujoco_menagerie/
 
 | 任务类型 | 推荐模型 | 特点 | 注意事项 |
 |---------|---------|------|---------|
-| 四足 locomotion | unitree_go1, unitree_go2, anymal_c | 12 DoF, 轻量 | go1/go2 有真机对应 |
+| 四足 locomotion | unitree_go1, unitree_go2, anybotics_anymal_c | 12 DoF, 轻量 | go1/go2 有真机对应 |
 | 人形 locomotion | unitree_g1, unitree_h1 | 23-29 DoF | g1 是当前 sim2real 主流 |
-| 机械臂操作 | franka_emika_panda, kuka_iiwa | 7 DoF | panda 是操作研究标准 |
-| 灵巧手操作 | shadow_hand, allegro_hand | 16-24 DoF | 需要 collision 简化 |
+| 机械臂操作 | franka_emika_panda, kuka_iiwa_14 | 7 DoF | panda 是操作研究标准 |
+| 灵巧手操作 | shadow_hand, wonik_allegro | 16-24 DoF | 需要 collision 简化 |
 | 双臂操作 | aloha | $2\times7$ DoF | 包含夹具 |
 
 **快速开始代码——在 mjlab 中使用 Menagerie 模型：**
@@ -1735,8 +1746,14 @@ Isaac Lab 在 `isaaclab_assets` 中内置了 16+ 个机器人模型，已经转�
 ```python
 # Isaac Lab 中直接使用内置模型
 # 注意：Isaac Lab v2.0+ 使用 isaaclab_assets，v1.x 使用 omni.isaac.lab_assets
-from isaaclab_assets import UNITREE_GO1_CFG, ANYMAL_D_CFG
-from isaaclab_assets import UNITREE_G1_CFG, FRANKA_PANDA_CFG
+# 下方 AVAILABLE_ROBOTS 用到的 CFG 都需要先导入（否则 NameError）；
+# 具体可用的 CFG 名称与导入路径以目标 Isaac Lab 版本的 isaaclab_assets 为准
+from isaaclab_assets import (
+    UNITREE_GO1_CFG, UNITREE_GO2_CFG, UNITREE_A1_CFG,
+    ANYMAL_C_CFG, ANYMAL_D_CFG,
+    UNITREE_G1_CFG, UNITREE_H1_CFG,
+    FRANKA_PANDA_CFG, UR10E_CFG, KUKA_IIWA_CFG, RIDGEBACK_UR5_CFG,
+)
 
 # 内置模型的完整列表（截至 Isaac Lab 2.1）
 AVAILABLE_ROBOTS = {
@@ -1772,7 +1789,7 @@ env_cfg.robot = UNITREE_GO1_CFG.replace(
 | Go1 | `unitree_go1/` | `UNITREE_GO1_CFG` | kp: 80 vs 100 |
 | Go2 | `unitree_go2/` | `UNITREE_GO2_CFG` | collision 简化程度不同 |
 | G1 | `unitree_g1/` | `UNITREE_G1_CFG` | 手部 DoF 处理不同 |
-| ANYmal C | `anymal_c/` | `ANYMAL_C_CFG` | 足端接触模型不同 |
+| ANYmal C | `anybotics_anymal_c/` | `ANYMAL_C_CFG` | 足端接触模型不同 |
 | Franka | `franka_emika_panda/` | `FRANKA_PANDA_CFG` | gripper 碰撞设置不同 |
 
 **工程建议**：如果你的项目需要在两个框架中都运行（如论文中要对比 MuJoCo 和 PhysX 的 sim2real 效果），建议以 URDF 为中心——从同一个 URDF 分别生成 MJCF 和 USD，然后手动对齐 actuator 参数。不要分别使用两个框架的内置模型——因为参数可能已经在各自的调优过程中产生了偏差。
@@ -1823,7 +1840,7 @@ awesome-loco-manipulation/
 
 ### 在 mjlab 中动态组合机器人
 
-mjlab 的 `MjSpec.attach()` 允许在运行时动态组合多个模型——不需要预先生成复合 URDF：
+MuJoCo Python 的 `MjSpec.attach()`（属于 MuJoCo 官方 model editing API，可在 mjlab 工作流中使用，并非 mjlab 专属）允许在运行时动态组合多个模型——不需要预先生成复合 URDF：
 
 ```python
 # mjlab 中动态组合机器人
@@ -2144,7 +2161,7 @@ velocity task 短训练（200 iter）：
 
 ### 动机：为什么需要对齐
 
-典型的研究场景是：在 mjlab 中快速实验（MuJoCo Warp 编译快、macOS 可预览），然后在 Isaac Lab 中大规模训练（PhysX GPU 吞吐量更高）。如果两端的物理参数不一致，在 mjlab 中调好的 reward 权重和超参数搬到 Isaac Lab 后可能完全不工作。
+典型的研究场景是：在 mjlab/MuJoCo CPU viewer 中快速预览与实验（MJX-JAX 还可覆盖部分非 NVIDIA 设备；MJX-Warp 则主要面向 NVIDIA GPU 高吞吐），然后在 Isaac Lab 中大规模训练（PhysX GPU 吞吐量更高）。如果两端的物理参数不一致，在 mjlab 中调好的 reward 权重和超参数搬到 Isaac Lab 后可能完全不工作。
 
 ### 参数对齐清单
 

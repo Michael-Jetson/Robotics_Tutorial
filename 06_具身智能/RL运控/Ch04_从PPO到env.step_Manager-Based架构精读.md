@@ -97,7 +97,7 @@ for iteration in range(max_iterations):
 
 ### 为什么机器人 RL 几乎总是用 PPO
 
-回顾 Ch01 §1.5：RSL-RL 只提供 PPO 一种算法。这不是偶然——PPO 在机器人 locomotion 中的统治地位有三个工程原因：
+回顾 Ch01 §1.5：RSL-RL 的核心 RL 算法是 PPO（库本身还包含 Student-Teacher Distillation 等流程，详见 Ch09），本章只讨论其 PPO 训练路径。PPO 几乎成为机器人 locomotion 的默认选择，这不是偶然——它的统治地位有三个工程原因：
 
 **原因一：on-policy 稳定性。** Locomotion 任务的 reward 分布在训练过程中剧烈变化——从"倒地"到"站立"到"行走"，每个阶段的最优策略和 reward 分布完全不同。Off-policy 算法（如 SAC）的 replay buffer 中充满了旧策略产生的数据，这些"过时数据"可能让 Q-function 学到错误的值估计。PPO 每次只用最新策略产生的数据，避免了这个问题。
 
@@ -131,7 +131,7 @@ def ppo_loss(obs, actions, advantages, old_log_probs, clip_param=0.2):
     return loss
 ```
 
-`clip_param=0.2` 意味着新策略和旧策略的行为差异不超过 20%。如果某个 action 的 ratio > 1.2（新策略比旧策略更倾向这个 action），clip 会限制它——即使 advantage 很大。这防止了"一步更新太大→策略行为剧变→收集到的新数据和旧数据差异太大→下一步更新方向完全错误"的恶性循环。
+`clip_param=0.2` 的作用是：在 surrogate 目标里，把采样 action 的新旧策略概率比 $r=\pi_{new}/\pi_{old}$ 截断到 $[0.8, 1.2]$。如果某个 action 的 ratio > 1.2（新策略比旧策略更倾向这个 action），clip 会截断它对目标函数的贡献——即使 advantage 很大。注意它约束的是采样 action 的 probability ratio 对目标的贡献，并不等于把整体策略的行为差异或 KL 硬限制在 20%（整体 KL 由后文的自适应学习率机制额外控制）。它降低了大步更新的风险，缓解"一步更新太大→策略行为剧变→收集到的新数据和旧数据差异太大→下一步更新方向完全错误"的恶性循环。
 
 > **一个跨领域类比**：clip 机制类似于机器人控制中的"速度限制"。即使目标位置很远（advantage 很大），每步的关节速度也不超过一个上限——这保证了运动的平滑性和安全性。PPO 的 clip 保证了"策略更新的平滑性"。
 
@@ -203,15 +203,14 @@ GAE（Generalized Advantage Estimation）是 PPO 计算 advantage 的标准方�
 | `max_grad_norm` | 1.0 | 梯度裁剪阈值 | — |
 | `init_noise_std` | 1.0 | 初始 action 噪声标准差 | ⭐ |
 
-**RSL-RL 的自适应学习率机制**：当 KL 散度超过 `desired_kl` 的 2 倍时，学习率自动减半；当 KL 低于 `desired_kl` 的 0.5 倍时，学习率自动翻倍。这个机制让你可以用一个相对大的初始 `learning_rate`（如 1e-3），让 RSL-RL 自动调整——比手动调 lr 高效得多。
+**RSL-RL 的自适应学习率机制**：当 KL 散度超过 `desired_kl` 的 2 倍时，学习率自动除以 1.5；当 KL 低于 `desired_kl` 的一半时，学习率自动乘以 1.5。这个机制让你可以用一个相对大的初始 `learning_rate`（如 1e-3），让 RSL-RL 自动调整——比手动调 lr 高效得多。（不同版本的倍率可能变化，以所用 RSL-RL 版本的 `algorithms/ppo.py` 源码为准。）
 
 ```python
-# RSL-RL 的 KL 自适应 lr（简化）
+# RSL-RL 的 KL 自适应 lr（简化，对应 RSL-RL 5.x 实现）
 if kl > 2.0 * desired_kl:
-    learning_rate *= 0.5
-elif kl < 0.5 * desired_kl:
-    learning_rate *= 2.0
-learning_rate = max(min(learning_rate, lr_upper), lr_lower)
+    learning_rate = max(1e-5, learning_rate / 1.5)
+elif kl < 0.5 * desired_kl and kl > 0.0:
+    learning_rate = min(1e-2, learning_rate * 1.5)
 ```
 
 **RSL-RL 的 rl_cfg 完整配置**（mjlab 的 velocity task）：
@@ -236,7 +235,7 @@ def unitree_go2_rl_cfg() -> RslRlOnPolicyRunnerCfg:
         ),
         
         # PPO 参数
-        algorithm=RslRlPPOAlgorithmCfg(
+        algorithm=RslRlPpoAlgorithmCfg(
             learning_rate=1e-3,
             gamma=0.99,
             lam=0.95,
@@ -326,7 +325,7 @@ Ch01 §1.4 给出了 env.step() 的 7 步简化时序。现在我们把它展开
 
 ### 完整 18 步时序
 
-以下是 mjlab `ManagerBasedRlEnv.step()` 的完整执行序列（Isaac Lab 的顺序几乎完全相同）：
+以下是 mjlab `ManagerBasedRlEnv.step()` 的完整执行序列（这是 mjlab 的精确时序；Isaac Lab 在高层 MDP 阶段上相似，但源码细节不同，见后文对照）：
 
 | 步骤 | 操作 | 代码入口 | 说明 |
 |------|------|---------|------|
@@ -417,7 +416,7 @@ def _reset_idx(self, env_ids):
 
 ### Isaac Lab 的对应时序
 
-Isaac Lab 的 `ManagerBasedRLEnv.step()` 与 mjlab 几乎一一对应，但有以下差异：
+Isaac Lab 的 `ManagerBasedRLEnv.step()` 在**高层 MDP 阶段**上与 mjlab 相似，但源码时序并不逐行一致，主要差异如下（这是 MDP 对齐的对照，不是源码逐行映射）：
 
 | 步骤 | mjlab | Isaac Lab | 差异原因 |
 |------|-------|-----------|---------|
@@ -458,7 +457,7 @@ def step(self, action):
     return obs_dict, self.reward_manager.reward_buf, ...
 ```
 
-> 对比两个框架的 step() 源码，你会发现它们的**逻辑结构完全相同**——差异只在 API 命名和少量实现细节。这就是为什么掌握了一个框架后，迁移到另一个只需要 1-2 天。
+> 对比两个框架的 step()，你会发现它们的**高层 MDP 阶段相似**（action→physics→termination/reward→reset→command/event→obs）；但源码的具体时序和传感器/派生量刷新机制并不相同。例如 mjlab 源码里有 `metrics_manager.compute_substep()`、单独的 `sim.forward()`/`sim.sense()` 以及 `step` 模式 event；而 Isaac Lab 的 `ManagerBasedRLEnv.step()` 没有这些 MuJoCo 特有路径，step 中只自动处理 `interval` 模式 event（`startup`/`reset` 在初始化/重置路径处理），并带 recorder pre/post hooks 和 render interval 逻辑。掌握一个框架后迁移到另一个相对快，但不能把两者的 step 源码当成逐行一致。
 
 ### 时序设计的六个关键洞察
 
@@ -915,10 +914,12 @@ CurriculumManager                              │   │   │   │
 MetricsManager ← RecorderManager               │   │   │   │
   （可以读取所有前面 Manager 的输出）              │   │   │   │
                                                │   │   │   │
-      ↑ 运行时 step() 中的执行顺序和加载顺序一致  ↑   │   │   │
+      ↑ 注意：此图是「加载/初始化依赖顺序」，并不等于运行时 step() 执行顺序  ↑
 ```
 
 > **一个跨领域类比**：这个依赖关系类似于 Linux 的 systemd 服务启动顺序。`EventManager` 就像 `systemd-udevd`（硬件设备初始化，必须最先启动），`ObservationManager` 就像 `networking.service`（网络服务，很多其他服务依赖它），`RewardManager` 就像应用层服务（依赖基础设施就绪后才能启动）。如果你在 systemd 中把服务启动顺序搞错，系统会启动失败——Manager 也是同理。
+
+> **重要区分**：上图表达的是 Manager 的**加载/初始化依赖顺序**（哪个 Manager 先创建、谁依赖谁的产物），它与运行时 `step()` 的**执行顺序不同**。例如 mjlab 的加载顺序是 Event→Command→Action→Observation→Termination→Reward→Curriculum→Metrics→Recorder，而 step 运行顺序是 action/physics→termination→reward→metrics→reset→forward→command→event→sense→observation→recorder。两张表目的不同：一张表达初始化依赖，一张表达 MDP 数据对齐，不要混为一谈。
 
 ### 从 legged_gym 迁移的完整工作流
 
@@ -1004,7 +1005,7 @@ mjlab 的 Manager-Based 架构直接借鉴了 Isaac Lab，但 API 细节有许�
 | **event 项** | `EventTerm` | `EventTerm` | 相同 ✅ |
 | **termination 项** | `TermTerm` | `DoneTerm` | 不同！ |
 | **任务注册** | `register_mjlab_task()` | `gymnasium.register()` | 完全不同的注册机制 |
-| **CLI 训练** | `uv run train <TASK>` | `python scripts/rsl_rl/train.py --task <TASK>` | CLI 入口不同 |
+| **CLI 训练** | `uv run train <TASK>` | `python scripts/reinforcement_learning/rsl_rl/train.py --task <TASK>` | CLI 入口不同 |
 | **CLI 配置覆盖** | tyro（`--env.rewards.X.weight 0.5`） | argparse（预定义参数） | mjlab 支持任意深度覆盖 |
 
 ### 配置模式的本质差异
@@ -2327,11 +2328,10 @@ uv run train Mjlab-Velocity-Flat-Unitree-Go2 \
 
 | 组件 | 版本 | 本章涉及内容 |
 |------|------|------------|
-| mjlab | 1.2.0 | ManagerBasedRlEnv、所有 Manager API |
-| Isaac Lab | 2.3.0（主线） | ManagerBasedRLEnv、对应 Manager API |
-| Isaac Lab 3.0 | Beta（注释标注） | wp.array 数据管线、xyzw 四元数 |
-| rsl_rl | $\ge$ 4.0.0 | 分离 actor/critic config、自适应 lr |
-| RSL-RL | $\ge$ 4.0.0 | PPO 实现、VecEnv Wrapper |
+| mjlab | 1.2.0（教学锚定；截至 2026-06-09 最新为 1.4.0） | ManagerBasedRlEnv、所有 Manager API |
+| Isaac Lab | 2.3.0（教学锚定；main/develop 已含 3.0 迁移内容） | ManagerBasedRLEnv、对应 Manager API |
+| Isaac Lab 3.0 | Beta（注释标注） | wp.array/ProxyArray 数据管线、xyzw 四元数 |
+| RSL-RL (`rsl-rl-lib` / import `rsl_rl`) | $\ge$ 4.0.0（教学锚定；截至 2026-06-09 最新为 5.4.1） | 分离 actor/critic config、自适应 lr、PPO 实现、VecEnv Wrapper |
 
 ---
 

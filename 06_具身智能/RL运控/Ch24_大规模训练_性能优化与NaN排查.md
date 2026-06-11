@@ -126,10 +126,10 @@ uv run train Mjlab-Velocity-Flat-Unitree-Go1 \
 # === mjlab 四 GPU 训练 ===
 uv run train Mjlab-Velocity-Flat-Unitree-Go1 \
     --env.scene.num-envs 4096 \
-    --agent.max-iterations 5000 \
+    --agent.max-iterations 2500 \
     --gpu-ids "[0, 1, 2, 3]"
-# 注意：iteration 数减半——因为每次 update 样本量 ×4
-# 总样本量 = 4096 × 24 × 4 × 5000 = 4096 × 24 × 1 × 20000（等价）
+# 注意：要与单 GPU 的 10000 iter 等样本量，iteration 数应 ÷4（每次 update 样本量 ×4）
+# 总样本量 = 4096 × 24 × 4 × 2500 = 4096 × 24 × 1 × 10000（与单 GPU 基准等价）
 ```
 
 **torchrunx 的工作原理**：
@@ -178,27 +178,31 @@ Isaac Lab 使用标准的 PyTorch **torchrun** 启动分布式训练：
 
 ```bash
 # === Isaac Lab 单 GPU 训练 ===
-python -m isaaclab.app \
-    --task Unitree-G1-29dof-Velocity-v0 \
+# 官方 RL 入口是 scripts/reinforcement_learning/<rl_library>/train.py，不是 isaaclab.app
+./isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/train.py \
+    --task Isaac-Velocity-Flat-G1-v0 \
     --num_envs 4096 \
     --headless
 
 # === Isaac Lab 双 GPU 训练 ===
-torchrun --nproc_per_node=2 \
-    -m isaaclab.app \
-    --task Unitree-G1-29dof-Velocity-v0 \
+# 多 GPU 用 torch.distributed.run 调用通用 train.py，并加 --rl_library 与 --distributed
+python -m torch.distributed.run --nnodes=1 --nproc_per_node=2 \
+    scripts/reinforcement_learning/train.py --rl_library rsl_rl \
+    --task=Isaac-Velocity-Flat-G1-v0 \
     --num_envs 4096 \
-    --headless
+    --headless --distributed
 
 # === Isaac Lab 多节点训练 ===
 # 节点 0:
-torchrun --nnodes=2 --nproc_per_node=4 \
+python -m torch.distributed.run --nnodes=2 --nproc_per_node=4 \
     --node_rank=0 --master_addr=10.0.0.1 --master_port=29500 \
-    -m isaaclab.app --task ... --headless
+    scripts/reinforcement_learning/train.py --rl_library rsl_rl \
+    --task=Isaac-Velocity-Flat-G1-v0 --headless --distributed
 # 节点 1:
-torchrun --nnodes=2 --nproc_per_node=4 \
+python -m torch.distributed.run --nnodes=2 --nproc_per_node=4 \
     --node_rank=1 --master_addr=10.0.0.1 --master_port=29500 \
-    -m isaaclab.app --task ... --headless
+    scripts/reinforcement_learning/train.py --rl_library rsl_rl \
+    --task=Isaac-Velocity-Flat-G1-v0 --headless --distributed
 ```
 
 **NVIDIA OSMO** 是 Isaac Lab 的生产级多节点编排器——支持 AWS/GCP/Azure/Alibaba Cloud + on-prem K8s。对于大规模集群训练（>8 GPU），OSMO 比手动 torchrun 更可靠。
@@ -376,10 +380,10 @@ def diagnose_contact_nan(env, max_steps=10000):
                 # 查看接触力
                 for c_idx in range(min(5, env.sim.data.ncon)):
                     contact = env.sim.data.contact[c_idx]
+                    # 注意：mjContact 没有 `force` 字段；接触力需用 mj_contactForce(model, data, c_idx, buf) 计算
                     print(f"  Contact {c_idx}: "
                           f"geom1={contact.geom1}, geom2={contact.geom2}, "
-                          f"dist={contact.dist:.4f}, "
-                          f"force={contact.force}")
+                          f"dist={contact.dist:.4f}")
             break
 
         # 保存当前步状态用于下一步对比
@@ -551,38 +555,41 @@ uv run viz-nan /tmp/mjlab/nan_dumps/nan_dump_latest.npz
 
 **NaN dump 的分析流程**：
 
+# 首选用官方交互式查看器（可逐步回放、对比 env、可视化机器人状态）：
+#   uv run viz-nan /tmp/mjlab/nan_dumps/nan_dump_latest.npz
+# 如需脚本化分析，必须按当前 mjlab NaN Guard 的真实 npz 结构读取：
+#   - `_metadata`: dict，含 num_envs_total / nan_env_ids / dumped_env_ids 等
+#   - `states_step_NNNNNN`: 每个 step 捕获的状态，形状 [num_envs_dumped, state_size]
+# 它不是顶层的 env_id/qpos/qvel/action/obs/reward 键。
+
 ```python
-# === 分析 NaN dump ===
+# === 分析 NaN dump（匹配当前 mjlab 格式）===
 import numpy as np
 
 def analyze_nan_dump(path):
-    """分析 mjlab 的 NaN dump 文件。"""
+    """分析 mjlab 的 NaN dump 文件（states_step_* + _metadata 结构）。"""
     dump = np.load(path, allow_pickle=True)
+
+    meta = dump["_metadata"].item()  # dict
     print(f"=== NaN Dump Analysis ===")
-    print(f"Env ID: {dump['env_id']}")
-    print(f"Step: {dump['step']}")
+    print(f"num_envs_total : {meta.get('num_envs_total')}")
+    print(f"nan_env_ids    : {meta.get('nan_env_ids')}")
+    print(f"dumped_env_ids : {meta.get('dumped_env_ids')}")
 
-    # 检查哪些物理量是 NaN
-    for key in ['qpos', 'qvel', 'qacc', 'action', 'obs', 'reward']:
-        if key in dump:
-            data = dump[key]
-            nan_mask = np.isnan(data)
-            if nan_mask.any():
-                nan_indices = np.where(nan_mask)[0]
-                print(f"  {key}: NaN at indices {nan_indices[:10]}...")
-            else:
-                print(f"  {key}: no NaN (range: [{data.min():.2f}, {data.max():.2f}])")
+    # 遍历每个 step 的状态数组，定位首次出现 NaN 的 step 与 env
+    step_keys = sorted(k for k in dump.files if k.startswith("states_step_"))
+    for k in step_keys:
+        states = dump[k]  # [num_envs_dumped, state_size]
+        nan_mask = np.isnan(states)
+        if nan_mask.any():
+            bad_env_rows = np.where(nan_mask.any(axis=1))[0]
+            print(f"  {k}: NaN 出现在 dumped-env 行 {bad_env_rows[:10]} "
+                  f"（state 维度内 NaN 列示例: {np.where(nan_mask[bad_env_rows[0]])[0][:10]}）")
+            break
+        else:
+            print(f"  {k}: no NaN (range: [{states.min():.2f}, {states.max():.2f}])")
 
-    # 判断根因
-    if 'qvel' in dump and np.isnan(dump['qvel']).any():
-        print("\n  → 根因可能是接触求解器发散")
-        print("    修复：降低 condim/摩擦、增加 solver iterations、减小 timestep")
-    elif 'reward' in dump and np.isnan(dump['reward']).any():
-        print("\n  → 根因可能是 reward 函数中的除零/溢出")
-        print("    修复：检查所有 reward term，替换 1/d 为 exp(-d²/σ²)")
-    elif 'obs' in dump and np.isnan(dump['obs']).any():
-        print("\n  → 根因可能是 obs normalizer 问题或传感器异常")
-        print("    修复：预热 normalizer，检查传感器配置")
+    # 根因仍需结合 reward/obs 侧日志判断：接触发散→qvel/qacc 爆；reward 除零；normalizer 等。
 
 analyze_nan_dump("/tmp/mjlab/nan_dumps/nan_dump_latest.npz")
 ```
@@ -883,7 +890,7 @@ def benchmark_sensor_cost(task, num_envs=4096, num_steps=500):
 
 ### nconmax/njmax 调优 ⭐⭐
 
-`nconmax`（per-world 最大接触数）和 `njmax`（per-world 最大约束行数）直接影响 GPU 显存和性能。设太小会导致接触截断（穿透、物理不稳定）；设太大浪费显存和降低 cache locality。
+`nconmax`（用于推导**全局** contact 容量——MJWarp 中 contacts 存放在异构数组里，单个 world 的接触数可以超过 `nconmax`，只要所有 world 的总接触数不超过 `nworld × nconmax`）和 `njmax`（**每个 world 严格**的最大约束行数上限）直接影响 GPU 显存和性能。设太小会导致接触/约束截断（穿透、物理不稳定）；设太大浪费显存和降低 cache locality。
 
 **正确的调优方法**：先用默认值跑，记录实际接触数分布，然后设为 1.5× 最大观测值。
 
@@ -1140,7 +1147,10 @@ vram = estimate_vram(
     policy_params=500000, obs_dim=48,
 )
 print(f"Estimated VRAM: {vram:.0f} MB")
-# 输出约 2000-3000 MB → A100 40GB 可以跑 4096 envs
+# 按本公式实际算出约 ~44 MB（physics≈1864 B/env、rollout≈7488 B/env，4096 envs≈38 MB，再加 ~6 MB 网络）。
+# ⚠️ 这只是一个"下界玩具估算"：它严重低估真实训练显存——未计入 CUDA context、MJWarp data/constraint
+# buffers、sensor buffers、actor/critic 前向激活、Adam 的两组动量状态、多个 obs group、logging/video 等。
+# 真实显存请用 torch.cuda.max_memory_allocated() / nvidia-smi / 官方 benchmark 脚本实测，不要据此公式判断能否放下 4096 envs。
 
 # 估算最大 num_envs
 for n in [4096, 8192, 16384, 32768]:
@@ -1191,13 +1201,15 @@ run: |
 ```bash
 # === SkyPilot 命令 ===
 
-# 启动训练
-sky launch sky_train.yaml
+# 启动训练：YAML 里的 name 只是 task name（仅用于展示）；
+# 不带 -c/--cluster 时 SkyPilot 会自动生成 cluster name。sky logs/down 针对的是 cluster name，
+# 因此显式用 -c 指定一个固定 cluster name，后续命令才能稳定引用。
+sky launch -c go1-velocity-training sky_train.yaml
 
 # 查看状态
 sky status
 
-# 查看日志
+# 查看日志（针对 cluster name）
 sky logs go1-velocity-training
 
 # 停止并释放资源（重要！忘记会持续计费）
@@ -1229,6 +1241,17 @@ sky down go1-velocity-training
 
 ```yaml
 # === wandb_sweep.yaml ===
+# 注意：W&B Sweep 配置中 program 是必填项——agent 需要知道启动哪个脚本；
+# 否则 sweep 创建后 agent 不知道如何运行训练命令。command 用于把超参映射到 CLI。
+program: train
+command:
+  - ${env}
+  - uv
+  - run
+  - train
+  - Mjlab-Velocity-Flat-Unitree-G1
+  - --agent.algorithm.learning-rate=${learning_rate}
+  - --env.actions.base_velocity.scale=${action_scale}
 method: bayes  # 贝叶斯优化
 metric:
   name: reward_mean
@@ -1291,7 +1314,8 @@ runs/go1_flat_v2_seed0/
 ├── params/
 │   ├── env_cfg.yaml         ← rank 0 写出的完整环境配置快照
 │   └── agent_cfg.yaml       ← PPO 超参
-├── git_info.txt             ← commit hash + branch + uncommitted diff
+├── git_info.txt             ← commit hash + branch + status
+├── git_diff.patch           ← 完整未提交 patch（git diff --binary，可复现修改）
 ├── logs/
 │   ├── tensorboard/         ← TensorBoard events
 │   └── wandb/               ← WandB 本地备份
@@ -1346,16 +1370,28 @@ def create_run_package(run_dir, env_cfg, agent_cfg, command):
             ["git", "rev-parse", "HEAD"]).decode().strip()
         git_branch = subprocess.check_output(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"]).decode().strip()
+        # 注意：--stat 只记录文件/行数统计，无法复现未提交修改。
+        # 要能复现，必须保存完整 patch（--binary 兼顾二进制改动），并记录 status。
+        git_status = subprocess.check_output(
+            ["git", "status", "--porcelain=v1"]).decode()
         git_diff = subprocess.check_output(
-            ["git", "diff", "--stat"]).decode().strip()
+            ["git", "diff", "--binary"]).decode()
+        git_diff_cached = subprocess.check_output(
+            ["git", "diff", "--cached", "--binary"]).decode()
         with open(f"{run_dir}/git_info.txt", "w") as f:
             f.write(f"commit: {git_hash}\n")
             f.write(f"branch: {git_branch}\n")
-            f.write(f"diff:\n{git_diff}\n")
+            f.write(f"status:\n{git_status}\n")
+        with open(f"{run_dir}/git_diff.patch", "w") as f:
+            f.write(git_diff)
+            f.write(git_diff_cached)
     except subprocess.CalledProcessError:
         print("⚠️ Git info not available")
 
     # 3. 保存配置快照
+    # 注意：vars() 只取浅层 __dict__，对嵌套 configclass/dataclass、tensor、callable 字段无法生成可复现 YAML。
+    # 优先用框架自带的递归导出工具（Isaac Lab: isaaclab.utils.io.dump_yaml / class_to_dict；
+    # 或 configclass.to_dict()），下面的 vars() 仅作占位示意。
     os.makedirs(f"{run_dir}/params", exist_ok=True)
     with open(f"{run_dir}/params/env_cfg.yaml", "w") as f:
         yaml.dump(vars(env_cfg), f, default_flow_style=False)
@@ -1476,7 +1512,7 @@ def create_run_package(run_dir, env_cfg, agent_cfg, command):
 
 ### AGILE 的四阶段架构 ⭐⭐
 
-AGILE（A Comprehensive Workflow for Humanoid Loco-Manipulation Learning）是 NVIDIA 在 2026 年发布的人形 RL 工程化框架。它不是一个算法——而是一套**标准化的工程流程**，把大规模训练中的每个环节（调试、训练、评估、部署）形式化为可重复的阶段。
+AGILE（缩写展开为 *A Generic Isaac-Lab based Engine*；论文题名为 *A Comprehensive Workflow for Humanoid Loco-Manipulation Learning*）是 NVIDIA 在 2026 年发布的人形 RL 工程化框架。它不是一个算法——而是一套**标准化的工程流程**，把大规模训练中的每个环节（调试、训练、评估、部署）形式化为可重复的阶段。
 
 ```
 Stage 1: Prepare (准备)
@@ -2517,13 +2553,14 @@ nsys profile --trace=cuda,nvtx uv run train <TASK> --agent.max-iterations 5 --he
 # mjlab
 uv run train <TASK> --gpu-ids "[0, 1]" --env.scene.num-envs 4096
 # Isaac Lab
-torchrun --nproc_per_node=2 -m isaaclab.app --task <TASK> --num_envs 4096 --headless
+python -m torch.distributed.run --nnodes=1 --nproc_per_node=2 \
+  scripts/reinforcement_learning/train.py --rl_library rsl_rl --task=<TASK> --num_envs 4096 --headless --distributed
 
-# === 云端训练 ===
-sky launch sky_train.yaml
+# === 云端训练 ===（-c 指定 cluster name；sky logs/down 针对 cluster name 而非 task name）
+sky launch -c <CLUSTER_NAME> sky_train.yaml
 sky status
-sky logs <JOB_NAME>
-sky down <JOB_NAME>  # 重要！
+sky logs <CLUSTER_NAME>
+sky down <CLUSTER_NAME>  # 重要！
 
 # === WandB Sweep ===
 wandb sweep sweep.yaml

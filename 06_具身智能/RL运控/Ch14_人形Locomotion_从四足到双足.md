@@ -54,10 +54,11 @@
 
 | 步态模式 | 接触点数 | 支撑面积（典型值） | 容错空间 |
 |---------|---------|-----------------|---------|
-| 四足 trot（Go1） | 2（对角） | ~0.12 m²（0.4m × 0.3m） | 大——质心偏移 5cm 仍稳定 |
-| 四足 walk（Go1） | 3-4 | ~0.18 m² | 更大 |
-| **双足双支撑（G1）** | 2（并排） | ~0.05 m²（0.25m × 0.2m） | 中等 |
-| **双足单支撑（G1）** | 1 | **~0.025 m²**（0.25m × 0.1m） | **极小——质心偏移 2cm 就失衡** |
+| 四足 stance（Go1，四脚站立） | 4 | ~0.12 m²（约 0.4m × 0.3m 足印矩形） | 大（静态裕度大） |
+| 四足 trot（Go1） | 2（对角） | 退化为线段（理想点接触面积≈0） | 静态裕度≈0，靠**动态**稳定（步态周期/惯性/捕获点） |
+| 四足 walk（Go1） | 3-4 | ~0.18 m²（三足/四足支撑相） | 更大 |
+| **双足双支撑（G1）** | 2（并排足底） | ~0.05 m²（约 0.25m × 0.2m） | 中等 |
+| **双足单支撑（G1）** | 1（单足底） | **~0.025 m²**（约 0.25m × 0.1m） | **极小**（依赖主动平衡控制） |
 
 **跨领域类比**：从四足到双足的跨越，就像从宽桥走到钢丝上。宽桥（四足）上你可以步态不太优美但不会掉下去——大支撑面给了大量容错空间。钢丝（双足）上每一步都必须精确——质心稍微偏离就会失衡。更关键的是，钢丝上你必须主动用手臂和腰部来调整重心——这就是为什么人形控制必须考虑上肢和角动量，而四足通常可以忽略。
 
@@ -65,7 +66,7 @@
 
 从控制论角度，双足行走可以近似为一个**倒立摆**（inverted pendulum）。质心在支撑脚上方，但由于高质心（G1 pelvis 高度 ~0.76m）和窄支撑面（脚掌宽度 ~0.1m），系统是本征不稳定的——即使站着不动，也需要主动控制来维持平衡。
 
-四足机器人的 trot 步态不是倒立摆——它更像一个弹簧质量系统（spring-loaded inverted pendulum, SLIP），天然具有被动稳定性。这就是为什么你可以在 Ch13 中看到"四足 zero agent 站着不倒"的现象——PD 控制器 + default pose 足以维持静态平衡。但 G1 的 zero agent 如果没有精确的 default pose 和足够的 PD gains，**站都站不住**。
+四足机器人的 trot 步态常可用弹簧质量模板（spring-loaded inverted pendulum, SLIP）近似分析——支撑期相对单足双足更容易获得动态稳定裕度，但实际稳定性仍依赖闭环控制、触地时序和机体速度，不能简单说"天然被动稳定"。这也是为什么你可以在 Ch13 中看到"四足 zero agent 站着不倒"的现象——四脚站立时 PD 控制器 + default pose 足以维持静态平衡。但 G1 的 zero agent 如果没有精确的 default pose 和足够的 PD gains，**站都站不住**。
 
 **工程含义**：在四足上，你可以先跑 zero agent 验证 wiring 而不用担心摔倒。在人形上，zero agent 可能在 1-2 秒内就倒了。这不代表配置有错——这是物理上的正常现象。你需要用 `--no-terminations` 来让 zero agent 检查完 sensor 数据。
 
@@ -279,23 +280,26 @@ Ch13 中 Go1 的 12 个关节你已经很熟悉——3 个 hip + 1 个 knee × 4
 
 ### G1 机器人规格
 
-根据 Unitree 官方规格，G1 有两个版本：
+需要区分**官方硬件规格**和**本章使用的仿真模型规格**两件事：
 
-| 规格 | 23-DoF 版本 | 29-DoF 版本 |
+- **Unitree 官方硬件规格**：G1 总自由度为 **23**（每腿 6×2 = 12、腰部 **1**、每臂 **5×2 = 10**）；G1 EDU 可扩展到 **23–43 DoF**（增加多关节手部、额外腰部/腕部自由度）。
+- **本章仿真模型（29-DoF action space）**：在官方 23-DoF 基础上加入额外腰部与 3×2=6 个腕部自由度，凑成 29 个 actuated joints 作为本章训练示例。29-DoF 更像某个仿真资产/训练配置的关节集合，而非官方网页上的固定硬件版本。
+
+| 规格 | G1 官方 23-DoF（硬件） | 本章仿真 29-DoF（示例） |
 |------|-----------|-----------|
 | 身高 | 1.32 m | 1.32 m |
 | 体重（含电池） | ~35 kg | ~35 kg |
-| 腿部 | 6×2 = 12 个 actuated joints | 同左 |
-| 腰部 | 3 个 actuated joints | 同左 |
-| 手臂 | 4×2 = 8 个 actuated joints | 同左 |
-| 手腕 | — | 3×2 = 6 个 actuated joints |
+| 腿部 | 6×2 = 12 | 12 |
+| 腰部 | **1** | 3（含可选腰部自由度） |
+| 手臂 | **5×2 = 10** | 8（肩肘）|
+| 手腕 | （计入单臂 5 内/或可选） | 3×2 = 6 |
 | **总计** | **23 个 actuated joints** | **29 个 actuated joints** |
 
-H1 是更大的人形平台：1.8 m / ~47 kg / 19 个 actuated joints。H1 没有手腕关节，手臂自由度更少，但腿部力矩更大，更适合高速运动。本章以 G1（29-DoF）为主要示例，H1 的差异会在 14.4 中对照介绍。
+H1 是更大的人形平台：1.8 m / ~47 kg / 19 个 actuated joints。H1 没有手腕关节，手臂自由度更少，但腿部力矩更大，更适合高速运动。本章以 G1（29-DoF 仿真模型）为主要示例，H1 的差异会在 14.4 中对照介绍。
 
 ### G1 关节地图
 
-G1 的 29 个关节分为 5 组。理解每组的物理功能和风险是设计 action scale 和 reward 的前提：
+G1 的 29 个关节分为 6 组（腿-髋 6 + 腿-膝 2 + 腿-踝 4 + 腰部 3 + 手臂-肩肘 8 + 手腕 6 = 29）。理解每组的物理功能和风险是设计 action scale 和 reward 的前提：
 
 | 关节组 | 关节名 | 数量 | 主要功能 | 过大时的风险 |
 |--------|--------|------|---------|------------|
@@ -622,7 +626,7 @@ cfg.observations.critic = ObservationGroupCfg(
 | **`self_collision`** | Safety | **-1.0** | — | **新增**：手臂可能碰到腿 |
 | `undesired_contacts` | Safety | -1.0 | -1.0 | 监测的 body 不同 |
 
-总共 **14 个** reward terms（Go1 是 ~10 个）。新增的 4 个 term 都是人形特有的。
+上表列出了 **14 个**与 Go1 重点对照的 reward terms；后文"完整注册"代码中实际配置了 **17 个**（额外包含从四足基类继承的 `feet_air_time`、`linear_velocity_z`、`angular_velocity_xy`，本表为聚焦差异未全部列出）。其中标 ★ 的 4 个 term（`base_height`、`variable_posture`、`angular_momentum`、`self_collision`）是人形特有的新增项。
 
 ### mjlab G1 Velocity RewardsCfg 的完整注册
 
@@ -1031,7 +1035,7 @@ mjlab 的 G1 velocity task 配置你已经从 14.2-14.3 中理解了核心设计
 
 ### Isaac Lab 的人形 velocity task 入口
 
-Isaac Lab 内置了 Unitree H1 的 velocity task：`Isaac-Velocity-Flat-Unitree-H1-v0` 和 `Isaac-Velocity-Rough-Unitree-H1-v0`。H1 有 19 个 actuated joints（比 G1 少 10 个——没有手腕，手臂更简单）。
+Isaac Lab 内置了 Unitree H1 的 velocity task：`Isaac-Velocity-Flat-H1-v0` 和 `Isaac-Velocity-Rough-H1-v0`。H1 有 19 个 actuated joints（比 G1 少 10 个——没有手腕，手臂更简单）。
 
 mjlab 侧通过 unitree_rl_mjlab 提供 G1 velocity task：`Mjlab-Velocity-Flat-Unitree-G1`。
 
@@ -1142,7 +1146,7 @@ Ch13 已经精读了两个框架的 env.step() 执行顺序。在人形上，有
 
 ### humanoid-gym 的 sim-to-sim 验证思路
 
-humanoid-gym (Gu et al., RSS 2024 Best Paper Finalist, `roboterax/humanoid-gym`) 首创了 Isaac Gym → MuJoCo 的 sim-to-sim 验证层。它的代码结构值得精读——虽然基于旧版 Isaac Gym（非 Manager-Based），但验证方法论直接适用于本章的双框架对比。
+humanoid-gym (Gu et al., RSS 2024, `roboterax/humanoid-gym`) 提供并集成了 Isaac Gym → MuJoCo 的 sim-to-sim 验证流程。它的代码结构值得精读——虽然基于旧版 Isaac Gym（非 Manager-Based），但验证方法论直接适用于本章的双框架对比。
 
 **humanoid-gym 的核心创新**：
 
@@ -1176,21 +1180,21 @@ def mirror_obs(obs, left_indices, right_indices):
 python -m isaaclab.envs --list | grep H1
 
 # Step 2: Small train
-python scripts/rsl_rl/train.py \
-    --task Isaac-Velocity-Flat-Unitree-H1-v0 \
+python scripts/reinforcement_learning/rsl_rl/train.py \
+    --task Isaac-Velocity-Flat-H1-v0 \
     --num_envs 256 --max_iterations 50 \
     --headless
 
 # Step 3: Large train
-python scripts/rsl_rl/train.py \
-    --task Isaac-Velocity-Flat-Unitree-H1-v0 \
+python scripts/reinforcement_learning/rsl_rl/train.py \
+    --task Isaac-Velocity-Flat-H1-v0 \
     --num_envs 4096 --max_iterations 5000 \
     --run_name h1_flat_baseline \
     --headless
 
 # Step 4: Play trained checkpoint
-python scripts/rsl_rl/play.py \
-    --task Isaac-Velocity-Flat-Unitree-H1-v0 \
+python scripts/reinforcement_learning/rsl_rl/play.py \
+    --task Isaac-Velocity-Flat-H1-v0 \
     --num_envs 4 \
     --load_run h1_flat_baseline \
     --checkpoint model_5000.pt
@@ -1200,8 +1204,8 @@ python scripts/rsl_rl/play.py \
 
 | 操作 | mjlab | Isaac Lab |
 |------|-------|-----------|
-| 训练 | `uv run train <task_id> ...` | `python scripts/rsl_rl/train.py --task <task_id> ...` |
-| 播放 | `uv run play <task_id> ...` | `python scripts/rsl_rl/play.py --task <task_id> ...` |
+| 训练 | `uv run train <task_id> ...` | `python scripts/reinforcement_learning/rsl_rl/train.py --task <task_id> ...` |
+| 播放 | `uv run play <task_id> ...` | `python scripts/reinforcement_learning/rsl_rl/play.py --task <task_id> ...` |
 | Zero agent | `--agent zero` | 无内置（用未训练 checkpoint） |
 | 环境数 | `--env.scene.num-envs` | `--num_envs` |
 | GPU | `--gpu-ids "[0]"` | `CUDA_VISIBLE_DEVICES=0` |
@@ -1260,19 +1264,9 @@ Isaac Lab 内置的 H1 velocity 配置缺少 14.3 讨论的人形特有 reward�
 
 **Step 1：添加 angular_momentum sensor**
 
-如果 H1 USD 中没有 `subtreeangmom` sensor，需要在 scene 配置中添加：
+注意：`subtreeangmom` 是 MuJoCo/MJCF 的 sensor 概念，**USD/Isaac Lab 里没有同名 sensor**；Isaac Lab 的 `ContactSensorCfg` 也只报告接触力/接触时间，**没有 `track_angular_momentum` 这种属性**，不能用它来获取角动量。因此在 Isaac Lab 中应通过自定义 observation/reward term，从 articulation 的各 body 质量/惯性/速度计算总角动量。
 
-```python
-# 在 scene 配置中添加 angular momentum sensor
-scene.angular_momentum_sensor = ContactSensorCfg(
-    prim_path="{ENV_REGEX_NS}/Robot/pelvis",
-    update_period=0.0,  # 每步更新
-    history_length=0,
-    track_angular_momentum=True,  # Isaac Lab 需要此选项
-)
-```
-
-在 MuJoCo (mjlab) 中，`subtreeangmom` 是 MJCF 内置 sensor。在 Isaac Lab (PhysX) 中，需要通过 rigid body dynamics API 手动计算。如果内置 sensor 不支持，你可以用自定义 obs term 实现：
+在 MuJoCo (mjlab) 中，`subtreeangmom` 是 MJCF 内置 sensor。在 Isaac Lab (PhysX) 中，需要通过 rigid body dynamics API 手动计算。你可以用自定义 obs term 实现（下面是**简化示意**，严格的全身角动量需对所有 body 求和 $\sum_i (I_i^w \omega_i + (r_i-r_{\text{ref}})\times m_i v_i)$，且属性名需按当前 Isaac Lab 版本的 `ArticulationData` 核对）：
 
 ```python
 def angular_momentum_obs(env, asset_cfg):
@@ -1280,6 +1274,8 @@ def angular_momentum_obs(env, asset_cfg):
     robot = env.scene[asset_cfg.name]
     # 获取所有 body 的速度和惯性
     body_vel = robot.data.body_ang_vel_w  # (N, num_bodies, 3)
+    # 注意：body_inertia_w 不一定是当前 Isaac Lab ArticulationData 的属性，
+    # 请用该版本实际可用的 mass/inertia API（如 default_inertia 等）替换
     body_inertia = robot.data.body_inertia_w  # (N, num_bodies, 3, 3)
     # 简化：用 base body 的角动量近似
     angmom = torch.bmm(
@@ -1295,7 +1291,8 @@ Isaac Lab 使用 `RewTerm` 而不是 mjlab 的 `RewardTermCfg`。注册方式略
 
 ```python
 # 在 Isaac Lab env cfg 中注册自定义 reward
-from omni.isaac.lab.managers import RewardTermCfg as RewTerm
+# 注意：Isaac Lab 2.x 使用 isaaclab.* 命名空间（旧版才是 omni.isaac.lab.*）
+from isaaclab.managers import RewardTermCfg as RewTerm
 
 @configclass
 class CustomRewardsCfg:
@@ -1410,7 +1407,7 @@ uv run train Mjlab-Velocity-Flat-Unitree-G1 \
 # 需要确保 obs 维度和顺序对齐
 python eval_onnx.py \
     --onnx_path logs/rsl_rl/g1_velocity/model.onnx \
-    --task Isaac-Velocity-Flat-Unitree-G1-v0 \
+    --task Isaac-Velocity-Flat-G1-v0 \
     --num_envs 4
 ```
 
@@ -1727,7 +1724,7 @@ python scripts/rsl_rl/play.py \
 
 ### HOVER 与 GR00T-WholeBodyControl 的关系
 
-2026 年 NVIDIA 发布了 `NVlabs/GR00T-WholeBodyControl`，这是 HOVER 的后续演化。GR00T-WBC 统一了三个子系统：
+2026 年 NVIDIA 发布了 `NVlabs/GR00T-WholeBodyControl`，它与 HOVER 同属 NVIDIA/GEAR 生态、主题相关，可作为 HOVER 之后的进阶阅读（官方未将其表述为 HOVER 的直接"后续演化"，这里不做继承关系断言）。GR00T-WBC 统一了三个子系统：
 
 1. **Decoupled WBC**：用于 GR00T N1.5 / N1.6 的解耦全身控制
 2. **GEAR-SONIC**：SONIC 行为基础模型（42M 参数，700 小时运动数据）
@@ -1849,7 +1846,9 @@ def compute_total_advantage(reward_groups, critics, obs, gamma, lam):
 class VerticalPullForceCurriculum:
     def __init__(self, robot_mass, gravity=9.81):
         self.mg = robot_mass * gravity  # G1: 35 * 9.81 ≈ 343 N
-        self.force_ratio = 0.5  # 初始 50% 体重
+        # HoST README 的扩展 tips 建议 pulling force 约为重力的 60%
+        self.force_ratio = 0.6  # 初始约 60% 体重
+        # 注意：HoST 提示 G1 URDF 中有两个 torso link，训练时该力会乘以 2
         self.min_ratio = 0.0
         self.decay_rate = 0.9998  # 每 step 衰减
     
@@ -1873,7 +1872,7 @@ class VerticalPullForceCurriculum:
 
 | 阶段 | 辅助力比例 | 策略行为 | iterations |
 |------|----------|---------|-----------|
-| 冷启动 | 50% 体重 | 在辅助力帮助下学会翻身和撑地 | 0-5k |
+| 冷启动 | 约 60% 体重 | 在辅助力帮助下学会翻身和撑地 | 0-5k |
 | 过渡 | 25% 体重 | 学会用更多自身力矩站起来 | 5k-15k |
 | 弱辅助 | 10% 体重 | 几乎独立站起，辅助力只是安全网 | 15k-25k |
 | 独立 | 0% | 完全独立站起来 | 25k+ |
@@ -1905,16 +1904,16 @@ class VerticalPullForceCurriculum:
 
 ### 多地形训练
 
-HoST 不只在平地上训练站起——它在多种地形上训练：
+HoST 不只在平地上训练站起——它在多种地形上训练。HoST 仓库的训练任务名为 `g1_${terrain}`，官方 terrain 取自 `[ground, platform, slope, wall]`：
 
-| 地形 | 目的 | 对策略的挑战 |
+| 地形（官方名） | 目的 | 对策略的挑战 |
 |------|------|------------|
-| 平地 | 基础能力 | 标准站起 |
-| 软垫 | 模拟沙发/床 | 支撑面下沉，需要更大力矩 |
-| 斜坡 | 户外场景 | 重力方向与支撑面不垂直 |
-| 台阶边缘 | 室内场景 | 部分身体悬空 |
+| `ground`（平地） | 基础能力 | 标准站起 |
+| `platform`（高台/平台） | 室内场景（可类比从台阶/高台起身） | 部分身体悬空、边界支撑 |
+| `slope`（斜坡） | 户外场景 | 重力方向与支撑面不垂直 |
+| `wall`（靠墙） | 借助墙面 | 靠墙姿态下的起身 |
 
-多地形训练使策略学到**姿态自适应**的站起策略——在不同表面上自动调整力的分配，而不是记忆固定的动作序列。
+多地形训练使策略学到**姿态自适应**的站起策略——在不同表面上自动调整力的分配，而不是记忆固定的动作序列。（上表括号内的中文类比为教材解释，实际 task 名以仓库 `g1_${terrain}` 为准。）
 
 ### 作为安全兜底集成到 Locomotion Pipeline
 
@@ -1968,8 +1967,10 @@ class FallDetectorFSM:
             return "continue_host"
         
         elif self.state == self.STABILIZING:
+            # 与 FALLEN→get_up 的判据保持一致：roll 也必须在阈值内，
+            # 否则侧倾过大时仍会错误累积 stable_counter
             # 保持稳定一段时间再切回
-            if base_height > 0.65 and abs(base_pitch) < 0.17:
+            if base_height > 0.65 and abs(base_pitch) < 0.17 and abs(base_roll) < 0.17:
                 self.stable_counter += 1
                 if self.stable_counter >= self.stable_threshold:
                     self.state = self.NORMAL
@@ -2131,7 +2132,7 @@ Ch14 人形 velocity (本章)
 | Huang et al., "Learning Humanoid Standing-up Control across Diverse Postures," 2025 | ⭐⭐⭐ | RSS 2025 | multi-critic + 辅助力 curriculum |
 | Radosavovic et al., "Real-World Humanoid Locomotion with RL," 2024 | ⭐⭐ | *Science Robotics* | 真机人形 RL 部署的里程碑 |
 | Luo et al., "SONIC: Supersizing Motion Tracking for Natural Humanoid WBC," 2025 | ⭐⭐⭐ | arXiv 2511.07820 | 100M frames / 42M params 的人形运动基础模型 |
-| Cheng et al., "Expressive Humanoid Whole-Body Control by Matching Full-Body Motion," 2024 | ⭐⭐ | RSS 2024 | ExBody：上下半身解耦的表达性控制 |
+| Cheng et al., "Expressive Whole-Body Control for Humanoid Robots," 2024 | ⭐⭐ | RSS 2024 | ExBody：上下半身解耦的表达性控制 |
 
 ### 工具和代码
 
@@ -2318,7 +2319,7 @@ Ch14 人形 velocity (本章)
 
 | DR 参数 | 四足 (Go1) 典型值 | 人形 (G1) 建议值 | 缩小比例 | 原因 |
 |---------|----------------|-----------------|---------|------|
-| push velocity | ±1.5 m/s | ±0.5 m/s | **3×** | 高质心 + 窄支撑面 |
+| push velocity | ±1.0 m/s | ±0.5 m/s | **2×** | 高质心 + 窄支撑面 |
 | friction range | [0.5, 2.0] | [0.7, 1.5] | ~1.5× | 单脚支撑时摩擦更关键 |
 | mass range | [-1, 3] kg | [-1, 2] kg | ~1.3× | 质心高度变化影响更大 |
 | motor strength | [0.8, 1.2] | [0.85, 1.15] | ~1.3× | 力矩余量更小 |
@@ -2361,7 +2362,7 @@ results:
   wall_time: 68 min
   
 observations:
-  gait: "稳定 trot-like 双足步态"
+  gait: "稳定的左右交替双足步态"
   arms: "自然摆臂，无明显乱甩"
   weaknesses:
     - "侧向命令 >0.3 m/s 时偶尔 roll 不稳"
@@ -2468,7 +2469,7 @@ video: logs/rsl_rl/g1_velocity/v3_seed42/videos/iter_5000.mp4
 | 体重 | ~35 kg | ~47 kg | H1 惯性更大，响应更慢 |
 | DoF | 23/29 | 19 | H1 没有手腕和 ankle_roll |
 | 腰部 | 3-DoF | 1-DoF (yaw only) | G1 上下半身耦合更强 |
-| 力矩 | 小（max 139 Nm） | 大（max 300 Nm） | H1 更适合高速运动 |
+| 力矩 | 小（max 139 Nm） | 大（膝关节约 360 Nm，髋约 220、踝约 45、臂约 75） | H1 更适合高速运动 |
 
 ---
 

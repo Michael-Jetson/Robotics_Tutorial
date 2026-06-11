@@ -234,7 +234,7 @@ def dc_motor_torque(q_star, q, q_dot, kp, kd,
 
 ### 在 MuJoCo 中实现 DC Motor 约束
 
-MuJoCo 没有内置的 DC Motor 类型，但可以通过 `forcerange` 和 `<general>` actuator 近似实现：
+当前版本的 MuJoCo 实际上已内置 `<dcmotor>` actuator（带 resistance、motor constant、saturation、LuGre friction 等属性，可直接按数据手册建模 torque-speed 特性）。如果你的 MuJoCo 较新，优先使用 `<dcmotor>`；若使用旧版本或不想引入 `<dcmotor>`，也可以通过 `forcerange` 和 `<general>` actuator 近似实现（注意：下面方法 2 的 `dyntype="filter"` 只是一阶低通/带宽限制，并不会按关节速度改变力矩上限，因此不等同于真正的 DC motor torque-speed 约束）：
 
 ```xml
 <!-- MuJoCo 中的 DC Motor 近似 -->
@@ -276,12 +276,12 @@ MuJoCo 没有内置的 DC Motor 类型，但可以通过 `forcerange` 和 `<gene
     └── 否 → 考虑升级到 Level 1 或 Level 2
 ```
 
-### 完整对比实验：Ideal PD vs DC Motor vs 带宽限制
+### 完整对比实验：Ideal PD vs 带宽限制
 
-以下代码在 MuJoCo 中同时测试三种 actuator 模型对阶跃输入的响应：
+以下代码在 MuJoCo 中测试两种 actuator 模型对阶跃输入的响应（DC Motor 的 torque-speed 限制可另用 `<dcmotor>` 或显式 clip 补充，本例聚焦 Ideal PD 与带宽限制的对比）：
 
 ```python
-# actuator_comparison.py — 三种 actuator 模型的阶跃响应对比
+# actuator_comparison.py — 两种 actuator 模型的阶跃响应对比
 import mujoco
 import numpy as np
 
@@ -340,7 +340,7 @@ def run_step_response(xml_string, step_target=1.0, num_steps=500):
 
 
 def compare_actuators():
-    """对比三种 actuator 模型的阶跃响应。"""
+    """对比两种 actuator 模型的阶跃响应。"""
     pos_ideal, tau_ideal = run_step_response(IDEAL_PD_XML)
     pos_bw, tau_bw = run_step_response(BANDWIDTH_LIMITED_XML)
 
@@ -448,8 +448,9 @@ biastype="affine", biasprm=[b0, b1, b2]
 |------|---------------|-----------|
 | Ideal PD | `<position kp kv>` | `ImplicitActuatorCfg(stiffness, damping)` |
 | PD + 力矩限制 | `<position forcerange>` | `ImplicitActuatorCfg(effort_limit)` |
-| PD + 带宽限制 | `<general dyntype="filter">` | `DelayedPDActuatorCfg(min_delay, max_delay)` |
-| DC Motor | `<general> + 自定义 clip` | `DCMotorCfg(saturation_effort)` |
+| PD + 低通/带宽 | `<general dyntype="filter">`（一阶低通） | Isaac Lab 无直接同名内置，需自定义 actuator 或 action 低通 |
+| PD + 命令延迟 | （需自行实现命令缓冲） | `DelayedPDActuatorCfg(min_delay, max_delay)` |
+| DC Motor | `<dcmotor>`（或 `<general> + 自定义 clip`） | `DCMotorCfg(saturation_effort)` |
 | Actuator Network | `mjcb_control` callback | `ActuatorNetMLPCfg(network_file)` |
 | 摩擦 | `<joint frictionloss>` | `ActuatorBaseCfg(friction)` |
 | armature | `<joint armature>` | `ActuatorBaseCfg(armature)` |
@@ -472,23 +473,27 @@ biastype="affine", biasprm=[b0, b1, b2]
 
 ### 工程实战：从电机数据手册配置 actuator 参数
 
-以下是从 Unitree Go1 的公开电机数据手册（A1 电机）配置 actuator 参数的完整流程：
+以下是从 Unitree 四足关节电机数据手册配置 actuator 参数的完整流程（本章统一使用
+输出端 33.5 N·m / 21 rad/s 作为示例，这对应 A1 机器人级别的关节规格）：
 
 ```python
 # configure_from_datasheet.py — 从电机数据手册配置 actuator
 """
-Unitree A1 电机数据手册参数（Go1 使用的电机）：
+示例电机/关节数据手册参数（输出端）：
 
-额定扭矩 (nominal torque):    6.0 N·m
-峰值扭矩 (peak torque):       23.7 N·m
-空载转速 (no-load speed):      21 rad/s (约 200 RPM)
+峰值扭矩 (peak torque):       33.5 N·m
+空载最大转速 (no-load speed):  21 rad/s
 减速比 (gear ratio):           6.33:1
-力矩常数 (torque constant):    0.0525 N·m/A
 额定电流 (nominal current):    4.8 A
 峰值电流 (peak current):       19.0 A
-堵转扭矩 = 力矩常数 × 峰值电流 × 减速比
-         = 0.0525 × 19.0 × 6.33 ≈ 6.3 N·m（输出端）
-注意：不同来源的数据可能不一致，以实测为准
+
+注意（来源区分，避免混用）：
+- 上面的 33.5 N·m / 21 rad/s 对应 Unitree A1 机器人输出端关节规格。
+- Unitree Go1 实际使用的关节电机为 GO-M8010-6，官方规格是输出端
+  23.7 N·m、最大 30 rad/s（24V、减速比 6.33）、力矩常数约 0.63895 N·m/A。
+- 因此在严谨的 Go1 建模中，应改用 GO-M8010-6 的 23.7 N·m / 30 rad/s；
+  本章为了示例连贯沿用 33.5/21，请按你的目标机器人手册替换。
+- 数据手册的峰值扭矩是短时峰值，连续可用扭矩通常更低（见下方工程提示）。
 """
 
 def datasheet_to_mjcf(motor_params):
@@ -549,13 +554,14 @@ DCMotorCfg(
     print(isaac_cfg)
     return kp_initial, kd_initial, tau_max
 
-# 使用
-go1_motor = {
-    "peak_torque": 23.7,
+# 使用（本章示例采用 A1 级输出端规格 33.5 N·m / 21 rad/s；
+# Go1 的 GO-M8010-6 应改为 23.7 / 30）
+example_motor = {
+    "peak_torque": 33.5,
     "no_load_speed": 21.0,
     "bandwidth_hz": 30,
 }
-datasheet_to_mjcf(go1_motor)
+datasheet_to_mjcf(example_motor)
 ```
 
 > **工程提示：** 数据手册上的参数是"标称值"——实际的 kp/kd/τ_max 需要通过系统辨识（12.5 节）验证。数据手册的峰值扭矩是短时峰值（通常 <1 秒），持续可用扭矩（连续输出不过热的扭矩）通常只有峰值的 30-50%。RL 训练中的 forcerange 应该设为持续扭矩而非峰值扭矩——因为训练中关节力矩可能持续处于限制边界。
@@ -1090,7 +1096,7 @@ Delta action model 不预测力矩，而是预测**action 修正量**。这个�
 ### ASAP 的训练管线
 
 ```text
-ASAP 完整管线（4 步）：
+ASAP 完整管线（拆成 5 个实施步骤；对应 ASAP 项目页的 4 个阶段——下面的 Step 1、Step 2 合并为官方的"Motion Tracking Pre-training and Real Trajectory Collection"阶段）：
 
 Step 1: 在仿真中预训练多个 motion tracking 策略
   policies = [train_tracker(motion_i) for motion_i in motions]
@@ -1617,6 +1623,9 @@ def configure_isaac_from_sysid(sysid_results):
     config = f"""
 from isaaclab.actuators import DCMotorCfg, DelayedPDActuatorCfg
 
+# 注意：Isaac Lab/PhysX 的 friction 是无量纲 joint friction coefficient，
+# 不能直接等于系统辨识得到的 N·m 库仑摩擦；下面的 friction=... 仅作占位，
+# 实际应单独标定 PhysX 摩擦，或将其视为待校准参数。
 # 方案 A：DC Motor + 力矩饱和
 legs_dc = DCMotorCfg(
     joint_names_expr=[".*"],
@@ -2247,9 +2256,10 @@ def create_bandwidth_limited_spec(base_xml, kp=100.0, kd=4.0,
 
 
 def run_ablation(base_xml, task_cfg, num_iterations=2000):
-    """运行 A/B/C 三组实验。"""
+    """运行 A/C 两组示例实验（B 组 DC Motor 需另行实现 create_dc_motor_spec）。"""
     configs = {
         "A_IdealPD": create_ideal_pd_spec(base_xml),
+        # "B_DCMotor": create_dc_motor_spec(base_xml),  # 需补充实现
         "C_BW_Limited": create_bandwidth_limited_spec(
             base_xml, bw_hz=30.0
         ),
@@ -2471,8 +2481,9 @@ ActuatorBase (抽象基类)
 | `kv` (position actuator) | `damping` | 速度增益 (N·m·s/rad) |
 | `forcerange` | `effort_limit` | 力矩限制 (N·m) |
 | `ctrlrange` | action space clip | 控制输入范围 (rad) |
-| `dyntype="filter" dynprm` | `DelayedPDActuatorCfg` | 带宽限制 |
-| `joint frictionloss` | `ActuatorBaseCfg(friction)` | 库仑摩擦 |
+| `dyntype="filter" dynprm` | 一阶低通/需自定义 Isaac actuator | 带宽限制（低通，非命令延迟） |
+| （命令延迟，需自行实现缓冲） | `DelayedPDActuatorCfg` | 离散命令延迟/latency |
+| `joint frictionloss`（N·m 干摩擦） | `ActuatorBaseCfg(friction)`（PhysX 无量纲摩擦系数） | 注意单位/语义不同，不能直接把 N·m 数值填入，需单独标定 |
 | `joint damping` | (叠加在 actuator damping 中) | 粘性摩擦 |
 | `joint armature` | `ActuatorBaseCfg(armature)` | 虚拟转子惯量 |
 

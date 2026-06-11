@@ -87,7 +87,7 @@ Velocity task 的 MDP 完整定义如下：
 | MDP 组件 | 具体内容 | 维度（Go1） |
 |---------|---------|------------|
 | **State** $s$ | 全部物理状态（qpos + qvel + contacts） | 远大于 obs |
-| **Actor obs** $o^a$ | base_lin_vel + base_ang_vel + projected_gravity + joint_pos + joint_vel + actions + command + height_scan(rough) | ~47(flat) / ~234(rough) |
+| **Actor obs** $o^a$ | base_lin_vel + base_ang_vel + projected_gravity + joint_pos + joint_vel + actions + command + height_scan(rough) | 48(flat) / 235(rough) |
 | **Critic obs** $o^c$ | actor obs + foot_height + foot_air_time + foot_contact + foot_contact_forces | ~270(rough) |
 | **Action** $a$ | joint position offsets | 12 |
 | **Command** $c$ | $(v_x^{\text{cmd}}, v_y^{\text{cmd}}, \omega_z^{\text{cmd}})$ | 3 |
@@ -166,8 +166,6 @@ Go1 的 12 个关节范围比较一致（大部分 ±1 到 ±2 rad），所以�
 
 四足行走在物理上是一个周期性的接触切换过程。在一个完整步态周期中，每条腿在支撑相（stance phase）和摆动相（swing phase）之间交替。支撑相腿承担支撑和推进力，摆动相腿脱离地面向前摆动。不同步态的区别在于四条腿的相位关系：
 
-| 步态 | 相位关系 | 同时支撑腿数 | 速度范围 | RL 中常见？ |
-|------|---------|------------|---------|-----------|
 | 步态 | Duty Factor | 相位 (FR/FL/HR/HL) | 同时支撑腿 | 典型速度 | RL 涌现条件 |
 |------|------------|-------------------|-----------|---------|------------|
 | Walk | 0.6-0.8 | 0/0.5/0.75/0.25 | 3-4 | 低速 (<0.5 m/s) | 低速命令 + 能耗惩罚 |
@@ -780,7 +778,7 @@ Isaac Lab 的标准四足速度跟踪任务是 `Isaac-Velocity-Rough-Anymal-C-v0
 | 动作 | `JointPositionActionCfg` | `JointPositionActionCfg` |
 | 注册方式 | `register_mjlab_task()` | `gymnasium.register()` |
 | RL 后端 | RSL-RL（唯一） | RSL-RL / RL Games / SKRL |
-| 训练命令 | `uv run train <task_id>` | `python scripts/rsl_rl/train.py --task <task_id>` |
+| 训练命令 | `uv run train <task_id>` | `python scripts/reinforcement_learning/rsl_rl/train.py --task <task_id>` |
 
 ### 观测组命名差异：actor/critic vs policy/critic
 
@@ -1161,7 +1159,7 @@ terrain curriculum 不需要手动设置切换条件——它根据每个环境�
 # actor obs 配置中
 "height_scan": ObsTerm(
     func=terrain_scan,
-    noise=GaussianNoiseCfg(mean=0.0, std=0.1),  # ±0.1m noise
+    noise=GaussianNoiseCfg(mean=0.0, std=0.1),  # 高斯噪声，标准差 0.1m（非 ±0.1m 有界）
     clip=(-1.0, 1.0),
 )
 ```
@@ -1284,7 +1282,7 @@ uv run train --help  # 列出所有可用 task id
 uv run list-envs     # 更详细的环境列表
 
 # Isaac Lab
-python scripts/rsl_rl/train.py --task Isaac-Velocity-Rough-Anymal-C-v0 --help
+python scripts/reinforcement_learning/rsl_rl/train.py --task Isaac-Velocity-Rough-Anymal-C-v0 --help
 ```
 
 ### 阶段 1：Zero Agent
@@ -1299,7 +1297,7 @@ uv run play Mjlab-Velocity-Rough-Unitree-Go1 \
   --agent zero --num-envs 4 --viewer viser
 
 # Isaac Lab
-python scripts/rsl_rl/play.py --task Isaac-Velocity-Flat-Anymal-C-v0 \
+python scripts/reinforcement_learning/rsl_rl/play.py --task Isaac-Velocity-Flat-Anymal-C-v0 \
   --num_envs 4 --load_run "" --checkpoint ""  # 使用 zero policy
 ```
 
@@ -1330,7 +1328,7 @@ uv run train Mjlab-Velocity-Rough-Unitree-Go1 \
   --agent.logger tensorboard --gpu-ids "[0]"
 
 # Isaac Lab
-python scripts/rsl_rl/train.py --task Isaac-Velocity-Flat-Anymal-C-v0 \
+python scripts/reinforcement_learning/rsl_rl/train.py --task Isaac-Velocity-Flat-Anymal-C-v0 \
   --num_envs 256 --max_iterations 50
 ```
 
@@ -1586,7 +1584,7 @@ if (abs(cmd[0]) < 0.1 and abs(cmd[1]) < 0.1 and abs(cmd[2]) < 0.2):
 
 ⚠️ **编程陷阱：train 和 play 的 num_envs 参数位置不同**。mjlab train 用 `--env.scene.num-envs`，play 用 `--num-envs`。Isaac Lab 类似但参数格式略有不同。混用导致 CLI 解析失败或使用默认值。
 
-💡 **概念误区：small train reward 不升就是 bug**。50 iterations × 4096 envs × 24 steps_per_env = ~500 万 steps。四足策略通常需要数千万 steps 才开始学会基本步态。small train 只验证接口不验证效果。
+💡 **概念误区：small train reward 不升就是 bug**。按前面 small train 命令的 256 envs，50 iterations × 256 envs × 24 steps_per_env ≈ 30.7 万 steps（若改用 large train 的 4096 envs 才约 500 万 steps）。四足策略通常需要数千万 steps 才开始学会基本步态。small train 只验证接口不验证效果。
 
 🧠 **思维陷阱：只看 tensorboard 曲线不看视频**。reward 上升但策略可能学到了 hack（利用 simulator 接触 bug 获取 reward）。每隔 1000 iterations 看一次 play 视频是必要的 sanity check。
 
@@ -1705,14 +1703,16 @@ base cfg 定义完整的 manager 骨架——所有的 observation terms、rewar
 
 四足机器人的 MJCF 模型中有几个对训练直接影响的属性需要特别关注：
 
-**actuator 定义**：Go1 使用 `position` actuator + `kp`/`kd` gains。这定义了 PD 控制器的行为——`kp` 控制位置跟踪刚度，`kd` 控制阻尼。`kp` 太小导致关节跟踪缓慢（策略发出 target 但关节响应慢），`kp` 太大导致高频振荡。典型值因机器人而异——Go1 和 Go2 的电机特性不同，照搬 gains 会导致行为差异。
+**actuator 定义**：Go1 使用 `position` actuator + `kp`/`kv` gains（MuJoCo 中 position actuator 的阻尼属性叫 `kv`，对应控制理论里的 kd）。这定义了 PD 控制器的行为——`kp` 控制位置跟踪刚度，`kv` 控制阻尼。`kp` 太小导致关节跟踪缓慢（策略发出 target 但关节响应慢），`kp` 太大导致高频振荡。典型值因机器人而异——Go1 和 Go2 的电机特性不同，照搬 gains 会导致行为差异。
 
 ```xml
 <!-- Go1 MJCF 中的 actuator 定义（简化） -->
+<!-- 注意：MuJoCo position actuator 的阻尼属性是 kv（不是 kd），
+     kd 不是合法的 position actuator 属性，写成 kd 会被当作未知属性 -->
 <actuator>
-  <position name="FR_hip" joint="FR_hip_joint" kp="40" kd="1" />
-  <position name="FR_thigh" joint="FR_thigh_joint" kp="40" kd="1" />
-  <position name="FR_calf" joint="FR_calf_joint" kp="40" kd="1" />
+  <position name="FR_hip" joint="FR_hip_joint" kp="40" kv="1" />
+  <position name="FR_thigh" joint="FR_thigh_joint" kp="40" kv="1" />
+  <position name="FR_calf" joint="FR_calf_joint" kp="40" kv="1" />
   <!-- ... 其他 9 个关节 -->
 </actuator>
 ```
@@ -1891,7 +1891,7 @@ done
 ```bash
 # Go2 flat baseline × 3 seeds
 for seed in 42 123 456; do
-  python scripts/rsl_rl/train.py \
+  python scripts/reinforcement_learning/rsl_rl/train.py \
     --task Isaac-Velocity-Flat-Unitree-Go2-v0 \
     --num_envs 4096 --max_iterations 5000 \
     --seed ${seed} --run_name go2_flat_isaaclab_seed${seed}
@@ -1953,7 +1953,7 @@ test_commands = [
 
 ### sim-to-sim 交叉验证
 
-**历史脉络**：sim-to-sim 验证最早被 humanoid-gym (Gu et al., RSS 2024 Best Paper Finalist) 作为正式工程步骤推广。他们在 Isaac Gym 中训练 XBot-S/XBot-L 人形策略后，先在 MuJoCo 中做 sim-to-sim 验证，确认策略在不同物理引擎中也能正常行走，才进行真机部署。这个模式的价值在于：真机测试成本高（可能损坏硬件），而 sim-to-sim 几乎零成本且能发现大部分物理引擎依赖性问题。
+**历史脉络**：humanoid-gym (Gu et al., RSS 2024) 把 Isaac Gym → MuJoCo 的 sim-to-sim 验证作为公开工程流程之一进行了展示和推广（sim-to-sim/跨仿真验证在腿足 sim-to-real 中此前已有多种实践，这里不宣称"最早"）。他们在 Isaac Gym 中训练 XBot-S/XBot-L 人形策略后，先在 MuJoCo 中做 sim-to-sim 验证，确认策略在不同物理引擎中也能正常行走，才进行真机部署。这个模式的价值在于：真机测试成本高（可能损坏硬件），而 sim-to-sim 几乎零成本且能发现大部分物理引擎依赖性问题。
 
 一种更深入的对比方法是 sim-to-sim 验证：在框架 A 中训练策略，导出 ONNX，在框架 B 中 play。如果策略在框架 A 中表现好但在框架 B 中崩溃，说明策略过拟合了框架 A 的物理特性。这种交叉验证方法在 sim-to-real 部署前非常有价值——如果策略连跨引擎都不鲁棒，在真机上大概率也不行。
 

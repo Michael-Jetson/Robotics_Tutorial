@@ -1505,7 +1505,9 @@ DAgger 通常比纯 BC 蒸馏多花 2-3 倍训练时间，但在 student-teacher
 
 ## 9.5 精读：extreme-parkour 三阶段管线 ⭐⭐⭐⭐
 
-> **这一节解决什么问题**：通过精读 extreme-parkour 项目（Cheng et al., ICRA'24, `github.com/chengxuxin/extreme-parkour`），展示一个完整的三阶段 teacher-student 蒸馏管线——从 blind teacher 到 depth teacher 到 depth student。这是本章的工程高潮，把前面所有概念串联成一条可执行的管线。
+> **这一节解决什么问题**：通过精读 extreme-parkour 项目（Cheng et al., ICRA'24, `github.com/chengxuxin/extreme-parkour`），展示一个完整的多阶段 teacher-student 蒸馏管线——从 blind teacher 到 depth teacher 到 depth student。这是本章的工程高潮，把前面所有概念串联成一条可执行的管线。
+
+> ⚠️ **重要勘误（请先读）**：extreme-parkour **官方**的训练管线其实是**两阶段（two-phase）**，不是本节为教学而拆出的"三阶段"。对照官方 README 与论文：**Phase 1** 用 RL（PPO）训练 base/oracle policy，特权信息是 **scandots（地形高度采样）+ oracle 航向**，并用 **ROA** 在单阶段内同时学 adaptation module；**Phase 2** 用 **DAgger 监督蒸馏**，把 scandots 换成 depth（CNN-GRU）、把 heading 预测一并学出来，并从 Phase 1 的 actor 初始化。**官方并没有一个独立的"depth teacher RL 阶段"**。本节把它讲成"blind teacher → depth teacher → depth student"三阶段，是一种便于教学、可推广到通用三阶段蒸馏的**重新分解**——其中"Stage 1+Stage 2 都用 RL"对应官方 Phase 1，"Stage 3 监督蒸馏"对应官方 Phase 2。阅读下文时请把"三阶段"理解为教学框架，把上述两阶段理解为该项目的真实结构。
 
 ### 动机：为什么需要三阶段
 
@@ -1586,7 +1588,7 @@ uv run train Mjlab-Velocity-Rough-Unitree-Go1-Teacher \
     --agent.logger wandb
 ```
 
-**extreme-parkour 的 ROA 创新：把两阶段压缩为一阶段。** 标准的 RMA 需要两阶段：先训练 base policy + encoder，再训练 adaptation module。extreme-parkour 的 Stage 1 使用了 **Regularized Online Adaptation（ROA）**——在一个训练阶段内同时训练 base policy 和 adaptation module。ROA 在 PPO 更新中加入一个辅助正则损失，鼓励 adaptation module 的输出与 environment encoder 的输出保持一致，但不冻结 encoder——两者协同演化。这把传统的两阶段训练时间压缩了约 30-40%。ROA 的工程代价是训练循环更复杂，且如果正则权重设置不当，adaptation module 和 encoder 可能"互相拉扯"导致训练不稳定。
+**extreme-parkour 的 ROA 创新：把两阶段压缩为一阶段。** 标准的 RMA 需要两阶段：先训练 base policy + encoder，再训练 adaptation module。extreme-parkour 的 Stage 1 使用了 **Regularized Online Adaptation（ROA）**——在一个训练阶段内同时训练 base policy 和 adaptation module。ROA 在 PPO 更新中加入一个辅助正则损失，鼓励 adaptation module 的输出与 environment encoder 的输出保持一致，但不冻结 encoder——两者协同演化。这省去了传统 RMA 的第二个独立训练阶段，降低了两阶段管线的工程复杂度（具体训练时间收益取决于任务和实现，本文不给固定百分比）。ROA 的工程代价是训练循环更复杂，且如果正则权重设置不当，adaptation module 和 encoder 可能"互相拉扯"导致训练不稳定。
 
 ### Stage 2 详解：Depth Teacher（加入深度输入 + 特权参数）
 
@@ -1629,11 +1631,11 @@ proprioception (36维) → concat → MLP [256, 256, 128] → action (12维)
 env_params (8维) ─┘
 ```
 
-**Stage 2 的 MTS（Mixture of Teacher and Student）训练技巧。** extreme-parkour 在 Stage 2 的蒸馏阶段使用了一个精巧的 yaw-command 处理机制：student 的 heading command 不完全由自身决定，而是部分来自 teacher 的预测。具体来说，在训练时 student 的 yaw command 是 teacher 预测和 student 自身预测的混合：
+**Stage 2 的 MTS（Mixture of Teacher and Student）训练技巧。** extreme-parkour 在蒸馏阶段使用了一个精巧的 yaw-command 处理机制：student 的 heading command 不完全由自身预测决定，而是按**阈值规则**在 student 的预测 yaw 和 oracle（来自 waypoint 的真值方向）之间切换。论文给出的规则是——若预测 yaw $\theta_{\text{pred}}$ 与 oracle 方向 $\hat d_w$ 之差小于 0.6 弧度，则 student 观察自己的预测值，否则观察 oracle 值：
 
-$$\text{yaw}_{\text{train}} = \beta \cdot \text{yaw}_{\text{teacher}} + (1 - \beta) \cdot \text{yaw}_{\text{student}}$$
+$$\text{obs}_\theta = \begin{cases} \theta_{\text{pred}}, & |\theta_{\text{pred}} - \hat d_w| < 0.6 \\ \hat d_w, & \text{否则} \end{cases}$$
 
-随着训练推进，$\beta$ 从 1.0 逐渐退火到 0.0。这确保了训练早期 student 不会因为 heading 预测错误而"走错方向"导致 rollout 质量极差（这会让蒸馏的 state 分布严重偏离 teacher 的分布）。MTS 的思想类似于 DAgger——在 student 分布偏移最严重的维度上给予 teacher 的指导。
+（注意：这是阈值切换，而**不是** $\beta$ 退火式的线性混合。）这样当 student 的 heading 预测已经足够接近真值时就用它自己的预测，否则用 oracle 把它"拉回"正确方向，避免因 heading 预测错误而"走错方向"导致 rollout 质量极差、蒸馏的 state 分布严重偏离 teacher 分布。其思想与 DAgger 类似——在 student 分布偏移最严重的维度上给予 teacher 的指导。
 
 **何时需要 MTS：** 当 student 和 teacher 的输入空间差异导致某些 output 维度的预测质量极不均匀时。在 extreme-parkour 中，proprioception → action 的映射 student 可以快速学好（因为输入相似），但 heading 方向的预测完全依赖 depth image 的 CNN 解读（因为 heading 需要知道前方地形），所以这个维度学得最慢，需要 MTS 额外扶持。
 
@@ -2056,13 +2058,13 @@ HOVER 的工程实现是一个标准的 Isaac Lab extension。训练吞吐量参
 
 ### 前沿视角：VIRAL 的 64-GPU 视觉蒸馏
 
-如果 extreme-parkour 代表"单 GPU 上的三阶段蒸馏"，那么 VIRAL（NVIDIA 2025, arXiv 2511.15200）代表"大规模集群上的视觉 teacher-student"。VIRAL 在 Unitree G1 上实现了 54/59 连续 loco-manipulation 循环，其管线的核心仍然是 privileged teacher → visual student，但规模和细节更加工业化：
+如果 extreme-parkour 代表"单 GPU 上的多阶段蒸馏"，那么 VIRAL（NVIDIA 2025, arXiv 2511.15200）代表"大规模集群上的视觉 teacher-student"。据项目页，VIRAL 在 Unitree G1 上真机实现了 **up to 54** 个连续 loco-manipulation 循环，部署的是 **RGB-based** policy；其管线核心仍然是 privileged teacher → visual student，但规模和细节更加工业化（截至 2026-06，以下为项目页可核要点，精确数字以论文为准）：
 
-1. **Privileged RL Teacher**：delta-action space + reference-state-initialization，privileged terrain/object 真值，训练 ~24-72 小时
-2. **Visual Student DAgger**：大规模 tiled rendering（Isaac Lab `TiledCamera`，每 GPU 512 cameras）生成 depth/RGB 观测；student 在 teacher 诱导的状态分布上用 DAgger 训练
-3. **视觉 Domain Randomization**：lighting、materials、camera intrinsics/extrinsics、image quality degradation、sensor delay——全部在 Isaac Lab 的 Replicator API 中配置
+1. **Privileged RL Teacher**：delta-action space + reference-state-initialization，privileged terrain/object 真值。
+2. **Visual Student DAgger**：用 Isaac Lab 大规模 tiled rendering（`TiledCamera`，可扩展到 tens of GPUs，up to 64）生成 RGB 观测；student 在 teacher 诱导的状态分布上用 DAgger 训练。
+3. **视觉 Domain Randomization**：lighting、materials、camera intrinsics/extrinsics、image quality degradation、sensor delay——在 Isaac Lab 的 Replicator API 中配置。
 
-VIRAL 的关键工程发现：视觉 DR 的多样性比物理 DR 更重要——不做视觉 DR 时 sim-to-real 成功率从 >90% 降到 <30%。这呼应了 9.1 节讨论的 "DR-privileged 协同"主题：视觉管线中的 DR 不仅覆盖物理参数，还必须覆盖渲染参数。
+VIRAL 强调视觉 DR 的多样性对 sim-to-real 至关重要。这呼应了 9.1 节讨论的 "DR-privileged 协同"主题：视觉管线中的 DR 不仅覆盖物理参数，还必须覆盖渲染参数。
 
 ### 从训练到部署：ONNX 导出的最后一公里
 
@@ -2512,7 +2514,7 @@ seed：42
 | RSL-RL 文档：obs_groups 和 DistillationRunner | ⭐⭐ | mjlab 使用的训练框架的蒸馏支持，工程实现的直接参考 |
 | Rudin et al. 2022, "Learning to Walk in Minutes" | ⭐⭐ | 大规模并行训练的工程细节，asymmetric AC 的实践经验 |
 | Miki et al. 2022, "Learning robust perceptive locomotion for quadrupedal robots in the wild" (Science Robotics) | ⭐⭐⭐ | depth + attention encoder + privileged learning；ANYmal 1700m 零跌倒；后续视觉腿足工作的基础 |
-| Radosavovic et al. 2024, "Humanoid Locomotion as Next Token Prediction" (Science Robotics) | ⭐⭐⭐ | Causal transformer 隐式适应，RMA 的替代范式；理解 9.4 节三种范式对比 |
+| Radosavovic et al. 2024, "Real-world humanoid locomotion with reinforcement learning" (Science Robotics) | ⭐⭐⭐ | Causal transformer 隐式适应，RMA 的替代范式；理解 9.4 节三种范式对比。另有同组 "Humanoid Locomotion as Next Token Prediction"（arXiv 2402.19469 / NeurIPS 2024）可对照阅读 |
 | He et al. 2025, "HOVER: Versatile Neural Whole-Body Controller for Humanoid Robots" (ICRA'25) | ⭐⭐⭐⭐ | Mask-conditioned distillation；一个 student 支持多种控制模式 |
 | Huang et al. 2025, "HoST: Learning Humanoid Standing-up Control across Diverse Postures" (RSS'25) | ⭐⭐⭐ | Multi-critic 架构；理解 9.1 节 multi-critic 变体 |
 | Schwarke et al. 2025, "RSL-RL: A Learning Library for Robotics Research" (arXiv 2509.10771) | ⭐⭐ | RSL-RL 4.0 的 actor/critic 解耦架构、DistillationRunner、ONNX exporter |

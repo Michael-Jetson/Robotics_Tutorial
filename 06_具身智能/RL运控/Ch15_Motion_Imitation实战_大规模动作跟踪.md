@@ -75,12 +75,15 @@ mjlab 的 BeyondMimic 管线使用以下数据流：
 **csv_to_npz.py 的关键参数**：
 
 ```bash
+# --input-csv 输入 CSV，--output-npz 输出 NPZ
+# --input-fps 原始帧率，--output-fps 目标帧率（匹配训练频率），--render 可选渲染预览
+# 注意：bash 续行反斜杠必须在行尾，反斜杠后不能再跟注释，否则续行失效
 python scripts/tracking/csv_to_npz.py \
-    --input-csv g1_walking.csv \       # 输入 CSV
-    --output-npz g1_walking.npz \      # 输出 NPZ
-    --input-fps 30 \                   # 原始帧率
-    --output-fps 50 \                  # 目标帧率（匹配训练频率）
-    --render                           # 可选：渲染预览
+    --input-csv g1_walking.csv \
+    --output-npz g1_walking.npz \
+    --input-fps 30 \
+    --output-fps 50 \
+    --render
 ```
 
 **为什么要对齐帧率？** mjlab 的 tracking task 以 50 Hz 运行（physics_dt × decimation = 0.002 × 10 = 0.02s = 50Hz）。如果参考运动是 30 Hz，直接使用会导致时间不对齐——策略在第 100 步看到的参考帧应该对应 t=2.0s，但 30 Hz 数据的第 100 帧对应 t=3.33s。`csv_to_npz.py` 通过插值把 30 Hz 升采样到 50 Hz，确保帧号和仿真时间一致。
@@ -119,10 +122,12 @@ git clone https://github.com/mujocolab/g1_spinkick_example
 cd g1_spinkick_example
 
 # 数据准备：从 pkl 转换为 csv，添加安全起止过渡
+# --input 为 2.65 秒的旋踢动作；--safe-pose-duration 前后各加 0.5 秒安全过渡
+# （续行反斜杠后不要写注释，否则 shell 续行失效）
 python pkl_to_csv.py \
-    --input g1_spinkick.pkl \     # 2.65 秒的旋踢动作
+    --input g1_spinkick.pkl \
     --output g1_spinkick.csv \
-    --safe-pose-duration 0.5      # 前后各加 0.5 秒的安全过渡
+    --safe-pose-duration 0.5
 
 # CSV → NPZ
 python scripts/tracking/csv_to_npz.py \
@@ -423,8 +428,8 @@ cfg.observations.actor = ObservationGroupCfg(
 
 | 指标 | 计算方式 | 合格范围 | 说明 |
 |------|---------|---------|------|
-| **MPJPE (mm)** | 所有跟踪 body 的均方位置误差 | < 50 mm | Mean Per-Joint Position Error |
-| **MPBPE (mm)** | 所有 body 的均方位置误差 | < 80 mm | Mean Per-Body Position Error |
+| **MPJPE (mm)** | 所选跟踪 body 的平均欧氏距离（逐点位置误差取均值，非均方） | < 50 mm | Mean Per-Joint Position Error |
+| **MPBPE (mm)** | 所有 body 的平均欧氏距离 | < 80 mm | Mean Per-Body Position Error |
 | **Episode Length Ratio** | 实际长度 / 参考动作长度 | > 0.9 | 是否能跟踪到动作结束 |
 | **Root Tracking Error (m)** | root 位置的 L2 误差 | < 0.15 m | root 漂移程度 |
 | **Angular Momentum (Nm·s)** | 全身角动量 RMS | < 10 | 动作自然度 |
@@ -808,8 +813,9 @@ python protomotions/eval_agent.py \
     checkpoint=results/g1_amp_walking/last.ckpt
 
 # Step 6: 切换到 ASE（只改实验配置）
+# 相比上面的 AMP，只需把 +exp 那一行换成 ase_mlp
 python protomotions/train_agent.py \
-    +exp=ase_mlp \          # ← 改这一行
+    +exp=ase_mlp \
     +robot=g1 \
     +simulator=isaacgym \
     motion_file=data/motions/walking_dataset.yaml \
@@ -889,7 +895,7 @@ class ConditionalAMPDiscriminator(AMPDiscriminator):
 
 ## 15.3 大规模训练工程 ⭐⭐
 
-> **这一节解决什么问题**：学习从 142K motions on 4 A100s 的大规模训练中总结出的工程经验——per-GPU 分片、adaptive sampling、motion quality filtering。
+> **这一节解决什么问题**：学习大规模 motion tracking 训练（AMASS 全集约 4×A100/12h；BONES-SEED ~142K motions 官方用 24×A100）中总结出的工程经验——per-GPU 分片、adaptive sampling、motion quality filtering。
 
 ### 为什么需要大规模
 
@@ -900,9 +906,13 @@ class ConditionalAMPDiscriminator(AMPDiscriminator):
 | 单条 | 1 | 1 × 4090 | 1-3 h | 特定技能（旋踢、舞蹈） |
 | 小规模 | 10-50 | 1 × 4090 | 6-12 h | 基本运动库（走、跑、转身） |
 | 中规模 | 100-1000 | 1-2 × A100 | 1-3 天 | 丰富的运动库 |
-| **大规模** | **10K-142K** | **4 × A100** | **~12 h** | **通用 tracking policy** |
+| **大规模（AMASS 全集）** | **40+ 小时（约上万条）** | **4 × A100** | **~12 h** | **通用 tracking policy** |
+| **超大规模（BONES-SEED）** | **~142K motions** | **24 × A100（官方预训练）** | **需查日志** | **G1 通用 tracker** |
 
-ProtoMotions README 明确说明："Train your fully physically simulated character to learn motion skills from the entire public AMASS human animation dataset (40+ hours) within 12 hours on 4 A100s."
+注意区分两个不同的基准，不要把它们的硬件/时间混为一谈：
+
+- ProtoMotions README 明确说明 **AMASS 全集（40+ 小时）** 可在 **4 × A100 上约 12 小时** 训练完："Train your fully physically simulated character to learn motion skills from the entire public AMASS human animation dataset (40+ hours) within 12 hours on 4 A100s."
+- 而 **BONES-SEED 约 142K motions** 是更大的数据集；官方 G1 deployment 文档说明其预训练模型使用了 **24 × A100**（需要 sharded MotionLib），具体耗时需另查日志。
 
 ### Per-GPU Motion 分片的详细实现
 
@@ -1065,80 +1075,6 @@ torchrun --nproc_per_node=4 \
 - `num_envs=4096` 是 **per-GPU** 的——4 GPU 总共 16384 envs
 - 每个 GPU 的 motion 分片不同，但 gradient 通过 allreduce 同步
 - learning rate 通常需要根据有效 batch size 线性放大（linear scaling rule）
-
-### Motion Quality Filtering
-
-当 motion 数据集太大（142K 条动作），无法全部加载到单个 GPU 的内存中。解决方案是 **per-GPU 分片**：
-
-```
-4 GPUs, 142K motions:
-  GPU 0: motions[0:35500]      → 4096 envs 在这些 motions 中采样
-  GPU 1: motions[35500:71000]  → 4096 envs 在这些 motions 中采样
-  GPU 2: motions[71000:106500] → 4096 envs 在这些 motions 中采样
-  GPU 3: motions[106500:142000]→ 4096 envs 在这些 motions 中采样
-```
-
-每个 GPU 只加载自己分片的 motion 数据，但所有 GPU 共享同一个策略网络（通过 distributed PPO 的 gradient allreduce 同步）。
-
-```python
-# per-GPU motion 分片（概念性）
-def shard_motions(motion_manifest, world_size, rank):
-    """将 motion 数据集按 GPU rank 分片"""
-    all_motions = load_manifest(motion_manifest)
-    total = len(all_motions)
-    per_gpu = total // world_size
-    start = rank * per_gpu
-    end = start + per_gpu if rank < world_size - 1 else total
-    return all_motions[start:end]
-
-# 在训练脚本中
-rank = torch.distributed.get_rank()
-world_size = torch.distributed.get_world_size()
-my_motions = shard_motions("data/bones_seed_142k.yaml", world_size, rank)
-```
-
-**工程注意**：分片不应该按动作类型分——否则 GPU 0 可能只有走路、GPU 3 只有跳跃，策略在不同 GPU 上看到的数据分布不同，导致 gradient 不一致。应该**随机分片**或确保每个分片包含均匀的动作类型分布。
-
-### Adaptive Sampling：更多采样失败动作
-
-均匀采样所有动作并不是最优策略。有些动作对当前策略来说很容易（如站立），有些很难（如旋踢）。把训练预算平均分配给简单和困难动作是浪费——简单动作很快就学会了，困难动作需要更多关注。
-
-**Adaptive sampling** 根据策略在每个动作上的表现动态调整采样概率：
-
-```python
-# adaptive sampling（概念性）
-class AdaptiveMotionSampler:
-    def __init__(self, motions):
-        self.motions = motions
-        self.success_rates = {m.id: 0.5 for m in motions}  # 初始 50%
-        self.alpha = 0.01  # 更新率
-    
-    def update(self, motion_id, episode_length, max_length):
-        """根据 episode 长度更新成功率"""
-        success = episode_length / max_length  # 0-1
-        self.success_rates[motion_id] = (
-            (1 - self.alpha) * self.success_rates[motion_id]
-            + self.alpha * success
-        )
-    
-    def sample(self, batch_size):
-        """按失败率采样（失败的动作更可能被采样）"""
-        weights = []
-        for m in self.motions:
-            # 成功率越低，采样权重越高
-            failure_rate = 1.0 - self.success_rates[m.id]
-            weights.append(failure_rate + 0.1)  # 加 0.1 防止完全不采样
-        
-        weights = torch.tensor(weights)
-        weights = weights / weights.sum()
-        
-        indices = torch.multinomial(weights, batch_size, replacement=True)
-        return [self.motions[i] for i in indices]
-```
-
-**工程效果**：BeyondMimic 论文报告 adaptive sampling 将困难动作的 episode length ratio 提升了 15-25%。直觉上这很合理——如果策略在旋踢上只能跟踪 30% 的帧，增加旋踢的采样频率让 PPO 看到更多旋踢的经验，策略逐步学会更长的跟踪。
-
-**反事实推理：如果不用 adaptive sampling，所有动作均匀采样会怎样？** 简单动作（站立、慢走）很快收敛，后续的训练预算浪费在已经会的技能上。困难动作（旋踢、翻滚）的采样频率不够，策略可能永远学不会——因为 PPO 需要足够多的正样本来学习一个行为，均匀采样下困难动作的正样本太少。
 
 ### Motion Quality Filtering
 
@@ -1565,7 +1501,7 @@ python evaluate_per_motion.py \
 
 ### KungfuBot 是什么
 
-KungfuBot (Xie, Han, Zheng et al., NeurIPS 2025, arXiv 2506.12851, `TeleHuman/KungfuBot`) 解决一个具体的挑战：**从互联网视频中学习高动态全身动作（功夫、跑酷、舞蹈）并部署到真机 G1 上**。
+KungfuBot (Xie, Han, Zheng et al., NeurIPS 2025, arXiv 2506.12851, `TeleHuman/PBHC`) 解决一个具体的挑战：**从互联网视频中学习高动态全身动作（功夫、跑酷、舞蹈）并部署到真机 G1 上**。
 
 与 15.1 的 BeyondMimic（假设参考动作已经是高质量的 MoCap）不同，KungfuBot 从**视频**出发——视频中的人体估计天然包含噪声和物理不一致。
 
@@ -1593,15 +1529,13 @@ KungfuBot 的数据管线是目前最完整的"视频 → 真机动作"管线之
 
 ```bash
 # GVHMR: Gravity-View monocular Human Mesh Recovery
-# 输入: 视频文件
-# 输出: 每帧的 SMPL 参数 (body_pose, global_orient, transl, betas)
-python gvhmr/estimate.py \
-    --video input_video.mp4 \
-    --output smpl_params.pkl \
-    --fps 30
+# 输入: 视频文件；输出: 每帧的 SMPL 参数 (body_pose, global_orient, transl, betas)
+# 官方 demo 入口为 tools/demo/demo.py（-s 表示相机静止，可跳过视觉里程计）
+python tools/demo/demo.py --video=input_video.mp4 -s
+# 整文件夹推理可用 tools/demo/demo_folder.py
 ```
 
-GVHMR 相比 4DHumans 或 WHAM 的优势是更好的 gravity alignment——输出的 root 朝向和地面法向量对齐更准确，这对后续的物理可行性检查很重要。
+随后把 GVHMR 输出的 SMPL 序列转成 SMPL/G1 重定向所需格式（这一步属于 PBHC/HoloMotion 等下游管线，不是 GVHMR 原生命令）。GVHMR 相比 4DHumans 或 WHAM 的优势是更好的 gravity alignment——输出的 root 朝向和地面法向量对齐更准确，这对后续的物理可行性检查很重要。
 
 **Step 2：SMPL → G1 Retarget**
 
@@ -1638,9 +1572,7 @@ def retarget_smpl_to_g1(smpl_params, g1_urdf):
 - 脚底穿地：retarget 后某些帧的脚可能在地面以下。需要 post-processing 把所有帧的最低点抬到地面以上。
 - 速度不连续：IK 求解是逐帧独立的，可能产生不连续的关节轨迹。用低通滤波器平滑。
 
-**Step 3：Physics Filter**
-
-### Physics Filter 的工程实现
+**Step 3：Physics Filter（工程实现）**
 
 视频估计的动作可能包含物理不可行的片段——比如人在空中悬浮、重心超出脚的支撑区域但不摔倒。KungfuBot 用以下两个检查过滤不可行的动作：
 
@@ -1773,11 +1705,11 @@ class AdaptiveTrackingReward:
 
 **工程含义**：训练初期策略误差大，σ 自动增大让 reward 不那么苛刻（策略能获得 reward 信号开始学习）。训练后期策略误差小，σ 自动缩小要求更精确的跟踪。这避免了手动调 σ 的繁琐过程。
 
-**BLO 的"bi-level"含义**：
-- **外层（outer）**：策略优化（PPO），目标是最大化 reward
-- **内层（inner）**：σ 优化，目标是让成功率维持在 target_success 附近
+**BLO 的"bi-level"含义**（注意外/内层的约定要前后一致）：
+- **外层（outer）**：σ（tracking factor）的选择，目标是让跟踪难度自适应（维持合适的跟踪精度/成功率）
+- **内层（inner）**：在给定 σ 下做策略优化（PPO），最大化 reward
 
-两层优化交替进行——PPO 在固定 σ 下优化策略几个 iteration，然后 σ 根据当前成功率更新。这不是复杂的二阶优化——只是一个简单的在线估计+调整循环。
+两层优化交替进行——PPO 在固定 σ 下优化策略几个 iteration，然后 σ 根据当前 tracking 表现更新。这不是复杂的二阶优化——只是一个简单的在线估计+调整循环。
 
 ### KungfuBot 的真机部署
 
@@ -2034,7 +1966,7 @@ def convert_protomotions_to_mjlab(npy_path, npz_path):
 | σ = 0.1 m | body_position_tracking 默认容忍度 | 15.1 reward 配置 |
 | ~30 行 | AMP → CALM 配置差异 | 15.2 ProtoMotions |
 | 142K | BONES-SEED 数据集动作数 | 15.3 大规模训练 |
-| 12 小时 | 142K motions on 4×A100 训练时间 | 15.3 ProtoMotions 基准 |
+| 12 小时 | AMASS 全集（40+ 小时）在 4×A100 上的训练时间（BONES-SEED 142K 官方用 24×A100） | 15.3 ProtoMotions 基准 |
 | 100% | PHC+ 在 AMASS 上的 eval_success_rate | 15.4 PHC 里程碑 |
 | 3-5 个 | PMCP 覆盖 AMASS 所需的 primitive 数量 | 15.4 经验法则 |
 | 0.7 | progressive mining 的 success rate 阈值 | 15.4 PHC 配置 |
@@ -2135,7 +2067,7 @@ Ch14 人形 velocity (基础运动)
 | HybridRobotics/whole_body_tracking | ⭐⭐ | BeyondMimic Isaac Lab + mjlab port |
 | mujocolab/g1_spinkick_example | ⭐⭐ | 最小 mjlab tracking 示例 |
 | ZhengyiLuo/PHC | ⭐⭐⭐ | PMCP progressive tracking，IsaacGym |
-| TeleHuman/KungfuBot | ⭐⭐⭐ | Physics filter + BLO，G1 部署 |
+| TeleHuman/PBHC | ⭐⭐⭐ | Physics filter + BLO，G1 部署 |
 
 ### 阅读路线
 
@@ -2509,15 +2441,15 @@ HIGH_PRECISION_TRACKING_BODIES = [
 
 **趋势观察**：2018-2022 年的重点是**算法创新**（DeepMimic → AMP → ASE → CALM），2023-2025 年的重点转向**工程落地**（PHC 大规模化、KungfuBot 视频管线、BeyondMimic/HOVER 真机部署）。这反映了领域成熟度的变化——算法已经够用，瓶颈转移到了数据管线、训练效率和 sim-to-real。
 
-### 本章各参考工作的 GitHub 活跃度（截至 2025 年）
+### 本章各参考工作的 GitHub 活跃度（star 数为易变数字，以下为截至 2026-06-09 的近似值，请以仓库当前为准）
 
-| 仓库 | ⭐ 数 | 维护状态 | 推荐场景 |
+| 仓库 | ⭐ 数（近似） | 维护状态 | 推荐场景 |
 |------|------|---------|---------|
-| NVlabs/ProtoMotions | ~1.4k | ✅ 积极维护 | AMP/ASE/CALM 研究和教学 |
+| NVlabs/ProtoMotions | ~1.7k | ✅ 积极维护 | AMP/ASE/CALM 研究和教学 |
 | ZhengyiLuo/PHC | ~1.2k | 🔶 算法稳定 | 大规模 tracking 参考 |
-| HybridRobotics/whole_body_tracking | ~500 | ✅ 活跃 | BeyondMimic Isaac Lab + mjlab |
-| mujocolab/g1_spinkick_example | ~200 | ✅ 活跃 | mjlab 最小 tracking 示例 |
-| TeleHuman/KungfuBot | ~300 | ✅ 活跃 | 视频→真机高动态动作 |
+| HybridRobotics/whole_body_tracking | ~2.1k | ✅ 活跃 | BeyondMimic Isaac Lab + mjlab |
+| mujocolab/g1_spinkick_example | ~240 | ✅ 活跃 | mjlab 最小 tracking 示例 |
+| TeleHuman/PBHC | ~890 | ✅ 活跃 | 视频→真机高动态动作 |
 
 **工程建议**：选择活跃维护的仓库——它们的 issue 回复更快、与最新框架版本兼容性更好。ProtoMotions 和 BeyondMimic/mjlab 是 2025 年开始做 motion imitation 的最推荐起点。PHC 的原始代码虽然更新较少，但算法非常稳定——如果你需要大规模 tracking，PHC 的思想可以在 mjlab 中重新实现。
 

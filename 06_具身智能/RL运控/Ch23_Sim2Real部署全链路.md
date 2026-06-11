@@ -182,7 +182,7 @@ ASAP 的核心假设是：仿真器的物理模型大体正确，但在某些维
 
 $$s_{t+1}^{\text{sim}}(a + \delta(s, a)) \approx s_{t+1}^{\text{real}}(a)$$
 
-**ASAP 的三阶段 pipeline**：
+**ASAP 的 pipeline**（注意：论文本身定义为**两阶段**——pre-training 与 post-training；下面把 post-training 进一步拆成数据采集/残差学习与闭环微调两步，便于工程理解）：
 
 ```
 Phase 1: 仿真预训练（标准 PPO + DR）
@@ -257,8 +257,8 @@ def train_delta_model(
 | 修正对象 | 仿真参数 | 策略鲁棒性 | 仿真动作 |
 | 需要真机数据 | 是 | 否 | 是（少量） |
 | 能处理模型结构偏差 | 否 | 部分 | 是 |
-| 部署时的修改 | 无 | 无 | 需要携带 $\delta$ 网络 |
-| 计算成本 | 低 | 训练成本增加 | 额外 $\delta$ 网络推理 |
+| 部署时的修改 | 无 | 无 | 无（最终实机只部署 fine-tuned 策略，**不携带** $\delta$ 网络） |
+| 计算成本 | 低 | 训练成本增加 | 训练/微调阶段需训练 $\delta$ 网络；实机推理无额外开销 |
 
 ASAP 在 Unitree G1 上的实验表明，它在高动态动作（如跳跃、旋转）上的 sim2real 效果显著优于纯 DR——tracking error 降低 30-50%。但它需要在真机上采集 rollout 数据（Phase 2a），这意味着策略在 Phase 1 结束后必须"勉强能用"——如果 Phase 1 的策略在真机上完全不能走，Phase 2a 采集到的都是失败轨迹，$\delta$ 网络学不到有意义的残差。
 
@@ -692,36 +692,36 @@ unitree_rl_lab（Unitree 官方）提供了从训练到真机部署的工业级�
 **Stage 1: Train（Isaac Lab + RSL-RL）**
 
 ```bash
-# Go2 速度跟踪
-./unitree_rl_lab.sh -p scripts/rsl_rl/train.py \
-    --task Unitree-Go2-Velocity-Flat-v0 \
+# Go2 速度跟踪（-t = train；任务名无 -Flat-v0 后缀）
+./unitree_rl_lab.sh -t --task Unitree-Go2-Velocity \
     --num_envs 4096 --headless
 
 # G1 29-DOF 速度跟踪
-./unitree_rl_lab.sh -p scripts/rsl_rl/train.py \
-    --task Unitree-G1-29dof-Velocity-v0 \
+./unitree_rl_lab.sh -t --task Unitree-G1-29dof-Velocity \
     --num_envs 4096 --headless
 ```
 
 **Stage 2: Play & Export**
 
 ```bash
-# 可视化 + 自动导出 ONNX
-./unitree_rl_lab.sh -p scripts/rsl_rl/play.py \
-    --task Unitree-G1-29dof-Velocity-v0 \
+# 可视化 + 自动导出 ONNX（-p = play）
+./unitree_rl_lab.sh -p --task Unitree-G1-29dof-Velocity \
     --load_run latest
 # 输出:
 #   logs/.../exported/policy.onnx        (策略计算图)
-#   logs/.../exported/policy.onnx.data   (大模型的权重数据)
-#   logs/.../exported/deploy.yaml        (关节映射、scale 等)
+#   logs/.../exported/policy.pt          (TorchScript 策略)
+#   logs/.../params/deploy.yaml          (关节映射、scale 等；注意在 params/ 目录)
+#   (policy.onnx.data 仅在使用 ONNX external-data 时才出现，并非必然产物)
 ```
 
 `deploy.yaml` 的关键内容：
 
 ```yaml
-# deploy.yaml 示例（简化）
+# 概念化示意（非官方 deploy.yaml 的真实字段名）：下面字段仅用于说明 deploy.yaml 需要承载哪些信息。
+# unitree_rl_lab 由 export_deploy_cfg.py 生成的真实字段为：
+#   joint_ids_map / step_dt / stiffness / damping / default_joint_pos / commands / actions / observations
 robot: g1_29dof
-control_dt: 0.02  # 50 Hz
+control_dt: 0.02  # 50 Hz（真实字段名为 step_dt）
 motor_kp: [60.0, 60.0, 60.0, ...]  # 每个关节的 PD kp
 motor_kd: [1.5, 1.5, 1.5, ...]     # 每个关节的 PD kd
 # 关节映射: URDF 顺序 → SDK 顺序
@@ -740,11 +740,12 @@ history_length: 1  # obs 不包含历史帧（如果有 LSTM 则需要设置）
 
 ```bash
 # 在 MuJoCo 中验证
-./unitree_mujoco \
-    -i 0 \                    # 实例 ID
-    -n eth0 \                 # 网络接口
-    -r g1 \                   # 机器人类型
-    -s scene_29dof.xml        # MuJoCo 场景
+# 参数说明：
+#   -i 0            DDS domain id（不是"实例 ID"）
+#   -n lo           网络接口名（仿真侧推荐回环 lo；注意这里要填接口名而非 IP）
+#   -r g1           机器人类型
+#   -s scene.xml    MuJoCo 场景
+./unitree_mujoco -i 0 -n lo -r g1 -s scene_29dof.xml
 ```
 
 这个命令启动一个 MuJoCo 仿真，模拟 Unitree SDK 的 DDS 通信接口。同一个 C++ 控制器可以透明地连接到 MuJoCo 仿真或真实机器人——只需要改变网络接口地址。
@@ -759,10 +760,10 @@ cmake .. && make -j4
 
 # 依赖：unitree_sdk2, libyaml-cpp, libboost, libeigen3, CycloneDDS
 
-# 运行（连接到 Sim2Sim）
-./g1_ctrl --network 127.0.0.1
+# 运行（连接到 Sim2Sim）—— --network 接收的是网络接口名而非 IP，仿真用回环接口 lo
+./g1_ctrl --network lo
 
-# 运行（连接到真机）
+# 运行（连接到真机）—— 填实际网卡名（如 eth0/enp5s0）
 ./g1_ctrl --network eth0
 ```
 
@@ -831,7 +832,7 @@ class G1Controller {
 # 4. 逐步增加增益和速度指令范围
 ```
 
-**unitree_rl_lab 中一个高频 bug 的修复**：unitree_rl_lab 的 GitHub Issues #82 报告了一个经典的关节映射错误——`play.py` 导出的 ONNX 中关节顺序是 URDF 顺序，但 C++ runtime 使用 SDK 顺序。修复方法是在 `deploy.yaml` 中显式写入 `joint_mapping` 排列表。
+**一个高频的关节顺序陷阱**：训练侧（Isaac Lab/URDF）的关节顺序与 Unitree SDK 的电机顺序往往不同——如果 C++ runtime 直接按训练顺序把 action 写给电机，机器人会立刻乱动甚至摔倒。unitree_rl_lab 通过 `deploy.yaml` 里的关节顺序映射（官方字段名为 `joint_ids_map`）在部署端做重排来消除这一不一致。务必核对导出策略的关节顺序与 SDK 顺序是否一致。
 
 ### 双框架 Sim2Sim 验证流程图 ⭐⭐
 
@@ -893,10 +894,10 @@ python scripts/play.py Unitree-G1-Flat \
 # Sim2Sim（同一个 C++ 控制器）
 cd deploy/robots/g1 && mkdir -p build && cd build
 cmake .. && make -j4
-./g1_ctrl --network 127.0.0.1  # 连接到 unitree_mujoco
+./g1_ctrl --network lo  # 连接到 unitree_mujoco（--network 是接口名，仿真用回环 lo）
 
 # 真机
-./g1_ctrl --network eth0  # 连接到真实 G1
+./g1_ctrl --network eth0  # 连接到真实 G1（填实际网卡名）
 ```
 
 **两个管线的关键差异**：
@@ -1077,26 +1078,16 @@ void ControlLoop() {
 
 ### 延迟注入训练 ⭐⭐
 
-在 mjlab 中，通过 `EventTermCfg` 的 step mode 注入 action delay：
+在 mjlab 中，action delay 是配置在 **actuator** 上的（不是用 `EventTermCfg(mode="step")`——`mdp.randomize_action_delay` 不是框架内置事件，且 `step` 不会自动每步触发）。当前 mjlab 把 delay 作为 actuator cfg 字段，delay 会自动作用于 actuator 的 command 目标，并按 physics timestep 量化：
 
 ```python
-# mjlab action delay 配置
-class EventsCfg:
-    # 模拟真实系统的 action 延迟
-    action_delay = EventTermCfg(
-        func=mdp.randomize_action_delay,
-        mode="step",
-        params={
-            # 每个 env 的延迟在 reset 时采样，episode 内固定
-            "delay_range": (1, 3),  # 1-3 个 sim step = 5-15 ms (dt=0.005)
-        },
-    )
-    # 模拟观测延迟（滞后 1-2 帧 obs）
-    obs_delay = EventTermCfg(
-        func=mdp.randomize_obs_delay,
-        mode="step",
-        params={"delay_range": (0, 2)},
-    )
+# mjlab：在对应 ActuatorCfg 上配置延迟（具体字段名以目标版本 actuator 文档为准）
+# 例如给关节执行器加 1-3 个 physics step 的随机延迟（dt=0.005 时约 5-15 ms）
+actuator = SomeActuatorCfg(
+    # ... 其它 PD / 力矩字段 ...
+    # delay 相关字段（随 mjlab 版本可能为 delay / delay_range 等），作用于 command_field
+)
+# 观测延迟（滞后 1-2 帧 obs）通常在 observation term / obs 缓冲层处理，而不是 step event。
 ```
 
 **延迟注入的量纲映射**：训练中的延迟参数（以 sim step 为单位）必须和真机延迟对齐。如果 sim dt = 0.005 s，delay_range = (1, 3) 对应 5-15 ms 的延迟。如果真机测量的 p95 延迟是 20 ms，delay_range 应该设为 (1, 4)（覆盖 5-20 ms）。
@@ -1132,7 +1123,7 @@ L0-L2 是**硬安全**——即使软件完全失效也能保护硬件和人员�
 
 ### Unitree 部署边界详解 ⭐⭐
 
-mjlab 可以训练 Unitree G1 和 Go1 相关任务，可以通过 runner 导出 ONNX 和 metadata。但真实 Unitree 部署还需要一个完整的 SDK adapter 层——这个 adapter 是仿真策略和真实硬件之间的翻译器。
+mjlab 可以训练 Unitree G1 和 Go1 相关任务（如 `Mjlab-Velocity-Flat-Unitree-Go1`、`Mjlab-Velocity-Flat-Unitree-G1`），可以通过 runner 导出 ONNX 和 metadata。但真实 Unitree 部署还需要一个完整的 SDK adapter 层——这个 adapter 是仿真策略和真实硬件之间的翻译器。
 
 **Adapter 必须处理的内容**：
 
@@ -1446,7 +1437,9 @@ def d0_verification(
         import numpy as np
         session = ort.InferenceSession(onnx_path)
         dummy = np.zeros((1, obs_dim), dtype=np.float32)
-        result = session.run(None, {"obs": dummy})
+        # 不要硬编码输入名 "obs"——用模型真实输入名（可能叫 input/policy_obs 等）
+        input_name = session.get_inputs()[0].name
+        result = session.run(None, {input_name: dummy})
         action = result[0]
         print(f"  ✅ 推理成功, action shape={action.shape}")
         print(f"  Action 范围: [{action.min():.3f}, {action.max():.3f}]")
@@ -1493,7 +1486,9 @@ def d1_replay_verification(
     env = make(task, num_envs=num_envs)
     policy = torch.jit.load(checkpoint_path)
 
-    obs, _ = env.reset()
+    # 仅设 torch.manual_seed 不足以复现环境随机性（命令采样、DR、并行环境初始化）。
+    # 按 Gymnasium API 把 seed 传给 env.reset；vector env 还需固定每个子环境 seed 或记录随机配置。
+    obs, _ = env.reset(seed=seed)
     rewards = []
     for step in range(num_steps):
         with torch.no_grad():
@@ -2075,7 +2070,9 @@ class TelemetryFrame:
     latency_total_ms: float      # 端到端延迟
     sensor_age_ms: float         # 传感器数据新鲜度（当前时间 - 传感器时间戳）
     motor_temperature: Optional[List[float]] = None  # 电机温度（℃），硬件支持时填入
-    safety_events: List[str]     # 安全事件 (如 "tilt_warning")
+    # 注意：dataclass 中有默认值的字段后面不能再跟无默认值字段，
+    # 故 safety_events 必须给默认值（这里用 default_factory=list）
+    safety_events: List[str] = field(default_factory=list)  # 安全事件 (如 "tilt_warning")
 
 class TelemetryLogger:
     """部署日志记录器。"""
@@ -2087,7 +2084,10 @@ class TelemetryLogger:
     def log_frame(self, frame: TelemetryFrame):
         """实时记录一帧数据。"""
         self.frames.append(frame)
-        # 实时写入文件（防止崩溃丢数据）
+        # 教学骨架：这里每帧同步 write + flush，并把帧常驻内存。
+        # ⚠️ 与前文"telemetry 应独立线程/异步队列"的原则冲突——每帧 flush 会引入磁盘 I/O 延迟尖峰，
+        #    长时间运行还会把所有帧堆在内存。生产实现应改为：控制线程只做无阻塞 enqueue，
+        #    后台线程批量写盘；分析时从 jsonl 读取而非依赖内存列表。
         self.file.write(json.dumps(asdict(frame)) + '\n')
         self.file.flush()
 
@@ -2389,15 +2389,15 @@ Sim2Real 不是最后一步——而是一条贯穿训练、导出、播放、�
 | 症状 | 可能原因 | 排查步骤 | 相关小节 |
 |------|---------|---------|---------|
 | ONNX 可运行但动作方向反 | joint order 映射错 | 1.读 metadata joint_names 2.与 SDK 逐一比对 3.单关节小幅测试 | 23.1, 23.3 |
-| 站立几秒后摔倒 | 延迟未补偿 | 1.测量端到端延迟 2.对比训练 decimation 3.注入延迟重训 | 23.4 |
-| 仿真稳定真机打滑 | 摩擦 gap + 延迟耦合 | 1.SysID 摩擦系数 2.检查足底材料 3.扩大 DR friction 范围 | 23.2 |
-| 视觉抓取固定偏移 | 相机外参标定差异 | 1.已知点投影验证 2.重新标定 3.训练加外参 DR | 23.7 |
-| 安全急停无效 | 急停只在 UI 层 | 1.确认硬件 watchdog 存在 2.主动触发测试 3.与策略进程分离 | 23.5 |
+| 站立几秒后摔倒 | 延迟未补偿 | 1.测量端到端延迟 2.对比训练 decimation 3.注入延迟重训 | 23.6 |
+| 仿真稳定真机打滑 | 摩擦 gap + 延迟耦合 | 1.SysID 摩擦系数 2.检查足底材料 3.扩大 DR friction 范围 | 23.2, 23.10 |
+| 视觉抓取固定偏移 | 相机外参标定差异 | 1.已知点投影验证 2.重新标定 3.训练加外参 DR | 23.9 |
+| 安全急停无效 | 急停只在 UI 层 | 1.确认硬件 watchdog 存在 2.主动触发测试 3.与策略进程分离 | 23.7 |
 | 移动操作 base-arm 冲突 | 坐标系不统一或时序错 | 1.分离验证 base 和 arm 2.检查 frame 定义 3.加阶段门控 | 23.6 |
 | 长时运行后性能衰退 | 电机温度或电池变化 | 1.记录温度电压趋势 2.对比冷热机性能 3.加降额逻辑 | 23.11 |
-| SysID 后仍有系统偏差 | 模型结构不足 | 1.交叉验证辨识结果 2.检查非辨识数据误差 3.考虑 Fine-tuning | 23.9 |
-| DR 范围太宽不收敛 | 未做 SysID 先做 DR | 1.先辨识关键参数 2.缩窄 DR 范围 3.阶段化增大 | 23.2, 23.9 |
-| 真机日志无法复盘 | telemetry 格式不对齐 | 1.确认 schema 与仿真一致 2.检查视频时间戳 3.统一格式 | 23.10 |
+| SysID 后仍有系统偏差 | 模型结构不足 | 1.交叉验证辨识结果 2.检查非辨识数据误差 3.考虑 Fine-tuning | 23.10 |
+| DR 范围太宽不收敛 | 未做 SysID 先做 DR | 1.先辨识关键参数 2.缩窄 DR 范围 3.阶段化增大 | 23.2, 23.10 |
+| 真机日志无法复盘 | telemetry 格式不对齐 | 1.确认 schema 与仿真一致 2.检查视频时间戳 3.统一格式 | 23.13 |
 
 ### 真机前最终清单 ⭐
 
