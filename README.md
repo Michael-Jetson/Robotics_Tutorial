@@ -1,6 +1,6 @@
 # Robotics Tutorial
 
-[![License: CC BY 4.0](https://img.shields.io/badge/License-CC%20BY%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by/4.0/)
+[![License: CC BY-NC 4.0](https://img.shields.io/badge/License-CC%20BY--NC%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc/4.0/)
 
 面向机器人与人工智能交叉方向的系统化教学文档，覆盖从数学基础到具身智能的完整知识体系。
 
@@ -8,7 +8,7 @@
 
 **Author:** Pengfei Guo  
 **Affiliation:** 达妙科技 (DAMIAO Technology)  
-**License:** [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) — 自由使用与商用，需注明出处  
+**License:** [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/) — 非商业用途（学习与研究）自由使用，需注明出处，不授权商业用途  
 **AI Collaboration:** 内容由 Claude 与 Codex 辅助编写，经多轮双盲审核与基于互联网调研的事实核查
 
 ---
@@ -93,19 +93,22 @@ git clone https://github.com/Michael-Jetson/Robotics_Tutorial.git
 ```
 Robotics Tutorial by Pengfei Guo, DAMIAO Technology
 https://github.com/Michael-Jetson/Robotics_Tutorial
-Licensed under CC BY 4.0
+Licensed under CC BY-NC 4.0
 ```
 
 ## 许可协议
 
-本项目采用 [CC BY 4.0 国际许可协议](https://creativecommons.org/licenses/by/4.0/)。
+本项目采用 [CC BY-NC 4.0 国际许可协议](https://creativecommons.org/licenses/by-nc/4.0/)。
 
-你可以自由地：
-- **分享** — 以任何媒介或格式复制、转载
-- **改编** — 以任何目的（包括商业目的）进行混合、转换、再创作
+**欢迎所有以学习与研究为目的的下载、传播与内容改造。** 你可以自由地：
+- **分享** — 以任何媒介或格式复制、转载本材料
+- **改编** — 对本材料进行混合、转换与再创作
 
 但须遵守以下条件：
 - **署名** — 必须注明出处、提供许可协议链接，并说明是否进行了修改。
+- **非商业性使用** — 不得将本材料用于商业目的；本项目不授权任何商业用途，如需商业授权请联系作者。
+
+> **侵权与纠错：** 如发现任何内容侵权（图片、文字、论文引用等）或事实性错误，请及时通过 [Issue](https://github.com/Michael-Jetson/Robotics_Tutorial/issues) 反馈，我们会尽快处理与修正。
 
 ## Star History
 
